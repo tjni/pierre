@@ -288,6 +288,34 @@ export class File<LAnnotation = undefined, LDecoration = undefined> {
     this.decorations = decorations;
   }
 
+  private syncRenderState({
+    nextLineAnnotations,
+    nextDecorations,
+    syncAnnotations,
+    syncDecorations,
+  }: {
+    nextLineAnnotations?: LineAnnotation<LAnnotation>[];
+    nextDecorations?: FileDecorationItem<LDecoration>[];
+    syncAnnotations: boolean;
+    syncDecorations: boolean;
+  }): void {
+    if (syncAnnotations && nextLineAnnotations != null) {
+      this.setLineAnnotations(nextLineAnnotations);
+    }
+
+    if (syncDecorations && nextDecorations != null) {
+      this.setDecorations(nextDecorations);
+    }
+
+    if (syncAnnotations) {
+      this.fileRenderer.setLineAnnotations(this.lineAnnotations);
+    }
+
+    if (syncDecorations) {
+      this.fileRenderer.setDecorations(this.decorations);
+    }
+  }
+
   public flushManagers(): void {
     if (!this.managersDirty || this.pre == null) {
       this.managersDirty = false;
@@ -316,6 +344,7 @@ export class File<LAnnotation = undefined, LDecoration = undefined> {
     this.mounted = false;
     if (!recycle) {
       this.lineAnnotations = [];
+      this.decorations = [];
     }
     this.annotationCache.clear();
     this.pre = undefined;
@@ -442,12 +471,15 @@ export class File<LAnnotation = undefined, LDecoration = undefined> {
     lineAnnotations,
     decorations,
   }: HydrationSetup<LAnnotation, LDecoration>): void {
-    this.lineAnnotations = lineAnnotations ?? this.lineAnnotations;
-    this.decorations = decorations ?? this.decorations;
     this.file = file;
     this.fileRenderer.setOptions(getFileRendererOptions(this.options));
     this.syncInteractionOptions();
-    this.fileRenderer.setDecorations(this.decorations);
+    this.syncRenderState({
+      nextLineAnnotations: lineAnnotations,
+      nextDecorations: decorations,
+      syncAnnotations: true,
+      syncDecorations: true,
+    });
     if (this.pre == null) {
       return;
     }
@@ -487,16 +519,15 @@ export class File<LAnnotation = undefined, LDecoration = undefined> {
     const nextRenderRange = collapsed ? undefined : renderRange;
     const previousRenderRange = this.renderRange;
     const themeChanged = this.hasThemeChanged();
-    const nextDecorations = decorations;
     const annotationsChanged =
       lineAnnotations != null &&
       (lineAnnotations.length > 0 || this.lineAnnotations.length > 0)
         ? lineAnnotations !== this.lineAnnotations
         : false;
     const decorationsChanged =
-      nextDecorations != null &&
-      (nextDecorations.length > 0 || this.decorations.length > 0)
-        ? nextDecorations !== this.decorations
+      decorations != null &&
+      (decorations.length > 0 || this.decorations.length > 0)
+        ? decorations !== this.decorations
         : false;
     const didFileChange = !areFilesEqual(this.file, file);
     if (
@@ -518,14 +549,12 @@ export class File<LAnnotation = undefined, LDecoration = undefined> {
     this.file = file;
     this.fileRenderer.setOptions(getFileRendererOptions(this.options));
     this.syncInteractionOptions();
-    if (lineAnnotations != null) {
-      this.setLineAnnotations(lineAnnotations);
-    }
-    if (nextDecorations != null) {
-      this.decorations = nextDecorations;
-    }
-    this.fileRenderer.setLineAnnotations(this.lineAnnotations);
-    this.fileRenderer.setDecorations(this.decorations);
+    this.syncRenderState({
+      nextLineAnnotations: lineAnnotations,
+      nextDecorations: decorations,
+      syncAnnotations: annotationsChanged,
+      syncDecorations: decorationsChanged,
+    });
 
     const { disableErrorHandling = false, disableFileHeader = false } =
       this.options;
@@ -586,7 +615,7 @@ export class File<LAnnotation = undefined, LDecoration = undefined> {
       if (
         !this.canPartiallyRender(
           forceRender,
-          annotationsChanged,
+          annotationsChanged || decorationsChanged,
           didFileChange || themeChanged
         ) ||
         !this.applyPartialRender(previousRenderRange, nextRenderRange)
