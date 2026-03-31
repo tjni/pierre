@@ -11,18 +11,24 @@ import { getLineAnnotationName } from '../../utils/getLineAnnotationName';
 import { GutterUtilitySlotStyles } from '../constants';
 import type { FileProps } from '../types';
 
-interface RenderFileChildrenProps<LAnnotation> {
+interface RenderFileChildrenProps<LAnnotation, LDecoration> {
   file: FileContents;
-  renderCustomHeader: FileProps<LAnnotation>['renderCustomHeader'];
-  renderHeaderPrefix: FileProps<LAnnotation>['renderHeaderPrefix'];
-  renderHeaderMetadata: FileProps<LAnnotation>['renderHeaderMetadata'];
-  renderAnnotation: FileProps<LAnnotation>['renderAnnotation'];
-  lineAnnotations: FileProps<LAnnotation>['lineAnnotations'];
-  renderGutterUtility: FileProps<LAnnotation>['renderGutterUtility'];
+  renderCustomHeader: FileProps<LAnnotation, LDecoration>['renderCustomHeader'];
+  renderHeaderPrefix: FileProps<LAnnotation, LDecoration>['renderHeaderPrefix'];
+  renderHeaderMetadata: FileProps<
+    LAnnotation,
+    LDecoration
+  >['renderHeaderMetadata'];
+  renderAnnotation: FileProps<LAnnotation, LDecoration>['renderAnnotation'];
+  lineAnnotations: FileProps<LAnnotation, LDecoration>['lineAnnotations'];
+  renderGutterUtility: FileProps<
+    LAnnotation,
+    LDecoration
+  >['renderGutterUtility'];
   getHoveredLine(): GetHoveredLineResult<'file'> | undefined;
 }
 
-export function renderFileChildren<LAnnotation>({
+export function renderFileChildren<LAnnotation, LDecoration>({
   file,
   renderCustomHeader,
   renderHeaderPrefix,
@@ -31,7 +37,7 @@ export function renderFileChildren<LAnnotation>({
   lineAnnotations,
   renderGutterUtility,
   getHoveredLine,
-}: RenderFileChildrenProps<LAnnotation>): ReactNode {
+}: RenderFileChildrenProps<LAnnotation, LDecoration>): ReactNode {
   const customHeader = renderCustomHeader?.(file);
   const prefix = renderHeaderPrefix?.(file);
   const metadata = renderHeaderMetadata?.(file);

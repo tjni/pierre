@@ -3,8 +3,8 @@ import type { DiffHunksRendererOptions } from '../renderers/DiffHunksRenderer';
 
 // Build the renderer option snapshot with direct property reads. CodeView item
 // options may inherit prototype getters, so object spread can miss values.
-export function getDiffHunksRendererOptions<LAnnotation>(
-  options: FileDiffOptions<LAnnotation> | undefined
+export function getDiffHunksRendererOptions<LAnnotation, LDecoration>(
+  options: FileDiffOptions<LAnnotation, LDecoration> | undefined
 ): DiffHunksRendererOptions {
   return {
     theme: options?.theme,

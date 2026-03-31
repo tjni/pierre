@@ -36,7 +36,7 @@ interface CodeViewDraftCommentMetadata {
 
 interface CodeViewDemoInstance {
   instance: CodeView<CodeViewCommentMetadata>;
-  options: CodeViewOptions<CodeViewCommentMetadata>;
+  options: CodeViewOptions<CodeViewCommentMetadata, undefined>;
 }
 
 type CodeViewDemoAnnotation =
@@ -44,13 +44,13 @@ type CodeViewDemoAnnotation =
   | LineAnnotation<CodeViewCommentMetadata>;
 
 type CodeViewDiffStyle = NonNullable<
-  CodeViewOptions<CodeViewCommentMetadata>['diffStyle']
+  CodeViewOptions<CodeViewCommentMetadata, undefined>['diffStyle']
 >;
 type CodeViewOverflow = NonNullable<
-  CodeViewOptions<CodeViewCommentMetadata>['overflow']
+  CodeViewOptions<CodeViewCommentMetadata, undefined>['overflow']
 >;
 type CodeViewThemeType = NonNullable<
-  CodeViewOptions<CodeViewCommentMetadata>['themeType']
+  CodeViewOptions<CodeViewCommentMetadata, undefined>['themeType']
 >;
 
 interface RenderDemoCodeViewOptions {
@@ -87,8 +87,8 @@ export function renderDemoCodeView(
   setupCodeViewWrapper(wrapper);
 
   const items = createCodeViewItems(parsedPatches);
-  let viewer: CodeView<CodeViewCommentMetadata>;
-  const options: CodeViewOptions<CodeViewCommentMetadata> = {
+  let viewer: CodeView<CodeViewCommentMetadata, undefined>;
+  const options: CodeViewOptions<CodeViewCommentMetadata, undefined> = {
     theme,
     themeType,
     diffStyle,

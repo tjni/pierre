@@ -11,16 +11,18 @@ export type { FileDiffMetadata };
 
 export interface FileDiffProps<
   LAnnotation,
-> extends DiffBasePropsReact<LAnnotation> {
+  LDecoration,
+> extends DiffBasePropsReact<LAnnotation, LDecoration> {
   fileDiff: FileDiffMetadata;
   disableWorkerPool?: boolean;
 }
 
-export function FileDiff<LAnnotation = undefined>({
+export function FileDiff<LAnnotation = undefined, LDecoration = undefined>({
   fileDiff,
   options,
   metrics,
   lineAnnotations,
+  decorations,
   selectedLines,
   className,
   style,
@@ -31,12 +33,13 @@ export function FileDiff<LAnnotation = undefined>({
   renderHeaderMetadata,
   renderGutterUtility,
   disableWorkerPool = false,
-}: FileDiffProps<LAnnotation>): React.JSX.Element {
+}: FileDiffProps<LAnnotation, LDecoration>): React.JSX.Element {
   const { ref, getHoveredLine } = useFileDiffInstance({
     fileDiff,
     options,
     metrics,
     lineAnnotations,
+    decorations,
     selectedLines,
     prerenderedHTML,
     hasGutterRenderUtility: renderGutterUtility != null,

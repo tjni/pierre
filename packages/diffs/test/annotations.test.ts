@@ -245,7 +245,7 @@ describe('Annotation Rendering', () => {
         { side: 'deletions', lineNumber: 25, metadata: 'old-line' },
       ];
 
-      const renderer = new DiffHunksRenderer<string>({
+      const renderer = new DiffHunksRenderer<string, undefined>({
         diffStyle: 'unified',
         expandUnchanged: true,
       });

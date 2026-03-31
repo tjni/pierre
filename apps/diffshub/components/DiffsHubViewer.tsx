@@ -39,7 +39,7 @@ function getNextItemVersion(item: CodeViewItem<CommentMetadata>): number {
 }
 
 function updateViewerDiffItem(
-  viewer: CodeViewHandle<CommentMetadata>,
+  viewer: CodeViewHandle<CommentMetadata, undefined>,
   itemId: string,
   updateItem: (item: CodeViewDiffItem<CommentMetadata>) => boolean
 ): CodeViewDiffItem<CommentMetadata> | undefined {
@@ -72,7 +72,7 @@ interface DiffsHubViewerProps {
   lineNumbers: boolean;
   scrollRef: RefObject<HTMLDivElement | null>;
   themeType: ThemeTypes;
-  viewerRef: RefObject<CodeViewHandle<CommentMetadata> | null>;
+  viewerRef: RefObject<CodeViewHandle<CommentMetadata, undefined> | null>;
   initialItems: CodeViewItem<CommentMetadata>[];
   onLineLinkChange(selection: CodeViewLineSelection | null): void;
   onViewerReady(): void;
@@ -136,7 +136,7 @@ export const DiffsHubViewer = memo(function DiffsHubViewer({
   );
 
   const handleViewerRef = useStableCallback(
-    (viewer: CodeViewHandle<CommentMetadata> | null) => {
+    (viewer: CodeViewHandle<CommentMetadata, undefined> | null) => {
       viewerRef.current = viewer;
       if (viewer != null) {
         onViewerReady();
@@ -421,7 +421,7 @@ export const DiffsHubViewer = memo(function DiffsHubViewer({
 
   // NOTE(amadeus): For some insane reason, the react compiler did not know how
   // to properly memoize this, so we pulled it into a `useMemo` for safety...
-  const options: CodeViewOptions<CommentMetadata> = useMemo(
+  const options: CodeViewOptions<CommentMetadata, undefined> = useMemo(
     () =>
       ({
         // Use this to validate itemMetrics when changing layout with unsafeCSS.
@@ -449,7 +449,7 @@ export const DiffsHubViewer = memo(function DiffsHubViewer({
         onLineSelectionEnd(range, context) {
           handleLineSelectionEnd(range, context.item);
         },
-      }) satisfies CodeViewOptions<CommentMetadata>,
+      }) satisfies CodeViewOptions<CommentMetadata, undefined>,
     [
       diffIndicators,
       diffStyle,

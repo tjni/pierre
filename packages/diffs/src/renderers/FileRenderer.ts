@@ -17,6 +17,7 @@ import type {
   BaseCodeOptions,
   DiffsHighlighter,
   FileContents,
+  FileDecorationItem,
   FileHeaderRenderMode,
   LineAnnotation,
   RenderedFileASTCache,
@@ -91,7 +92,7 @@ export interface FileRendererOptions extends BaseCodeOptions {
 
 let instanceId = -1;
 
-export class FileRenderer<LAnnotation = undefined> {
+export class FileRenderer<LAnnotation = undefined, LDecoration = undefined> {
   readonly __id: string = `file-renderer:${++instanceId}`;
 
   private highlighter: DiffsHighlighter | undefined;
@@ -130,6 +131,10 @@ export class FileRenderer<LAnnotation = undefined> {
       arr.push(annotation);
     }
   }
+
+  public setDecorations(
+    _decorations: readonly FileDecorationItem<LDecoration>[]
+  ): void {}
 
   public cleanUp(): void {
     this.recycle();
