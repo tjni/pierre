@@ -241,6 +241,12 @@ export class PathStoreBuilder {
         const dirStack = this.directoryStack;
         let stackTop = 0;
 
+        // Cache the previous file's directory prefix so consecutive files in
+        // the same directory can use a fast native startsWith check instead of
+        // the full char-by-char prefix comparison.
+        let cachedDirPrefix = '';
+        let cachedDirDepth = 0;
+
         for (const path of paths) {
           if (previousPath === path) {
             throw new Error(`Duplicate path: "${path}"`);
@@ -255,28 +261,41 @@ export class PathStoreBuilder {
           let unsharedSegmentStart = 0;
 
           if (previousPath != null) {
-            const compareLength = Math.min(endIndex, previousPath.length);
-            let prefixMatched = true;
-            for (let ci = 0; ci < compareLength; ci++) {
-              const cc = path.charCodeAt(ci);
-              if (cc !== previousPath.charCodeAt(ci)) {
-                prefixMatched = false;
-                break;
-              }
-              if (cc === 47) {
-                sharedDirectoryDepth++;
-                unsharedSegmentStart = ci + 1;
-              }
-            }
+            // Fast path: if the path starts with the cached directory prefix,
+            // skip the char-by-char comparison.  Native startsWith uses
+            // optimized memory comparison.  The inner indexOf loop still
+            // handles any new subdirectories beyond the cached prefix.
             if (
-              prefixMatched &&
-              hasTrailingSlash &&
-              compareLength === endIndex &&
-              previousPath.length > endIndex &&
-              previousPath.charCodeAt(endIndex) === 47
+              cachedDirPrefix.length > 0 &&
+              path.length > cachedDirPrefix.length &&
+              path.startsWith(cachedDirPrefix)
             ) {
-              sharedDirectoryDepth++;
-              unsharedSegmentStart = endIndex + 1;
+              sharedDirectoryDepth = cachedDirDepth;
+              unsharedSegmentStart = cachedDirPrefix.length;
+            } else {
+              const compareLength = Math.min(endIndex, previousPath.length);
+              let prefixMatched = true;
+              for (let ci = 0; ci < compareLength; ci++) {
+                const cc = path.charCodeAt(ci);
+                if (cc !== previousPath.charCodeAt(ci)) {
+                  prefixMatched = false;
+                  break;
+                }
+                if (cc === 47) {
+                  sharedDirectoryDepth++;
+                  unsharedSegmentStart = ci + 1;
+                }
+              }
+              if (
+                prefixMatched &&
+                hasTrailingSlash &&
+                compareLength === endIndex &&
+                previousPath.length > endIndex &&
+                previousPath.charCodeAt(endIndex) === 47
+              ) {
+                sharedDirectoryDepth++;
+                unsharedSegmentStart = endIndex + 1;
+              }
             }
           }
 
@@ -371,6 +390,13 @@ export class PathStoreBuilder {
               subtreeNodeCount: 1,
               visibleSubtreeCount: 1,
             });
+          }
+
+          // Update the directory prefix cache.  Only allocate a new prefix
+          // string when the directory actually changed.
+          if (segmentStart !== cachedDirPrefix.length) {
+            cachedDirPrefix = path.substring(0, segmentStart);
+            cachedDirDepth = currentDepth;
           }
 
           previousPath = path;
