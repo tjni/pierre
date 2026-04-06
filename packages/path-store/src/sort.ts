@@ -11,23 +11,31 @@ const DIGIT_SEQUENCE_REGEX = /\d+/g;
 
 function splitIntoNaturalTokens(value: string): readonly (number | string)[] {
   const tokens: (number | string)[] = [];
-  let lastIndex = 0;
+  let tokenStart = 0;
+  let index = 0;
 
-  for (const match of value.matchAll(DIGIT_SEQUENCE_REGEX)) {
-    const matchIndex = match.index ?? 0;
-    if (matchIndex > lastIndex) {
-      tokens.push(value.slice(lastIndex, matchIndex));
+  while (index < value.length) {
+    DIGIT_SEQUENCE_REGEX.lastIndex = index;
+    const match = DIGIT_SEQUENCE_REGEX.exec(value);
+    if (match == null) {
+      break;
     }
 
-    const numberValue = Number.parseInt(match[0], 10);
-    tokens.push(Number.isNaN(numberValue) ? match[0] : numberValue);
-    lastIndex = matchIndex + match[0].length;
+    const matchIndex = match.index;
+    if (matchIndex > tokenStart) {
+      tokens.push(value.slice(tokenStart, matchIndex));
+    }
+
+    tokens.push(Number.parseInt(match[0], 10));
+    index = matchIndex + match[0].length;
+    tokenStart = index;
   }
 
-  if (lastIndex < value.length) {
-    tokens.push(value.slice(lastIndex));
+  if (tokenStart < value.length || tokens.length === 0) {
+    tokens.push(value.slice(tokenStart));
   }
 
+  DIGIT_SEQUENCE_REGEX.lastIndex = 0;
   return tokens;
 }
 

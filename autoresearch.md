@@ -166,6 +166,25 @@ Correctness checks run through:
     boundary trick. The saved work comes from avoiding the generic startup
     visible-count recomputation when the constructor already knows every
     directory starts open and there are no explicit expansion overrides.
+  - Mutation guardrail spot-check after the keep:
+    - `rename-leaf` p50 ≈ `0.013 ms`, p95 ≈ `0.023 ms`
+    - `rename-root-directory` p50 ≈ `0.747 ms`, p95 ≈ `0.796 ms`
+    - Conclusion: startup optimization did not obviously damage representative
+      mutation latency.
+- Attempt 3 (candidate to keep): replace `splitIntoNaturalTokens()`'s
+  `matchAll()` iterator loop with a simpler `RegExp.exec()` loop.
+  - Benchmark result: `165.320 ms` p50 / `169.113 ms` p95 on
+    `equivalent-presorted-warm-first-render/linux-5x/30` (~67.1% faster than
+    baseline, ~65.2% faster than Attempt 2).
+  - Matching `profile:demo` truth-check also improved, but much less
+    dramatically:
+    - visible rows ready median: `414.7 ms` → `360.2 ms`
+    - post-paint ready median: `415.8 ms` → `361.2 ms`
+  - Interpretation: the win appears real, but it is runtime-sensitive. Bun
+    benefits much more than Chrome from the tokenization rewrite. Follow-up
+    profiling should inspect `page.createStore`/builder phase deltas to confirm
+    how much of the gain is builder-order validation overhead vs. broader sort
+    key creation work.
 - Early read-through notes:
   - The first-render target is overwhelmingly dominated by build time, not the
     visible-window read itself.
