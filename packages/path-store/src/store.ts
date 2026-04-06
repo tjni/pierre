@@ -112,8 +112,16 @@ function initializeOpenVisibleCounts(state: PathStoreState): void {
       if (childId == null) {
         continue;
       }
-      totalChildSubtreeNodeCount += nodes[childId].subtreeNodeCount;
-      totalChildVisibleSubtreeCount += computeVisibleCounts(childId);
+      const childNode = nodes[childId];
+      totalChildSubtreeNodeCount += childNode.subtreeNodeCount;
+      // Inline the file-node case to avoid a recursive call for each file.
+      // Files always have visibleSubtreeCount = 1 (already set during
+      // construction), so we can accumulate directly.
+      if (childNode.kind === PATH_STORE_NODE_KIND_DIRECTORY) {
+        totalChildVisibleSubtreeCount += computeVisibleCounts(childId);
+      } else {
+        totalChildVisibleSubtreeCount += 1;
+      }
     }
 
     currentIndex.totalChildSubtreeNodeCount = totalChildSubtreeNodeCount;
