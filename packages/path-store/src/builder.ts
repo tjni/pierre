@@ -85,64 +85,6 @@ function computeSharedPrefixLength(
   return maxLength;
 }
 
-// Compare adjacent canonical path strings directly so the presorted fast path
-// can skip the shared directory prefix without allocating a full segment array.
-function getPresortedPathPrefixInfo(
-  inputPath: string,
-  previousPath: string | null
-): {
-  hasTrailingSlash: boolean;
-  sharedDirectoryDepth: number;
-  unsharedSegmentStart: number;
-} {
-  const hasTrailingSlash =
-    inputPath.length > 0 && inputPath.charCodeAt(inputPath.length - 1) === 47;
-  if (previousPath == null) {
-    return {
-      hasTrailingSlash,
-      sharedDirectoryDepth: 0,
-      unsharedSegmentStart: 0,
-    };
-  }
-
-  const endIndex = hasTrailingSlash ? inputPath.length - 1 : inputPath.length;
-  const compareLength = Math.min(endIndex, previousPath.length);
-  let sharedDirectoryDepth = 0;
-  let unsharedSegmentStart = 0;
-
-  for (let index = 0; index < compareLength; index++) {
-    const charCode = inputPath.charCodeAt(index);
-    if (charCode !== previousPath.charCodeAt(index)) {
-      return {
-        hasTrailingSlash,
-        sharedDirectoryDepth,
-        unsharedSegmentStart,
-      };
-    }
-
-    if (charCode === 47) {
-      sharedDirectoryDepth++;
-      unsharedSegmentStart = index + 1;
-    }
-  }
-
-  if (
-    hasTrailingSlash &&
-    compareLength === endIndex &&
-    previousPath.length > endIndex &&
-    previousPath.charCodeAt(endIndex) === 47
-  ) {
-    sharedDirectoryDepth++;
-    unsharedSegmentStart = endIndex + 1;
-  }
-
-  return {
-    hasTrailingSlash,
-    sharedDirectoryDepth,
-    unsharedSegmentStart,
-  };
-}
-
 function getDirectoryDepth(preparedPath: PreparedPath): number {
   return preparedPath.isDirectory
     ? preparedPath.segments.length
@@ -292,20 +234,49 @@ export class PathStoreBuilder {
         let currentDepth = 0;
         const nodes = this.nodes;
         const segmentTable = this.segmentTable;
+        const dirStack = this.directoryStack;
+        let stackTop = 0;
 
         for (const path of paths) {
           if (previousPath === path) {
             throw new Error(`Duplicate path: "${path}"`);
           }
 
-          const {
-            hasTrailingSlash,
-            sharedDirectoryDepth,
-            unsharedSegmentStart,
-          } = getPresortedPathPrefixInfo(path, previousPath);
+          // Inline prefix comparison to avoid per-path result object
+          // allocation and function-call overhead.
+          const hasTrailingSlash =
+            path.length > 0 && path.charCodeAt(path.length - 1) === 47;
           const endIndex = hasTrailingSlash ? path.length - 1 : path.length;
+          let sharedDirectoryDepth = 0;
+          let unsharedSegmentStart = 0;
 
-          this.directoryStack.length = sharedDirectoryDepth + 1;
+          if (previousPath != null) {
+            const compareLength = Math.min(endIndex, previousPath.length);
+            let prefixMatched = true;
+            for (let ci = 0; ci < compareLength; ci++) {
+              const cc = path.charCodeAt(ci);
+              if (cc !== previousPath.charCodeAt(ci)) {
+                prefixMatched = false;
+                break;
+              }
+              if (cc === 47) {
+                sharedDirectoryDepth++;
+                unsharedSegmentStart = ci + 1;
+              }
+            }
+            if (
+              prefixMatched &&
+              hasTrailingSlash &&
+              compareLength === endIndex &&
+              previousPath.length > endIndex &&
+              previousPath.charCodeAt(endIndex) === 47
+            ) {
+              sharedDirectoryDepth++;
+              unsharedSegmentStart = endIndex + 1;
+            }
+          }
+
+          stackTop = sharedDirectoryDepth;
           currentDepth = sharedDirectoryDepth;
 
           let segmentStart = unsharedSegmentStart;
@@ -314,8 +285,7 @@ export class PathStoreBuilder {
               continue;
             }
 
-            const parentId =
-              this.directoryStack[this.directoryStack.length - 1];
+            const parentId = dirStack[stackTop];
             if (parentId === undefined) {
               throw new Error(
                 'Directory stack underflow while building the path store'
@@ -339,14 +309,14 @@ export class PathStoreBuilder {
               subtreeNodeCount: 1,
               visibleSubtreeCount: 1,
             });
-            this.directoryStack.push(nodeId);
+            stackTop++;
+            dirStack[stackTop] = nodeId;
             segmentStart = index + 1;
           }
 
           if (hasTrailingSlash) {
             if (segmentStart < endIndex) {
-              const parentId =
-                this.directoryStack[this.directoryStack.length - 1];
+              const parentId = dirStack[stackTop];
               if (parentId === undefined) {
                 throw new Error(
                   `Unable to resolve directory parent for "${path}"`
@@ -370,19 +340,18 @@ export class PathStoreBuilder {
                 subtreeNodeCount: 1,
                 visibleSubtreeCount: 1,
               });
-              this.directoryStack.push(nodeId);
+              stackTop++;
+              dirStack[stackTop] = nodeId;
             }
 
-            const directoryId =
-              this.directoryStack[this.directoryStack.length - 1];
+            const directoryId = dirStack[stackTop];
             if (directoryId === undefined) {
               throw new Error(`Unable to resolve directory node for "${path}"`);
             }
 
             this.promoteDirectoryToExplicit(directoryId, path);
           } else {
-            const parentId =
-              this.directoryStack[this.directoryStack.length - 1];
+            const parentId = dirStack[stackTop];
             if (parentId === undefined) {
               throw new Error(`Unable to resolve file parent for "${path}"`);
             }
@@ -404,6 +373,10 @@ export class PathStoreBuilder {
 
           previousPath = path;
         }
+
+        // Sync directory stack length for potential subsequent non-presorted
+        // operations.
+        dirStack.length = stackTop + 1;
 
         if (previousPath != null) {
           this.lastPreparedPath = parseInputPath(previousPath);
