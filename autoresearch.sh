@@ -34,6 +34,60 @@ trap cleanup EXIT
 bun ws path-store benchmark -- --help >/dev/null 2>&1
 bun ws path-store profile:demo -- --help >/dev/null 2>&1
 
+PROFILE_JSON="$(mktemp)"
+PROFILE_ERR="$(mktemp)"
+if ! bun ws path-store profile:demo -- --runs 5 --json >"$PROFILE_JSON" 2>"$PROFILE_ERR"; then
+  tail -80 "$PROFILE_ERR" >&2
+  exit 1
+fi
+
+bun -e '
+import { readFileSync } from "node:fs";
+
+function fail(message) {
+  console.error(message);
+  process.exit(1);
+}
+
+function formatMetric(value) {
+  return Number(value).toFixed(6);
+}
+
+const profilePath = process.argv[1];
+const output = JSON.parse(readFileSync(profilePath, "utf8"));
+const scenario = output.scenarios?.find(
+  (entry) =>
+    entry?.scenario?.workload?.name === "linux-5x" &&
+    entry?.scenario?.action?.id === "render"
+);
+if (scenario == null) {
+  fail("Missing linux-5x/render profile scenario.");
+}
+
+const visibleRowsReady = scenario.summary?.metrics?.visibleRowsReadyMs;
+const postPaintReady = scenario.summary?.metrics?.postPaintReadyMs;
+if (visibleRowsReady == null || postPaintReady == null) {
+  fail("Missing profile aggregate metrics.");
+}
+
+console.log(
+  `primary target: profile demo visible rows median=${visibleRowsReady.medianMs?.toFixed(3) ?? "n/a"} ms p95=${visibleRowsReady.p95Ms?.toFixed(3) ?? "n/a"} ms, post-paint median=${postPaintReady.medianMs?.toFixed(3) ?? "n/a"} ms p95=${postPaintReady.p95Ms?.toFixed(3) ?? "n/a"} ms`
+);
+
+if (visibleRowsReady.medianMs != null) {
+  console.log(`METRIC profile_visible_rows_ready_median_ms=${formatMetric(visibleRowsReady.medianMs)}`);
+}
+if (visibleRowsReady.p95Ms != null) {
+  console.log(`METRIC profile_visible_rows_ready_p95_ms=${formatMetric(visibleRowsReady.p95Ms)}`);
+}
+if (postPaintReady.medianMs != null) {
+  console.log(`METRIC profile_post_paint_ready_median_ms=${formatMetric(postPaintReady.medianMs)}`);
+}
+if (postPaintReady.p95Ms != null) {
+  console.log(`METRIC profile_post_paint_ready_p95_ms=${formatMetric(postPaintReady.p95Ms)}`);
+}
+' "$PROFILE_JSON"
+
 if ! bun ws path-store benchmark -- --preset full --filter '^(prepare-presorted-input/linux-5x|build/linux-5x|visible-first/linux-5x/30)$' --json >"$BENCHMARK_JSON" 2>"$BENCHMARK_ERR"; then
   tail -80 "$BENCHMARK_ERR" >&2
   exit 1
@@ -90,10 +144,10 @@ if (prepare == null || build == null || visible == null) {
 }
 
 console.log(
-  `primary target: ${derived.name} p50=${formatHumanMs(derived.stats.p50)} p95=${formatHumanMs(derived.stats.p95)}`
+  `benchmark monitor: ${derived.name} p50=${formatHumanMs(derived.stats.p50)} p95=${formatHumanMs(derived.stats.p95)}`
 );
 console.log(
-  `components: prepare p50=${formatHumanMs(prepare.p50)} p95=${formatHumanMs(prepare.p95)}, build p50=${formatHumanMs(build.p50)} p95=${formatHumanMs(build.p95)}, visible-first p50=${formatHumanMs(visible.p50)} p95=${formatHumanMs(visible.p95)}`
+  `benchmark components: prepare p50=${formatHumanMs(prepare.p50)} p95=${formatHumanMs(prepare.p95)}, build p50=${formatHumanMs(build.p50)} p95=${formatHumanMs(build.p95)}, visible-first p50=${formatHumanMs(visible.p50)} p95=${formatHumanMs(visible.p95)}`
 );
 
 console.log(`METRIC presorted_full_first_render_p50_ms=${formatMetric(nsToMs(derived.stats.p50))}`);
@@ -105,62 +159,6 @@ console.log(`METRIC build_p95_ms=${formatMetric(nsToMs(build.p95))}`);
 console.log(`METRIC visible_first_p50_ms=${formatMetric(nsToMs(visible.p50))}`);
 console.log(`METRIC visible_first_p95_ms=${formatMetric(nsToMs(visible.p95))}`);
 ' "$BENCHMARK_JSON"
-
-if [[ "${AUTORESEARCH_PROFILE_DEMO:-0}" == "1" ]]; then
-  PROFILE_JSON="$(mktemp)"
-  PROFILE_ERR="$(mktemp)"
-  if ! bun ws path-store profile:demo -- --runs 5 --json >"$PROFILE_JSON" 2>"$PROFILE_ERR"; then
-    tail -80 "$PROFILE_ERR" >&2
-    exit 1
-  fi
-
-  bun -e '
-import { readFileSync } from "node:fs";
-
-function fail(message) {
-  console.error(message);
-  process.exit(1);
-}
-
-function formatMetric(value) {
-  return Number(value).toFixed(6);
-}
-
-const profilePath = process.argv[1];
-const output = JSON.parse(readFileSync(profilePath, "utf8"));
-const scenario = output.scenarios?.find(
-  (entry) =>
-    entry?.scenario?.workload?.name === "linux-5x" &&
-    entry?.scenario?.action?.id === "render"
-);
-if (scenario == null) {
-  fail("Missing linux-5x/render profile scenario.");
-}
-
-const visibleRowsReady = scenario.summary?.metrics?.visibleRowsReadyMs;
-const postPaintReady = scenario.summary?.metrics?.postPaintReadyMs;
-if (visibleRowsReady == null || postPaintReady == null) {
-  fail("Missing profile aggregate metrics.");
-}
-
-console.log(
-  `profile demo: visible rows median=${visibleRowsReady.medianMs?.toFixed(3) ?? "n/a"} ms p95=${visibleRowsReady.p95Ms?.toFixed(3) ?? "n/a"} ms, post-paint median=${postPaintReady.medianMs?.toFixed(3) ?? "n/a"} ms p95=${postPaintReady.p95Ms?.toFixed(3) ?? "n/a"} ms`
-);
-
-if (visibleRowsReady.medianMs != null) {
-  console.log(`METRIC profile_visible_rows_ready_median_ms=${formatMetric(visibleRowsReady.medianMs)}`);
-}
-if (visibleRowsReady.p95Ms != null) {
-  console.log(`METRIC profile_visible_rows_ready_p95_ms=${formatMetric(visibleRowsReady.p95Ms)}`);
-}
-if (postPaintReady.medianMs != null) {
-  console.log(`METRIC profile_post_paint_ready_median_ms=${formatMetric(postPaintReady.medianMs)}`);
-}
-if (postPaintReady.p95Ms != null) {
-  console.log(`METRIC profile_post_paint_ready_p95_ms=${formatMetric(postPaintReady.p95Ms)}`);
-}
-' "$PROFILE_JSON"
-fi
 
 if [[ "${AUTORESEARCH_MUTATION_GUARD:-0}" == "1" ]]; then
   MUTATION_JSON="$(mktemp)"

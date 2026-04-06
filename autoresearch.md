@@ -2,41 +2,45 @@
 
 ## Objective
 
-Optimize the real `@pierre/path-store` presorted 0→1 render path represented by:
+Optimize the real `@pierre/path-store` presorted 0→1 render path using the
+browser-backed profile as the main scorekeeper:
+
+- `bun ws path-store profile:demo -- --runs 5`
+
+The primary optimization target is the `linux-5x` / `render` scenario's
+aggregate **Visible rows ready** median. That is the closest measurement to the
+real user-facing path from presorted input through store creation and first
+rendered window.
+
+The Bun benchmark remains a secondary monitor:
 
 - `bun ws path-store benchmark -- --preset full --filter '^(prepare-presorted-input/linux-5x|build/linux-5x|visible-first/linux-5x/30)$'`
 
-The benchmark command used by the autoresearch loop measures three component
-scenarios against the `linux-5x` workload:
+It still measures the same three component scenarios against the `linux-5x`
+workload:
 
 - `prepare-presorted-input/linux-5x`
 - `build/linux-5x`
 - `visible-first/linux-5x/30`
 
-and the main optimization target is the derived summary that sums those three
-measured components:
+and its derived summary remains useful to localize wins and detect runtime-
+specific Bun improvements:
 
 - `equivalent-presorted-first-render/linux-5x/30`
 
-This is the best primary metric because it matches the intended workload more
-closely than the earlier warm-start target: start from a presorted string array,
-prepare the input object, build the store, and render the first visible 30 rows.
-
-The nearby truth-check is:
-
-- `bun ws path-store profile:demo -- --runs 5`
-
-That command profiles the same rough flow in the browser and exposes phase
-timings. Use it whenever a benchmark win looks suspiciously large or when code
-changes might have moved work outside the benchmark boundary. If benchmark
-numbers improve dramatically but `profile:demo` does not, treat that as a likely
-measurement mistake until proven otherwise.
+If browser profile numbers improve but the Bun benchmark does not, keep digging
+into what the browser is rewarding. If the Bun benchmark improves dramatically
+but the browser profile does not, treat that as suspicious until understood.
 
 ## Metrics
 
-- **Primary**: `presorted_full_first_render_p50_ms` (ms, lower is better) — p50
-  of `equivalent-presorted-first-render/linux-5x/30`
+- **Primary**: `profile_visible_rows_ready_median_ms` (ms, lower is better) —
+  median Visible rows ready time from `profile:demo` for `linux-5x` / `render`
 - **Secondary**:
+  - `profile_visible_rows_ready_p95_ms`
+  - `profile_post_paint_ready_median_ms`
+  - `profile_post_paint_ready_p95_ms`
+  - `presorted_full_first_render_p50_ms`
   - `presorted_full_first_render_p95_ms`
   - `prepare_presorted_input_p50_ms`
   - `prepare_presorted_input_p95_ms`
@@ -44,11 +48,6 @@ measurement mistake until proven otherwise.
   - `build_p95_ms`
   - `visible_first_p50_ms`
   - `visible_first_p95_ms`
-  - optional truth-check metrics when `AUTORESEARCH_PROFILE_DEMO=1`:
-    - `profile_visible_rows_ready_median_ms`
-    - `profile_visible_rows_ready_p95_ms`
-    - `profile_post_paint_ready_median_ms`
-    - `profile_post_paint_ready_p95_ms`
   - optional mutation guardrail metrics when `AUTORESEARCH_MUTATION_GUARD=1`:
     - `rename_leaf_p50_ms`
     - `rename_leaf_p95_ms`
@@ -68,12 +67,10 @@ Primary loop command:
 ./autoresearch.sh
 ```
 
-Optional truth-check / guardrail modes:
+Optional mutation guardrail mode:
 
 ```bash
-AUTORESEARCH_PROFILE_DEMO=1 ./autoresearch.sh
 AUTORESEARCH_MUTATION_GUARD=1 ./autoresearch.sh
-AUTORESEARCH_PROFILE_DEMO=1 AUTORESEARCH_MUTATION_GUARD=1 ./autoresearch.sh
 ```
 
 Correctness checks run through:
@@ -147,17 +144,20 @@ Correctness checks run through:
 - Target correction after user review:
   - The profile truth-check includes `page.preparePresortedInput`, but the old
     warm-start benchmark target did not include `prepare-presorted-input`.
-  - The loop now uses the fuller benchmark target
+  - The loop then moved to the fuller benchmark target
     `equivalent-presorted-first-render/linux-5x/30` so benchmark percentages
-    line up more honestly with `profile:demo`.
-  - New corrected baseline on current code:
-    - `prepare-presorted-input/linux-5x` p50 = `78.513 ms`, p95 = `85.899 ms`
-    - `build/linux-5x` p50 = `70.542 ms`, p95 = `73.703 ms`
-    - `visible-first/linux-5x/30` p50 = `0.001459 ms`, p95 = `0.004042 ms`
-    - `equivalent-presorted-first-render/linux-5x/30` p50 = `149.057 ms`, p95 =
-      `159.606 ms`
-    - `profile:demo` visible rows ready median = `246.8 ms`, post-paint ready
-      median = `247.9 ms`
+    lined up more honestly with `profile:demo`.
+  - Current target change: `profile_visible_rows_ready_median_ms` is now the
+    primary metric, with the full Bun benchmark kept as a secondary monitor.
+  - New profile-primary baseline on current code:
+    - `profile:demo` visible rows ready median = `230.1 ms`, p95 = `234.92 ms`
+    - `profile:demo` post-paint ready median = `231.1 ms`, p95 = `235.92 ms`
+    - benchmark secondary monitor:
+      - `prepare-presorted-input/linux-5x` p50 = `36.634 ms`, p95 = `55.461 ms`
+      - `build/linux-5x` p50 = `92.029 ms`, p95 = `92.740 ms`
+      - `visible-first/linux-5x/30` p50 = `0.001500 ms`, p95 = `0.002875 ms`
+      - `equivalent-presorted-first-render/linux-5x/30` p50 = `128.664 ms`, p95
+        = `148.205 ms`
 - Attempt 7 (candidate to keep against the corrected full metric): make segment
   sort keys lazy in `internSegment()` so presorted bulk ingest no longer pays to
   precompute natural-sort metadata for every unique segment.
@@ -241,6 +241,45 @@ Correctness checks run through:
   - Interpretation: the main win is cheaper segment interning / lookup during
     build. Chrome benefits less than Bun, but the full metric gain is large
     enough to keep.
+  - Validation rerun with mutation guardrails on unchanged code:
+    - full metric: `126.874 ms` p50 / `146.558 ms` p95
+    - visible rows ready median: `227.2 ms`
+    - mutation guardrails remained healthy:
+      - `rename-leaf` p50 ≈ `0.013 ms`, p95 ≈ `0.020 ms`
+      - `rename-root-directory` p50 ≈ `0.715 ms`, p95 ≈ `0.756 ms`
+- Attempt 14 (reverted by `checks_failed`): replace per-directory `Map`
+  structures for `childIdByNameId` and `childPositionById` with null-prototype
+  objects.
+  - Benchmark looked worse than the current best anyway (`145.470 ms` p50), and
+    `profile:demo` also regressed (`264.3 ms` median visible rows ready).
+  - Checks failed before the candidate could be discarded cleanly because the
+    refactor left one stale `.has()` call in `canonical.ts` and one unused type
+    import in `child-index.ts`.
+  - Conclusion: even without the lint issues, object-backed per-directory child
+    indexes do not look promising for this workload.
+- Attempt 15 (reverted by `checks_failed`): stop caching full file paths during
+  bulk ingest so first render only materializes the visible window lazily.
+  - Result: `128.229 ms` p50 / `144.491 ms` p95 on the full metric.
+  - This was close to the current best but still slower, and lint failed because
+    the now-unused `path` parameter in `createFileChildUnchecked()` was left in
+    place.
+  - Conclusion: lazy file path caches may be directionally plausible, but they
+    are not currently beating the object-backed segment table win.
+- Attempt 16 (reverted by `discard`): make `preparePresortedInput()` reuse the
+  caller's readonly `paths` array instead of cloning it.
+  - First run looked like a tiny benchmark win (`127.131 ms` p50), but the gain
+    was well within noise and `profile:demo` p95 got worse.
+  - Second run on unchanged code came back slower (`130.955 ms` p50), while the
+    profile stayed roughly flat.
+  - Conclusion: reusing the input array is too noisy / too small to justify as a
+    contract change. Keep copying the array.
+- Attempt 17 (reverted by `discard`): replace `paths.map(parseInputPath)` with
+  an indexed `for` loop and preallocated array for prepared-path parsing.
+  - Result: `129.809 ms` p50 / `145.276 ms` p95 on the full metric.
+  - `profile:demo` improved a little, but the primary metric was still slower
+    than the current best object-backed segment table build.
+  - Conclusion: callback overhead in `Array.map()` is not the main remaining
+    cost here.
 - Attempt 11 (reverted by `discard`): precompute each prepared path's shared
   directory depth with the previous entry during prepare, then let the builder
   reuse that metadata instead of recomputing shared-prefix depth.
