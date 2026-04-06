@@ -343,7 +343,7 @@ export class PathStoreBuilder {
             }
 
             const basename = segments[segments.length - 1] ?? '';
-            this.createFileChildUnchecked(parentId, basename, path);
+            this.createFileChildUnchecked(parentId, basename);
           }
 
           previousDirectoryDepth = currentDirectoryDepth;
@@ -471,11 +471,7 @@ export class PathStoreBuilder {
     if (validateOrder) {
       this.createFileChild(parentId, preparedPath.basename, preparedPath.path);
     } else {
-      this.createFileChildUnchecked(
-        parentId,
-        preparedPath.basename,
-        preparedPath.path
-      );
+      this.createFileChildUnchecked(parentId, preparedPath.basename);
     }
     this.lastPreparedPath = preparedPath;
   }
@@ -516,13 +512,10 @@ export class PathStoreBuilder {
     return nodeId;
   }
 
-  // Trusted prepared input is already canonical and unique, so the builder can
-  // skip per-child collision lookups and just append the known-new suffix.
-  private createFileChildUnchecked(
-    parentId: NodeId,
-    basename: string,
-    path: string
-  ): NodeId {
+  // Bulk-ingested file nodes leave full paths lazy so first render only pays to
+  // materialize the tiny visible window instead of caching every file string up
+  // front.
+  private createFileChildUnchecked(parentId: NodeId, basename: string): NodeId {
     const nameId = internSegment(this.segmentTable, basename);
     const parentIndex = this.getDirectoryIndex(parentId);
     const parentNode = this.nodes[parentId];
@@ -538,8 +531,8 @@ export class PathStoreBuilder {
       kind: PATH_STORE_NODE_KIND_FILE,
       nameId,
       parentId,
-      pathCache: path,
-      pathCacheVersion: 0,
+      pathCache: null,
+      pathCacheVersion: -1,
       subtreeNodeCount: 1,
       visibleSubtreeCount: 1,
     });

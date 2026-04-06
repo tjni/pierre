@@ -208,6 +208,27 @@ Correctness checks run through:
   - Interpretation: fusing path splitting and shared-prefix detection appears to
     be a major browser win on the new presorted builder path, even though Bun
     dislikes the same trade.
+  - Validation rerun with mutation guardrails on unchanged code:
+    - visible rows ready median: `186.4 ms`
+    - visible rows ready p95: `193.48 ms`
+    - mutation guardrails remained healthy:
+      - `rename-leaf` p50 ≈ `0.013 ms`, p95 ≈ `0.016 ms`
+      - `rename-root-directory` p50 ≈ `0.735 ms`, p95 ≈ `0.766 ms`
+- Attempt 22 (candidate to keep under the profile-primary target): stop
+  eagerly caching full file-path strings for bulk-ingested files on the trusted
+  presorted builder path so first render only materializes the visible window's
+  paths lazily.
+  - Profile primary improved again:
+    - visible rows ready median: `182.1 ms` → `180.4 ms`
+    - visible rows ready p95: `190.84 ms` → `189.64 ms`
+    - post-paint ready median: `183.1 ms` → `181.4 ms`
+  - Benchmark secondary stayed essentially flat:
+    - full benchmark p50: `152.204 ms` → `152.166 ms`
+    - build p50: `151.848 ms` → `151.808 ms`
+  - Interpretation: even after deferring presorted parsing into the builder,
+    eagerly storing every file path string still costs measurable browser time.
+    Leaving those file-node path caches lazy looks like a clean browser win
+    without materially worsening the Bun-side monitor.
 - Attempt 7 (candidate to keep against the corrected full metric): make segment
   sort keys lazy in `internSegment()` so presorted bulk ingest no longer pays to
   precompute natural-sort metadata for every unique segment.
