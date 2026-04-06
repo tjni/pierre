@@ -104,11 +104,17 @@ function initializeOpenVisibleCounts(state: PathStoreState): void {
       );
     }
 
+    let totalChildSubtreeNodeCount = 0;
     let totalChildVisibleSubtreeCount = 0;
     for (const childId of currentIndex.childIds) {
+      const childNode = nodes[childId];
+      if (childNode != null) {
+        totalChildSubtreeNodeCount += childNode.subtreeNodeCount;
+      }
       totalChildVisibleSubtreeCount += computeVisibleCounts(childId);
     }
 
+    currentIndex.totalChildSubtreeNodeCount = totalChildSubtreeNodeCount;
     currentIndex.totalChildVisibleSubtreeCount = totalChildVisibleSubtreeCount;
     rebuildVisibleChildChunks(nodes, currentIndex);
 

@@ -736,11 +736,13 @@ export class PathStoreBuilder {
       }
     }
 
-    // Backward pass: accumulate subtree counts and directory child aggregates
-    // bottom-up.  Parents always have lower IDs than their children, so
-    // iterating backward ensures each child's counts are finalized before its
-    // parent reads them.  Visible-subtree counts are set equal to subtree
-    // counts here; state initialization adjusts them for root/flatten rules.
+    // Backward pass: accumulate subtree counts bottom-up into parent nodes.
+    // Parents always have lower IDs than their children, so iterating backward
+    // ensures each child's counts are finalized before its parent reads them.
+    // Directory-level aggregates (totalChildSubtreeNodeCount, etc.) and
+    // visible-child chunk summaries are NOT computed here; they are derived
+    // during state initialization when initializeOpenVisibleCounts or
+    // recomputeCountsRecursive iterates each directory's children.
     for (let nodeId = nodes.length - 1; nodeId >= 1; nodeId--) {
       const node = nodes[nodeId];
       if (node == null) {
@@ -752,19 +754,7 @@ export class PathStoreBuilder {
         parentNode.subtreeNodeCount += node.subtreeNodeCount;
         parentNode.visibleSubtreeCount += node.visibleSubtreeCount;
       }
-
-      const parentIndex = directories.get(node.parentId);
-      if (parentIndex != null) {
-        parentIndex.totalChildSubtreeNodeCount += node.subtreeNodeCount;
-        parentIndex.totalChildVisibleSubtreeCount += node.visibleSubtreeCount;
-      }
     }
-
-    // Visible-child chunk summaries are NOT rebuilt here because state
-    // initialization (initializeOpenVisibleCounts or recomputeCountsRecursive)
-    // always rebuilds them after adjusting visible counts for expansion mode
-    // and flatten rules.  Skipping the rebuild avoids a redundant pass through
-    // all directory children.
   }
 
   // Builds directory-child indexes in the same layout as buildPresortedFinish
