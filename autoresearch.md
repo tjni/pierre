@@ -172,6 +172,21 @@ Correctness checks run through:
   - Interpretation: this is a real browser-path win, but it is strongly
     runtime-specific. Since the session now optimizes the browser profile, this
     trade can still be worth keeping.
+- Attempt 19 (candidate to keep under the profile-primary target): specialize
+  `appendPresortedPaths()` so it parses and appends trusted presorted paths in
+  one pass instead of routing each path through `parseInputPath()` plus the
+  generic `appendPreparedPath()` helper.
+  - Profile primary improved again:
+    - visible rows ready median: `218.7 ms` → `213.4 ms`
+    - visible rows ready p95: `221.3 ms` → `219.32 ms`
+    - post-paint ready median: `219.7 ms` → `214.3 ms`
+  - Benchmark secondary stayed in roughly the same runtime-specific shape:
+    - full benchmark p50: `145.336 ms` → `144.597 ms`
+    - prepare stayed near-zero and build remained much slower than the old
+      eager-prepared-input path in Bun.
+  - Interpretation: this is a cleaner version of the browser-first strategy.
+    Fusing parse+append for presorted input reduces the browser-visible cost of
+    on-demand parsing enough to justify keeping it under the new target.
 - Attempt 7 (candidate to keep against the corrected full metric): make segment
   sort keys lazy in `internSegment()` so presorted bulk ingest no longer pays to
   precompute natural-sort metadata for every unique segment.

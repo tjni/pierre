@@ -21,7 +21,7 @@ import {
 } from './internal/benchmarkInstrumentation';
 import type { BenchmarkInstrumentation } from './internal/benchmarkInstrumentation';
 import { resolvePathStoreOptions } from './options';
-import { parseInputPath } from './path';
+import { parseInputPath, splitCanonicalPath } from './path';
 import type {
   PathStoreCompareEntry,
   PathStoreOptions,
@@ -229,8 +229,76 @@ export class PathStoreBuilder {
       this.instrumentation,
       'store.builder.appendPresortedPaths',
       () => {
+        let previousDirectoryDepth = 0;
+        let previousPath: string | null = null;
+        let previousSegments: readonly string[] = [];
+
         for (const path of paths) {
-          this.appendPreparedPath(parseInputPath(path), false);
+          if (previousPath === path) {
+            throw new Error(`Duplicate path: "${path}"`);
+          }
+
+          const { hasTrailingSlash, segments } = splitCanonicalPath(path);
+          const currentDirectoryDepth = hasTrailingSlash
+            ? segments.length
+            : segments.length - 1;
+          const sharedDirectoryDepth =
+            previousPath == null
+              ? 0
+              : Math.min(
+                  computeSharedPrefixLength(previousSegments, segments),
+                  previousDirectoryDepth,
+                  currentDirectoryDepth
+                );
+
+          this.directoryStack.length = sharedDirectoryDepth + 1;
+
+          for (
+            let segmentIndex = sharedDirectoryDepth;
+            segmentIndex < currentDirectoryDepth;
+            segmentIndex++
+          ) {
+            const parentId =
+              this.directoryStack[this.directoryStack.length - 1];
+            if (parentId === undefined) {
+              throw new Error(
+                'Directory stack underflow while building the path store'
+              );
+            }
+
+            const childId = this.createDirectoryChild(
+              parentId,
+              segments[segmentIndex]
+            );
+            this.directoryStack.push(childId);
+          }
+
+          if (hasTrailingSlash) {
+            const directoryId =
+              this.directoryStack[this.directoryStack.length - 1];
+            if (directoryId === undefined) {
+              throw new Error(`Unable to resolve directory node for "${path}"`);
+            }
+
+            this.promoteDirectoryToExplicit(directoryId, path);
+          } else {
+            const parentId =
+              this.directoryStack[this.directoryStack.length - 1];
+            if (parentId === undefined) {
+              throw new Error(`Unable to resolve file parent for "${path}"`);
+            }
+
+            const basename = segments[segments.length - 1] ?? '';
+            this.createFileChildUnchecked(parentId, basename, path);
+          }
+
+          previousDirectoryDepth = currentDirectoryDepth;
+          previousPath = path;
+          previousSegments = segments;
+        }
+
+        if (previousPath != null) {
+          this.lastPreparedPath = parseInputPath(previousPath);
         }
       }
     );
