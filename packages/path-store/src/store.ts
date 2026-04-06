@@ -106,11 +106,13 @@ function initializeOpenVisibleCounts(state: PathStoreState): void {
 
     let totalChildSubtreeNodeCount = 0;
     let totalChildVisibleSubtreeCount = 0;
-    for (const childId of currentIndex.childIds) {
-      const childNode = nodes[childId];
-      if (childNode != null) {
-        totalChildSubtreeNodeCount += childNode.subtreeNodeCount;
+    const childIds = currentIndex.childIds;
+    for (let ci = 0; ci < childIds.length; ci++) {
+      const childId = childIds[ci];
+      if (childId == null) {
+        continue;
       }
+      totalChildSubtreeNodeCount += nodes[childId].subtreeNodeCount;
       totalChildVisibleSubtreeCount += computeVisibleCounts(childId);
     }
 
