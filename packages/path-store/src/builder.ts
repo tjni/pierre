@@ -238,6 +238,9 @@ export class PathStoreBuilder {
         let currentDepth = 0;
         const nodes = this.nodes;
         const segmentTable = this.segmentTable;
+        const idByValue = segmentTable.idByValue;
+        const valueById = segmentTable.valueById;
+        const sortKeyById = segmentTable.sortKeyById;
         const dirStack = this.directoryStack;
         let stackTop = 0;
 
@@ -313,16 +316,21 @@ export class PathStoreBuilder {
             }
 
             currentDepth++;
+            const dirSeg = path.slice(segmentStart, slashPos);
+            let dirNameId = idByValue[dirSeg];
+            if (dirNameId === undefined) {
+              dirNameId = valueById.length;
+              idByValue[dirSeg] = dirNameId;
+              valueById.push(dirSeg);
+              sortKeyById.push(undefined);
+            }
             const nodeId = nodes.length;
             nodes.push({
               depth: currentDepth,
               flags: 0,
               id: nodeId,
               kind: PATH_STORE_NODE_KIND_DIRECTORY,
-              nameId: internSegment(
-                segmentTable,
-                path.slice(segmentStart, slashPos)
-              ),
+              nameId: dirNameId,
               parentId,
               pathCache: null,
               pathCacheVersion: 0,
@@ -345,16 +353,21 @@ export class PathStoreBuilder {
               }
 
               currentDepth++;
+              const trailSeg = path.slice(segmentStart, endIndex);
+              let trailNameId = idByValue[trailSeg];
+              if (trailNameId === undefined) {
+                trailNameId = valueById.length;
+                idByValue[trailSeg] = trailNameId;
+                valueById.push(trailSeg);
+                sortKeyById.push(undefined);
+              }
               const nodeId = nodes.length;
               nodes.push({
                 depth: currentDepth,
                 flags: 0,
                 id: nodeId,
                 kind: PATH_STORE_NODE_KIND_DIRECTORY,
-                nameId: internSegment(
-                  segmentTable,
-                  path.slice(segmentStart, endIndex)
-                ),
+                nameId: trailNameId,
                 parentId,
                 pathCache: null,
                 pathCacheVersion: 0,
@@ -377,13 +390,21 @@ export class PathStoreBuilder {
               throw new Error(`Unable to resolve file parent for "${path}"`);
             }
 
+            const fileSeg = path.slice(segmentStart);
+            let fileNameId = idByValue[fileSeg];
+            if (fileNameId === undefined) {
+              fileNameId = valueById.length;
+              idByValue[fileSeg] = fileNameId;
+              valueById.push(fileSeg);
+              sortKeyById.push(undefined);
+            }
             const nodeId = nodes.length;
             nodes.push({
               depth: currentDepth + 1,
               flags: 0,
               id: nodeId,
               kind: PATH_STORE_NODE_KIND_FILE,
-              nameId: internSegment(segmentTable, path.slice(segmentStart)),
+              nameId: fileNameId,
               parentId,
               pathCache: null,
               pathCacheVersion: -1,

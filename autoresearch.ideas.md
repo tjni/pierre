@@ -2,20 +2,25 @@
 
 ## Deferred optimizations for path-store presorted first render
 
-- **Eliminate `directories.get()` in backward pass**: Move `totalChildSubtreeNodeCount` computation from `buildPresortedFinish` backward pass into `initializeOpenVisibleCounts` (which already iterates all directory children). Saves ~700K Map.get calls at the cost of ~700K property reads. Estimated net ~4ms savings.
+### Done / tried
+- ✅ **Eliminate `directories.get()` in backward pass** — kept, saved ~1.3ms
+- ❌ **Remove `node.id` field** — tried, profile was flat (110.7ms vs 110.6ms). V8 allocation cost doesn't scale with property count in 9-10 range.
+- ❌ **Skip `visibleSubtreeCount` in backward pass** — tried, savings (~1.4ms) below noise floor
+- ❌ **Make `initializeOpenVisibleCounts` non-recursive** — tried, caused massive Bun regression (73→265ms). Bun strongly prefers recursion.
 
-- **Replace `directories` Map with flat array**: Use `directoryIndexCache[nodeId]` instead of `directories.get(nodeId)` for the forward/backward passes. Saves Map overhead but creates a sparse array (~100K entries in ~700K slots).
+### Still promising
+- **Replace `directories` Map with flat array**: Use `directoryIndexCache[nodeId]` for forward/backward passes. May save Map overhead on ~100K lookups. But sparse array in V8 uses dictionary mode.
 
-- **Remove `node.id` field**: The `id` is always the array index. Removing it saves one property per ~700K node allocations. Requires updating all `node.id` references across the codebase to use the array index variable instead.
+- **Pre-size `nodes` array**: Use `paths.length * 2` to avoid ~20-30 dynamic array resizes. Estimated ~2.8ms savings.
 
-- **Pre-size `nodes` array**: Use `paths.length * 2` as estimate to avoid ~20-30 dynamic array resizes during construction. Saves ~2.8ms of element copying.
+- **Trie-based segment interning**: Avoid `path.slice()` by traversing a char trie instead of hash lookup. Complex but eliminates ~700K string allocations for existing segments.
 
-- **Trie-based segment interning**: Avoid `path.slice()` string allocation by traversing a character trie instead of doing property lookup with a substring key. Complex implementation but eliminates ~700K string allocations for existing segments.
+- **Single flat `childIds` array**: Replace ~100K separate `childIds` arrays with one pre-allocated flat array + start/end indices. Eliminates ~100K array allocations.
 
-- **Make `initializeOpenVisibleCounts` non-recursive**: Convert the recursive descent to a linear backward pass (similar to how `computeSubtreeCounts` was linearized). Saves recursion overhead for ~700K nodes.
+- **Batch `Map` construction**: Use `new Map(entries)` in `ensureChildIdByNameId` for bulk construction.
 
-- **Single flat `childIds` array**: Instead of ~100K separate `childIds` arrays (one per directory), use a single pre-allocated flat array with start/end indices per directory. Eliminates ~100K array allocations and improves cache locality.
+- **Inline `internSegment` into presorted loop**: Avoid function call overhead for ~700K calls. The hot path (existing segment) is just one property access — could be inlined as a direct property read.
 
-- **Batch `Map` construction**: Use `new Map(entries)` for `childIdByNameId` in `ensureChildIdByNameId` to let V8 optimize bulk construction vs incremental `set()` calls.
+- **Convert `for...of` loops in other hot paths**: Already helped initializeOpenVisibleCounts significantly (-4.9% profile). Check other frequently called functions.
 
-- **Skip `visibleSubtreeCount` accumulation in backward pass**: Since state initialization always overwrites `visibleSubtreeCount`, the backward pass can skip accumulating it into parent nodes. Saves ~700K additions.
+- **Avoid `path.substring(0, segmentStart)` allocation in cache update**: Only allocate when directory changes, but for the first path in a new directory, the allocation is unavoidable.
