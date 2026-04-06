@@ -284,11 +284,8 @@ export class PathStoreBuilder {
           currentDepth = sharedDirectoryDepth;
 
           let segmentStart = unsharedSegmentStart;
-          for (let index = unsharedSegmentStart; index < endIndex; index++) {
-            if (path.charCodeAt(index) !== 47) {
-              continue;
-            }
-
+          let slashPos = path.indexOf('/', segmentStart);
+          while (slashPos >= 0 && slashPos < endIndex) {
             const parentId = dirStack[stackTop];
             if (parentId === undefined) {
               throw new Error(
@@ -305,7 +302,7 @@ export class PathStoreBuilder {
               kind: PATH_STORE_NODE_KIND_DIRECTORY,
               nameId: internSegment(
                 segmentTable,
-                path.slice(segmentStart, index)
+                path.slice(segmentStart, slashPos)
               ),
               parentId,
               pathCache: null,
@@ -315,7 +312,8 @@ export class PathStoreBuilder {
             });
             stackTop++;
             dirStack[stackTop] = nodeId;
-            segmentStart = index + 1;
+            segmentStart = slashPos + 1;
+            slashPos = path.indexOf('/', segmentStart);
           }
 
           if (hasTrailingSlash) {
