@@ -188,8 +188,13 @@ Correctness checks run through:
     slower build step, probably because the new segment strings are cheaper to
     parse up front but less friendly for later build-time interning/hash work.
     It is still a real full-metric win, but it is less attractive than the
-    earlier changes because the browser truth-check barely moved and p95 got
-    worse.
+    earlier changes because the browser truth-check moved less than the prepare
+    step and build remained slower.
+  - Validation rerun on unchanged code was stronger than the first sample:
+    - full metric: `138.742 ms` p50 / `159.340 ms` p95
+    - visible rows ready median: `230.9 ms`
+    - This confirmed the change is likely real despite the uneven prepare/build
+      tradeoff.
 - Baseline checks passed:
   - `bun run lint`
   - `cd packages/path-store && bun run tsc`
