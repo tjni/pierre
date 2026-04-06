@@ -102,9 +102,13 @@ export function compareSegmentSortKeys(
   return 0;
 }
 
-export function compareSegmentValues(left: string, right: string): number {
-  const leftKey = createSegmentSortKey(left);
-  const rightKey = createSegmentSortKey(right);
+function compareSegmentValuesWithSortKeyLookup(
+  left: string,
+  right: string,
+  getSortKey: (value: string) => SegmentSortKey
+): number {
+  const leftKey = getSortKey(left);
+  const rightKey = getSortKey(right);
   const comparison = compareSegmentSortKeys(leftKey, rightKey);
   if (comparison !== 0) {
     return comparison;
@@ -115,6 +119,14 @@ export function compareSegmentValues(left: string, right: string): number {
   }
 
   return left < right ? -1 : 1;
+}
+
+export function compareSegmentValues(left: string, right: string): number {
+  return compareSegmentValuesWithSortKeyLookup(
+    left,
+    right,
+    createSegmentSortKey
+  );
 }
 
 function getKindAtDepth(
@@ -170,6 +182,55 @@ export function comparePreparedPaths(
   right: PreparedPath
 ): number {
   return comparePreparedEntries(left, right);
+}
+
+export function comparePreparedPathsWithCachedSortKeys(
+  left: PreparedPath,
+  right: PreparedPath,
+  cache: Map<string, SegmentSortKey>
+): number {
+  const getCachedSortKey = (value: string): SegmentSortKey => {
+    const existingKey = cache.get(value);
+    if (existingKey != null) {
+      return existingKey;
+    }
+
+    const nextKey = createSegmentSortKey(value);
+    cache.set(value, nextKey);
+    return nextKey;
+  };
+  const sharedDepth = Math.min(left.segments.length, right.segments.length);
+
+  for (let depth = 0; depth < sharedDepth; depth++) {
+    const leftSegment = left.segments[depth];
+    const rightSegment = right.segments[depth];
+
+    if (leftSegment === rightSegment) {
+      continue;
+    }
+
+    const leftKind = getKindAtDepth(left, depth);
+    const rightKind = getKindAtDepth(right, depth);
+    if (leftKind !== rightKind) {
+      return leftKind === PATH_STORE_NODE_KIND_DIRECTORY ? -1 : 1;
+    }
+
+    return compareSegmentValuesWithSortKeyLookup(
+      leftSegment,
+      rightSegment,
+      getCachedSortKey
+    );
+  }
+
+  if (left.segments.length !== right.segments.length) {
+    return left.segments.length < right.segments.length ? -1 : 1;
+  }
+
+  if (left.isDirectory === right.isDirectory) {
+    return 0;
+  }
+
+  return left.isDirectory ? -1 : 1;
 }
 
 export function compareCompareEntries(

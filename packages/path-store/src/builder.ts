@@ -8,6 +8,7 @@ import type {
   PathStoreSnapshot,
   PreparedPath,
   ResolvedPathStoreOptions,
+  SegmentSortKey,
 } from './internal-types';
 import { PATH_STORE_NODE_FLAG_EXPLICIT } from './internal-types';
 import { PATH_STORE_NODE_FLAG_ROOT } from './internal-types';
@@ -28,7 +29,10 @@ import type {
 } from './public-types';
 import { internSegment } from './segments';
 import { createSegmentTable } from './segments';
-import { comparePreparedPaths } from './sort';
+import {
+  comparePreparedPaths,
+  comparePreparedPathsWithCachedSortKeys,
+} from './sort';
 
 function createCompareEntry(preparedPath: PreparedPath): PathStoreCompareEntry {
   return {
@@ -171,6 +175,7 @@ export class PathStoreBuilder {
   private readonly nodes: PathStoreNode[] = [createRootNode()];
   private readonly options: ResolvedPathStoreOptions;
   private readonly instrumentation: BenchmarkInstrumentation | null;
+  private readonly segmentSortKeyCache = new Map<string, SegmentSortKey>();
   private readonly segmentTable = createSegmentTable();
 
   public constructor(options: PathStoreOptions = {}) {
@@ -218,11 +223,18 @@ export class PathStoreBuilder {
 
   private appendPreparedPath(preparedPath: PreparedPath): void {
     if (this.lastPreparedPath != null) {
-      const orderComparison = compareWithSortOption(
-        this.lastPreparedPath,
-        preparedPath,
-        this.options.sort
-      );
+      const orderComparison =
+        this.options.sort === 'default'
+          ? comparePreparedPathsWithCachedSortKeys(
+              this.lastPreparedPath,
+              preparedPath,
+              this.segmentSortKeyCache
+            )
+          : compareWithSortOption(
+              this.lastPreparedPath,
+              preparedPath,
+              this.options.sort
+            );
       if (orderComparison > 0) {
         throw new Error(
           `Builder input must be sorted before appendPaths(): "${preparedPath.path}"`

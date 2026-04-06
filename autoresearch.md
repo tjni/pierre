@@ -185,8 +185,8 @@ Correctness checks run through:
     profiling should inspect `page.createStore`/builder phase deltas to confirm
     how much of the gain is builder-order validation overhead vs. broader sort
     key creation work.
-- Attempt 4 (candidate to keep): replace the remaining regex-based digit walk
-  in `splitIntoNaturalTokens()` with a manual char-code scanner.
+- Attempt 4 (candidate to keep): replace the remaining regex-based digit walk in
+  `splitIntoNaturalTokens()` with a manual char-code scanner.
   - Benchmark result: `141.605 ms` p50 / `146.730 ms` p95 on
     `equivalent-presorted-warm-first-render/linux-5x/30` (~71.8% faster than
     baseline, ~14.3% faster than Attempt 3).
@@ -197,6 +197,17 @@ Correctness checks run through:
     path, but the biggest gains are still Bun-specific. This is likely a valid
     benchmark win because the browser truth-check also moved in the right
     direction, just by a smaller amount.
+- Attempt 5 (candidate to keep): cache segment sort keys while validating the
+  monotonic order of prepared paths inside the builder.
+  - Benchmark result: `116.206 ms` p50 / `117.809 ms` p95 on
+    `equivalent-presorted-warm-first-render/linux-5x/30` (~76.8% faster than
+    baseline, ~17.9% faster than Attempt 4).
+  - Matching `profile:demo` truth-check improved more materially this time:
+    - visible rows ready median: `354.2 ms` → `331.1 ms`
+    - post-paint ready median: `355.7 ms` → `332.2 ms`
+  - Interpretation: repeated segment-token creation during builder order
+    validation was still a major constructor cost. Reusing cached sort keys in
+    that validation path helps both Bun and Chrome.
 - Early read-through notes:
   - The first-render target is overwhelmingly dominated by build time, not the
     visible-window read itself.
