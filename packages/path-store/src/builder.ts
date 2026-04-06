@@ -1,5 +1,8 @@
 import { appendChildReference, createDirectoryChildIndex } from './child-index';
-import { rebuildDirectoryChildAggregates } from './child-index';
+import {
+  rebuildDirectoryChildAggregates,
+  rebuildVisibleChildChunks,
+} from './child-index';
 import type {
   DirectoryChildIndex,
   InternalPreparedInput,
@@ -394,16 +397,16 @@ export class PathStoreBuilder {
       withBenchmarkPhase(
         this.instrumentation,
         'store.builder.buildDirectoryIndexes',
-        () => this.buildDirectoryIndexes()
+        () => this.buildPresortedFinish()
       );
       this.hasDeferredDirectoryIndexes = false;
+    } else {
+      withBenchmarkPhase(
+        this.instrumentation,
+        'store.builder.computeSubtreeCounts',
+        () => this.computeSubtreeCounts(0)
+      );
     }
-
-    withBenchmarkPhase(
-      this.instrumentation,
-      'store.builder.computeSubtreeCounts',
-      () => this.computeSubtreeCounts(0)
-    );
     return {
       directories: this.directories,
       nodes: this.nodes,
@@ -685,9 +688,68 @@ export class PathStoreBuilder {
     );
   }
 
-  // Builds full directory-child indexes for all nodes created during the
-  // presorted fast path, which defers index creation to avoid per-child Map
-  // operations during the hot ingest loop.
+  // Builds directory-child indexes from the flat node list created by the
+  // presorted fast path, then computes subtree counts bottom-up and rebuilds
+  // directory child aggregates — all in linear passes instead of recursive
+  // tree descent.
+  private buildPresortedFinish(): void {
+    const nodes = this.nodes;
+    const directories = this.directories;
+
+    // Forward pass: create directory indexes and register children.  Node IDs
+    // are assigned sequentially during presorted construction, so iterating in
+    // ID order preserves the canonical sorted child order.
+    for (let nodeId = 1; nodeId < nodes.length; nodeId++) {
+      const node = nodes[nodeId];
+      if (node == null) {
+        continue;
+      }
+
+      if (node.kind === PATH_STORE_NODE_KIND_DIRECTORY) {
+        directories.set(nodeId, createDirectoryChildIndex());
+      }
+
+      const parentIndex = directories.get(node.parentId);
+      if (parentIndex != null) {
+        parentIndex.childIdByNameId.set(node.nameId, nodeId);
+        parentIndex.childPositionById.set(nodeId, parentIndex.childIds.length);
+        parentIndex.childIds.push(nodeId);
+      }
+    }
+
+    // Backward pass: accumulate subtree counts and directory child aggregates
+    // bottom-up.  Parents always have lower IDs than their children, so
+    // iterating backward ensures each child's counts are finalized before its
+    // parent reads them.
+    for (let nodeId = nodes.length - 1; nodeId >= 1; nodeId--) {
+      const node = nodes[nodeId];
+      if (node == null) {
+        continue;
+      }
+
+      const parentNode = nodes[node.parentId];
+      if (parentNode != null) {
+        parentNode.subtreeNodeCount += node.subtreeNodeCount;
+        parentNode.visibleSubtreeCount += node.visibleSubtreeCount;
+      }
+
+      const parentIndex = directories.get(node.parentId);
+      if (parentIndex != null) {
+        parentIndex.totalChildSubtreeNodeCount += node.subtreeNodeCount;
+        parentIndex.totalChildVisibleSubtreeCount += node.visibleSubtreeCount;
+      }
+    }
+
+    // Final pass: rebuild visible-child chunk summaries for directories with
+    // many children (needed for fast child-index lookups during projection).
+    for (const directoryIndex of directories.values()) {
+      rebuildVisibleChildChunks(nodes, directoryIndex);
+    }
+  }
+
+  // Builds directory-child indexes in the same layout as buildPresortedFinish
+  // but without fused subtree-count computation (used when flushing deferred
+  // indexes before switching to the non-presorted append path).
   private buildDirectoryIndexes(): void {
     const nodes = this.nodes;
 
@@ -697,15 +759,10 @@ export class PathStoreBuilder {
         continue;
       }
 
-      // Create a directory-child index for every directory that does not
-      // already have one (root is set up in the constructor).
       if (node.kind === PATH_STORE_NODE_KIND_DIRECTORY) {
         this.directories.set(nodeId, createDirectoryChildIndex());
       }
 
-      // Register this node as a child of its parent.  Node IDs are assigned
-      // sequentially during presorted construction, so iterating in ID order
-      // preserves the canonical sorted child order.
       const parentIndex = this.directories.get(node.parentId);
       if (parentIndex != null) {
         parentIndex.childIdByNameId.set(node.nameId, nodeId);
