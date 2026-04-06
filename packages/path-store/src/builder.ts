@@ -192,13 +192,16 @@ export class PathStoreBuilder {
     );
   }
 
-  public appendPreparedPaths(preparedPaths: readonly PreparedPath[]): this {
+  public appendPreparedPaths(
+    preparedPaths: readonly PreparedPath[],
+    validateOrder = true
+  ): this {
     withBenchmarkPhase(
       this.instrumentation,
       'store.builder.appendPreparedPaths',
       () => {
         for (const preparedPath of preparedPaths) {
-          this.appendPreparedPath(preparedPath);
+          this.appendPreparedPath(preparedPath, validateOrder);
         }
       }
     );
@@ -221,31 +224,33 @@ export class PathStoreBuilder {
     };
   }
 
-  private appendPreparedPath(preparedPath: PreparedPath): void {
+  private appendPreparedPath(
+    preparedPath: PreparedPath,
+    validateOrder: boolean
+  ): void {
     if (this.lastPreparedPath != null) {
-      const orderComparison =
-        this.options.sort === 'default'
-          ? comparePreparedPathsWithCachedSortKeys(
-              this.lastPreparedPath,
-              preparedPath,
-              this.segmentSortKeyCache
-            )
-          : compareWithSortOption(
-              this.lastPreparedPath,
-              preparedPath,
-              this.options.sort
-            );
-      if (orderComparison > 0) {
-        throw new Error(
-          `Builder input must be sorted before appendPaths(): "${preparedPath.path}"`
-        );
+      if (preparedPath.path === this.lastPreparedPath.path) {
+        throw new Error(`Duplicate path: "${preparedPath.path}"`);
       }
 
-      if (
-        orderComparison === 0 &&
-        preparedPath.path === this.lastPreparedPath.path
-      ) {
-        throw new Error(`Duplicate path: "${preparedPath.path}"`);
+      if (validateOrder) {
+        const orderComparison =
+          this.options.sort === 'default'
+            ? comparePreparedPathsWithCachedSortKeys(
+                this.lastPreparedPath,
+                preparedPath,
+                this.segmentSortKeyCache
+              )
+            : compareWithSortOption(
+                this.lastPreparedPath,
+                preparedPath,
+                this.options.sort
+              );
+        if (orderComparison > 0) {
+          throw new Error(
+            `Builder input must be sorted before appendPaths(): "${preparedPath.path}"`
+          );
+        }
       }
     }
 

@@ -156,8 +156,11 @@ export class PathStore {
       () => new PathStoreBuilder(options)
     );
     if (options.preparedInput != null) {
+      // preparedInput is the caller's explicit fast path, so skip the builder's
+      // redundant monotonic-order validation and only keep duplicate checks.
       builder.appendPreparedPaths(
-        getPreparedInputEntries(options.preparedInput)
+        getPreparedInputEntries(options.preparedInput),
+        false
       );
     } else {
       const inputPaths = options.paths ?? [];

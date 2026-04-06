@@ -208,6 +208,19 @@ Correctness checks run through:
   - Interpretation: repeated segment-token creation during builder order
     validation was still a major constructor cost. Reusing cached sort keys in
     that validation path helps both Bun and Chrome.
+- Attempt 6 (candidate to keep): trust `preparedInput` enough to skip the
+  builder's redundant monotonic-order validation, while still rejecting exact
+  duplicate paths.
+  - Benchmark result: `73.756 ms` p50 / `74.630 ms` p95 on
+    `equivalent-presorted-warm-first-render/linux-5x/30` (~85.3% faster than
+    baseline, ~36.5% faster than Attempt 5).
+  - Matching `profile:demo` truth-check improved substantially too:
+    - visible rows ready median: `331.1 ms` → `256.9 ms`
+    - post-paint ready median: `332.2 ms` → `257.9 ms`
+  - Interpretation: for the explicit `preparedInput` fast path, re-validating
+    canonical order inside the builder was a major chunk of startup cost. This
+    is a real workload win, not a benchmark trick, because the browser profile
+    moved strongly in the same direction.
 - Early read-through notes:
   - The first-render target is overwhelmingly dominated by build time, not the
     visible-window read itself.
