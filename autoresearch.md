@@ -195,6 +195,29 @@ Correctness checks run through:
     - visible rows ready median: `230.9 ms`
     - This confirmed the change is likely real despite the uneven prepare/build
       tradeoff.
+- Attempt 9 (reverted by `discard`): try a hybrid parser that keeps `split('/')`
+  but avoids the extra pre-split trailing-slash slice by splitting the original
+  string and popping the trailing empty segment.
+  - Result: `150.369 ms` p50 / `155.985 ms` p95 on the full metric, plus
+    `profile:demo` visible rows ready median `237.0 ms`.
+  - Conclusion: this recovered the earlier faster build shape but gave back too
+    much prepare time, so it was worse than the current best manual parser.
+- Attempt 10 (candidate to keep): keep the manual parser, but add a trusted
+  builder fast path that skips per-child collision lookups when ingesting
+  already-prepared canonical input.
+  - Full-metric benchmark result: `137.445 ms` p50 / `153.935 ms` p95 on
+    `equivalent-presorted-first-render/linux-5x/30` (~7.8% faster than the
+    corrected full baseline, ~0.9% faster than the current best validation
+    sample).
+  - Component movement:
+    - `prepare-presorted-input` stayed effectively flat: `35.950 ms` → `35.825 ms`
+    - `build` improved slightly: `102.791 ms` → `101.619 ms`
+  - Matching `profile:demo` was basically flat within noise:
+    - visible rows ready median: `230.9 ms` → `232.8 ms`
+    - visible rows ready p95: `235.42 ms` → `233.08 ms`
+  - Interpretation: this likely trims a little more Bun-side builder overhead,
+    but the browser truth-check is close enough to treat it as noise-level on
+    the Chrome path.
 - Baseline checks passed:
   - `bun run lint`
   - `cd packages/path-store && bun run tsc`

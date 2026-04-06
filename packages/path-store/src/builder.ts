@@ -285,10 +285,15 @@ export class PathStoreBuilder {
         );
       }
 
-      const childId = this.getOrCreateDirectoryChild(
-        parentId,
-        preparedPath.segments[segmentIndex]
-      );
+      const childId = validateOrder
+        ? this.getOrCreateDirectoryChild(
+            parentId,
+            preparedPath.segments[segmentIndex]
+          )
+        : this.createDirectoryChild(
+            parentId,
+            preparedPath.segments[segmentIndex]
+          );
       this.directoryStack.push(childId);
     }
 
@@ -312,7 +317,15 @@ export class PathStoreBuilder {
       );
     }
 
-    this.createFileChild(parentId, preparedPath.basename, preparedPath.path);
+    if (validateOrder) {
+      this.createFileChild(parentId, preparedPath.basename, preparedPath.path);
+    } else {
+      this.createFileChildUnchecked(
+        parentId,
+        preparedPath.basename,
+        preparedPath.path
+      );
+    }
     this.lastPreparedPath = preparedPath;
   }
 
@@ -352,6 +365,39 @@ export class PathStoreBuilder {
     return nodeId;
   }
 
+  // Trusted prepared input is already canonical and unique, so the builder can
+  // skip per-child collision lookups and just append the known-new suffix.
+  private createFileChildUnchecked(
+    parentId: NodeId,
+    basename: string,
+    path: string
+  ): NodeId {
+    const nameId = internSegment(this.segmentTable, basename);
+    const parentIndex = this.getDirectoryIndex(parentId);
+    const parentNode = this.nodes[parentId];
+    if (parentNode === undefined) {
+      throw new Error(`Unknown parent node ID: ${String(parentId)}`);
+    }
+
+    const nodeId = this.nodes.length;
+    this.nodes.push({
+      depth: parentNode.depth + 1,
+      flags: 0,
+      id: nodeId,
+      kind: PATH_STORE_NODE_KIND_FILE,
+      nameId,
+      parentId,
+      pathCache: path,
+      pathCacheVersion: 0,
+      subtreeNodeCount: 1,
+      visibleSubtreeCount: 1,
+    });
+
+    parentIndex.childIdByNameId.set(nameId, nodeId);
+    appendChildReference(parentIndex, nodeId);
+    return nodeId;
+  }
+
   private getOrCreateDirectoryChild(parentId: NodeId, segment: string): NodeId {
     const nameId = internSegment(this.segmentTable, segment);
     const parentIndex = this.getDirectoryIndex(parentId);
@@ -367,6 +413,37 @@ export class PathStoreBuilder {
       return existingChildId;
     }
 
+    const parentNode = this.nodes[parentId];
+    if (parentNode === undefined) {
+      throw new Error(`Unknown parent node ID: ${String(parentId)}`);
+    }
+
+    const nodeId = this.nodes.length;
+    this.nodes.push({
+      depth: parentNode.depth + 1,
+      flags: 0,
+      id: nodeId,
+      kind: PATH_STORE_NODE_KIND_DIRECTORY,
+      nameId,
+      parentId,
+      pathCache: null,
+      pathCacheVersion: 0,
+      subtreeNodeCount: 1,
+      visibleSubtreeCount: 1,
+    });
+
+    parentIndex.childIdByNameId.set(nameId, nodeId);
+    appendChildReference(parentIndex, nodeId);
+    this.directories.set(nodeId, createDirectoryChildIndex());
+    return nodeId;
+  }
+
+  // Sorted unique prepared input only introduces brand-new directories beyond
+  // the shared prefix with the previous path, so no existing-child lookup is
+  // required in this fast path.
+  private createDirectoryChild(parentId: NodeId, segment: string): NodeId {
+    const nameId = internSegment(this.segmentTable, segment);
+    const parentIndex = this.getDirectoryIndex(parentId);
     const parentNode = this.nodes[parentId];
     if (parentNode === undefined) {
       throw new Error(`Unknown parent node ID: ${String(parentId)}`);
