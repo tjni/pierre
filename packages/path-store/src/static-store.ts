@@ -118,7 +118,10 @@ function createStaticSnapshot(
     options: sourceSnapshot.options,
     rootId: sourceSnapshot.rootId,
     segmentTable: {
-      idByValue: new Map(),
+      idByValue: Object.assign(
+        Object.create(null),
+        sourceSnapshot.segmentTable.idByValue
+      ) as typeof sourceSnapshot.segmentTable.idByValue,
       sortKeyById: [...sourceSnapshot.segmentTable.sortKeyById],
       valueById: [...sourceSnapshot.segmentTable.valueById],
     },

@@ -339,7 +339,7 @@ export function findNodeIdBySegments(
   let currentNodeId = state.snapshot.rootId;
 
   for (const segment of segments) {
-    const segmentId = state.snapshot.segmentTable.idByValue.get(segment);
+    const segmentId = state.snapshot.segmentTable.idByValue[segment];
     if (segmentId === undefined) {
       return null;
     }

@@ -24,7 +24,7 @@ export interface SegmentSortKey {
 }
 
 export interface SegmentTable {
-  idByValue: Map<string, SegmentId>;
+  idByValue: Record<string, SegmentId | undefined>;
   valueById: string[];
   sortKeyById: Array<SegmentSortKey | undefined>;
 }

@@ -210,7 +210,8 @@ Correctness checks run through:
     corrected full baseline, ~0.9% faster than the current best validation
     sample).
   - Component movement:
-    - `prepare-presorted-input` stayed effectively flat: `35.950 ms` → `35.825 ms`
+    - `prepare-presorted-input` stayed effectively flat: `35.950 ms` →
+      `35.825 ms`
     - `build` improved slightly: `102.791 ms` → `101.619 ms`
   - Matching `profile:demo` was basically flat within noise:
     - visible rows ready median: `230.9 ms` → `232.8 ms`
@@ -218,6 +219,38 @@ Correctness checks run through:
   - Interpretation: this likely trims a little more Bun-side builder overhead,
     but the browser truth-check is close enough to treat it as noise-level on
     the Chrome path.
+- Attempt 12 (reverted by `discard`): defer `childIdByNameId` and
+  `childPositionById` map population until builder `finish()` for the trusted
+  prepared-input fast path.
+  - Result: `141.515 ms` p50 / `162.820 ms` p95 on the full metric.
+  - It kept prepare very fast and even nudged the browser profile a bit lower,
+    but Bun build got slower enough that the primary metric lost to the current
+    best.
+  - Conclusion: rebuilding the directory lookup maps in a second pass is not
+    worth it. The per-child `Map.set()` cost is cheaper than the deferred full
+    rebuild for this workload.
+- Attempt 13 (candidate to keep): replace the segment table's string→id `Map`
+  with a null-prototype object for direct property lookup.
+  - Result: `127.239 ms` p50 / `144.315 ms` p95 on the full metric.
+  - Component movement:
+    - `prepare-presorted-input` was essentially flat: `35.825 ms` → `36.203 ms`
+    - `build` improved materially: `101.619 ms` → `91.034 ms`
+  - Matching `profile:demo` truth-check stayed in-family:
+    - visible rows ready median: `232.8 ms` → `230.9 ms`
+    - visible rows ready p95: `233.08 ms` → `235.62 ms` (roughly flat/noisy)
+  - Interpretation: the main win is cheaper segment interning / lookup during
+    build. Chrome benefits less than Bun, but the full metric gain is large
+    enough to keep.
+- Attempt 11 (reverted by `discard`): precompute each prepared path's shared
+  directory depth with the previous entry during prepare, then let the builder
+  reuse that metadata instead of recomputing shared-prefix depth.
+  - Result: `142.327 ms` p50 / `159.182 ms` p95 on the full metric.
+  - It improved build (`101.619 ms` → `78.714 ms`) but gave back too much on
+    prepare (`35.825 ms` → `63.612 ms`), so it lost to the current best full
+    metric.
+  - Conclusion: shifting shared-prefix work into prepare is not worthwhile for
+    this combined metric; the current best favors the very fast manual prepare
+    path even if build stays somewhat slower.
 - Baseline checks passed:
   - `bun run lint`
   - `cd packages/path-store && bun run tsc`
