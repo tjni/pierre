@@ -1,4 +1,4 @@
-import type { ElementContent, Element as HASTElement } from 'hast';
+import type { ElementContent, Element as HASTElement, Properties } from 'hast';
 import { toHtml } from 'hast-util-to-html';
 
 import {
@@ -37,6 +37,11 @@ import { createPreElement } from '../utils/createPreElement';
 import { getFiletypeFromFileName } from '../utils/getFiletypeFromFileName';
 import { getHighlighterOptions } from '../utils/getHighlighterOptions';
 import { getLineAnnotationName } from '../utils/getLineAnnotationName';
+import {
+  getLineDecorationContentProperties,
+  getLineDecorationGutterProperties,
+  mergeHastProperties,
+} from '../utils/getLineDecorationProperties';
 import { getThemes } from '../utils/getThemes';
 import {
   createGutterGap,
@@ -471,11 +476,22 @@ export class FileRenderer<LAnnotation = undefined, LDecoration = undefined> {
         }
 
         if (line != null) {
+          const lineDecorations = this.getLineDecorations(lineNumber);
           // Add gutter line number
           gutter.children.push(
-            createGutterItem('context', lineNumber, `${lineIndex}`)
+            createGutterItem(
+              'context',
+              lineNumber,
+              `${lineIndex}`,
+              getLineDecorationGutterProperties(lineDecorations)
+            )
           );
-          contentArray.push(line);
+          contentArray.push(
+            withContentProperties(
+              line,
+              getLineDecorationContentProperties(lineDecorations)
+            )
+          );
           rowCount++;
 
           // Check annotations using ACTUAL line number from file
@@ -651,4 +667,18 @@ export class FileRenderer<LAnnotation = undefined, LDecoration = undefined> {
 
 function isFileMassive(lineCount: number, tokenizeMaxLength: number): boolean {
   return lineCount > tokenizeMaxLength;
+}
+
+function withContentProperties(
+  lineNode: ElementContent,
+  contentProperties: Properties | undefined
+): ElementContent {
+  if (lineNode.type !== 'element' || contentProperties == null) {
+    return lineNode;
+  }
+  return {
+    ...lineNode,
+    properties:
+      mergeHastProperties(lineNode.properties, contentProperties) ?? {},
+  };
 }
