@@ -39,6 +39,7 @@ import { getHighlighterOptions } from '../utils/getHighlighterOptions';
 import { getLineAnnotationName } from '../utils/getLineAnnotationName';
 import {
   getLineDecorationContentProperties,
+  getLineDecorationGutterChildren,
   getLineDecorationGutterProperties,
   mergeHastProperties,
 } from '../utils/getLineDecorationProperties';
@@ -483,7 +484,8 @@ export class FileRenderer<LAnnotation = undefined, LDecoration = undefined> {
               'context',
               lineNumber,
               `${lineIndex}`,
-              getLineDecorationGutterProperties(lineDecorations)
+              getLineDecorationGutterProperties(lineDecorations),
+              getLineDecorationGutterChildren(lineDecorations)
             )
           );
           contentArray.push(
