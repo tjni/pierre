@@ -163,6 +163,7 @@ function getPathStoreTreesRowAriaLabel(row: PathStoreTreesVisibleRow): string {
   return flattenedSegments.map((segment) => segment.name).join(' / ');
 }
 
+const SCROLL_HOVER_SUPPRESSION_DELAY = 100;
 const TOUCH_LONG_PRESS_DELAY = 400;
 const TOUCH_LONG_PRESS_MOVE_THRESHOLD = 10;
 const DRAG_EDGE_SCROLL_THRESHOLD = 40;
@@ -959,6 +960,7 @@ export function PathStoreTreesView({
   const contextMenuAnchorRef = useRef<HTMLDivElement>(null);
   const contextMenuTriggerRef = useRef<HTMLButtonElement>(null);
   const isScrollingRef = useRef(false);
+  const listRef = useRef<HTMLDivElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1851,14 +1853,48 @@ export function PathStoreTreesView({
         setRange(nextRange);
       }
     };
+    let scheduledUpdateHandle: number | null = null;
+
+    // Coalesce scroll-driven range updates to one paint so wheel bursts do not
+    // queue repeated rerenders before the browser can present the next frame.
+    const scheduleUpdate = (): void => {
+      if (scheduledUpdateHandle != null) {
+        return;
+      }
+
+      const flushUpdate = (): void => {
+        scheduledUpdateHandle = null;
+        update();
+      };
+
+      scheduledUpdateHandle =
+        typeof window.requestAnimationFrame === 'function'
+          ? window.requestAnimationFrame(() => {
+              flushUpdate();
+            })
+          : window.setTimeout(flushUpdate, 0);
+    };
+
+    const cancelScheduledUpdate = (): void => {
+      if (scheduledUpdateHandle == null) {
+        return;
+      }
+
+      if (typeof window.cancelAnimationFrame === 'function') {
+        window.cancelAnimationFrame(scheduledUpdateHandle);
+      } else {
+        window.clearTimeout(scheduledUpdateHandle);
+      }
+      scheduledUpdateHandle = null;
+    };
 
     updateViewportRef.current = update;
     const unsubscribe = controller.subscribe(() => {
       setControllerRevision((revision) => revision + 1);
       update();
     });
-    const onScroll = (): void => {
-      update();
+    const listElement = listRef.current;
+    const beginScrollSuppression = (): void => {
       if (contextMenuStateRef.current != null) {
         closeContextMenuRef.current();
       }
@@ -1866,20 +1902,37 @@ export function PathStoreTreesView({
       setContextHoverPath((previousPath) =>
         previousPath == null ? previousPath : null
       );
+
+      if (listElement != null) {
+        listElement.dataset.isScrolling ??= '';
+      }
       if (scrollTimer != null) {
         clearTimeout(scrollTimer);
       }
+      // Keep suppression active across short wheel gaps so hover styles do not
+      // flicker back on between consecutive input bursts.
       scrollTimer = setTimeout(() => {
+        if (listElement != null) {
+          delete listElement.dataset.isScrolling;
+        }
         isScrollingRef.current = false;
         scrollTimer = null;
-      }, 50);
+      }, SCROLL_HOVER_SUPPRESSION_DELAY);
+    };
+    const onWheel = (): void => {
+      beginScrollSuppression();
+    };
+    const onScroll = (): void => {
+      scheduleUpdate();
+      beginScrollSuppression();
     };
 
+    scrollElement.addEventListener('wheel', onWheel, { passive: true });
     scrollElement.addEventListener('scroll', onScroll, { passive: true });
     const resizeObserver =
       typeof ResizeObserver !== 'undefined'
         ? new ResizeObserver(() => {
-            update();
+            scheduleUpdate();
           })
         : null;
     resizeObserver?.observe(scrollElement);
@@ -1888,9 +1941,14 @@ export function PathStoreTreesView({
     return () => {
       updateViewportRef.current = () => {};
       unsubscribe();
+      scrollElement.removeEventListener('wheel', onWheel);
       scrollElement.removeEventListener('scroll', onScroll);
+      cancelScheduledUpdate();
       if (scrollTimer != null) {
         clearTimeout(scrollTimer);
+      }
+      if (listElement != null) {
+        delete listElement.dataset.isScrolling;
       }
       isScrollingRef.current = false;
       resizeObserver?.disconnect();
@@ -2407,6 +2465,7 @@ export function PathStoreTreesView({
       ) : null}
       <div ref={scrollRef} data-file-tree-virtualized-scroll="true">
         <div
+          ref={listRef}
           data-file-tree-virtualized-list="true"
           style={{ height: `${stickyLayout.totalHeight}px` }}
         >

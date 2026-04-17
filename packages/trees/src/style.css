@@ -578,12 +578,6 @@
     gap: var(--trees-item-row-gap);
     border-radius: var(--trees-border-radius);
 
-    &:hover,
-    &[data-item-context-hover='true'] {
-      background-color: var(--trees-bg-muted);
-      --truncate-marker-background-color: var(--trees-bg-muted);
-    }
-
     &[data-item-focused='true'],
     &:focus-visible {
       z-index: 2;
@@ -621,6 +615,14 @@
     }
   }
 
+  [data-file-tree-virtualized-list='true']:not([data-is-scrolling])
+    [data-type='item']:hover,
+  [data-file-tree-virtualized-list='true']:not([data-is-scrolling])
+    [data-type='item'][data-item-context-hover='true'] {
+    background-color: var(--trees-bg-muted);
+    --truncate-marker-background-color: var(--trees-bg-muted);
+  }
+
   [data-item-selected='true']:has(+ [data-item-selected='true']) {
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
@@ -630,16 +632,23 @@
     border-top-left-radius: 0;
     border-top-right-radius: 0;
   }
-
   /* Flattened Directory Parts */
   [data-item-flattened-subitems] {
     display: inline-flex;
     align-items: center;
     gap: 2px;
   }
-  [data-item-flattened-subitem]:hover,
+  [data-file-tree-virtualized-list='true']:not([data-is-scrolling])
+    [data-item-flattened-subitem]:hover,
   [data-item-flattened-subitem-drag-target='true'] {
     text-decoration: underline;
+  }
+
+  [data-file-tree-virtualized-list='true'][data-is-scrolling]
+    [data-type='item'],
+  [data-file-tree-virtualized-list='true'][data-is-scrolling]
+    [data-item-flattened-subitem] {
+    pointer-events: none;
   }
 
   /* Icon for each item */
@@ -900,7 +909,6 @@
     height: 100%;
     margin-right: calc(var(--trees-level-gap) - 1px);
     opacity: 0;
-    transition: opacity 150ms ease;
 
     & + & {
       margin-left: calc(
@@ -909,10 +917,16 @@
     }
   }
 
-  :host(:hover) [data-item-section='spacing-item'] {
+  :host(:hover)
+    [data-file-tree-virtualized-list='true']:not([data-is-scrolling])
+    [data-item-section='spacing-item'] {
     opacity: 0.75;
   }
 
+  [data-file-tree-virtualized-list='true'][data-is-scrolling]
+    [data-item-section='spacing-item'] {
+    opacity: 0;
+  }
   /* Git status indicator */
 
   /* This is a folder that contains a git change */
@@ -1044,7 +1058,6 @@
     margin: var(--trees-focus-ring-width);
     height: calc(var(--trees-row-height) - var(--trees-focus-ring-width) * 2);
     border-width: 0;
-    transition: color 120ms ease;
 
     display: flex;
   }
@@ -1249,6 +1262,13 @@
         (var(--truncate-internal-fade-marker-width) * 2)
     );
     margin: var(--truncate-internal-fade-marker-width) 0;
+  }
+
+  [data-file-tree-virtualized-list='true'][data-is-scrolling]
+    [data-truncate-marker],
+  [data-file-tree-virtualized-list='true'][data-is-scrolling]
+    [data-truncate-fade] {
+    display: none;
   }
 
   [data-truncate-group-container='middle'] {
