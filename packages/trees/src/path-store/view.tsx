@@ -959,7 +959,6 @@ export function PathStoreTreesView({
   const contextMenuAnchorRef = useRef<HTMLDivElement>(null);
   const contextMenuTriggerRef = useRef<HTMLButtonElement>(null);
   const isScrollingRef = useRef(false);
-  const listRef = useRef<HTMLDivElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1007,20 +1006,20 @@ export function PathStoreTreesView({
   } | null>(null);
   const contextMenuStateRef = useRef(contextMenuState);
   contextMenuStateRef.current = contextMenuState;
-  const [itemCount, setItemCount] = useState(() =>
-    controller.getVisibleCount()
-  );
+  const initialItemCount = controller.getVisibleCount();
+  const initialRange = computeWindowRange({
+    itemCount: initialItemCount,
+    itemHeight,
+    overscan,
+    scrollTop: 0,
+    viewportHeight,
+  });
+  const [itemCount, setItemCount] = useState(() => initialItemCount);
   const [resolvedViewportHeight, setResolvedViewportHeight] =
     useState<number>(viewportHeight);
-  const [range, setRange] = useState(() =>
-    computeWindowRange({
-      itemCount: controller.getVisibleCount(),
-      itemHeight,
-      overscan,
-      scrollTop: 0,
-      viewportHeight,
-    })
-  );
+  const [range, setRange] = useState(() => initialRange);
+  const rangeRef = useRef(range);
+  rangeRef.current = range;
   const contextMenuEnabled =
     composition?.contextMenu?.enabled === true ||
     composition?.contextMenu?.render != null ||
@@ -1809,7 +1808,6 @@ export function PathStoreTreesView({
   useLayoutEffect(() => {
     let scrollTimer: ReturnType<typeof setTimeout> | null = null;
     const scrollElement = scrollRef.current;
-    const listElement = listRef.current;
     if (scrollElement == null) {
       return;
     }
@@ -1838,21 +1836,20 @@ export function PathStoreTreesView({
           ? previousHeight
           : nextViewportHeight
       );
-      setRange((previousRange) => {
-        const nextRange = computeWindowRange(
-          {
-            itemCount: nextItemCount,
-            itemHeight,
-            overscan,
-            scrollTop,
-            viewportHeight: nextViewportHeight,
-          },
-          previousRange
-        );
-        return rangesEqual(previousRange, nextRange)
-          ? previousRange
-          : nextRange;
-      });
+      const nextRange = computeWindowRange(
+        {
+          itemCount: nextItemCount,
+          itemHeight,
+          overscan,
+          scrollTop,
+          viewportHeight: nextViewportHeight,
+        },
+        rangeRef.current
+      );
+      if (!rangesEqual(rangeRef.current, nextRange)) {
+        rangeRef.current = nextRange;
+        setRange(nextRange);
+      }
     };
 
     updateViewportRef.current = update;
@@ -1869,20 +1866,10 @@ export function PathStoreTreesView({
       setContextHoverPath((previousPath) =>
         previousPath == null ? previousPath : null
       );
-
-      // Mark the list as scrolling to suppress hover styles on items.
-      // Applied to the list (inside the scroll container) so the container
-      // itself still receives scroll events.
-      if (listElement != null) {
-        listElement.dataset.isScrolling ??= '';
-      }
       if (scrollTimer != null) {
         clearTimeout(scrollTimer);
       }
       scrollTimer = setTimeout(() => {
-        if (listElement != null) {
-          delete listElement.dataset.isScrolling;
-        }
         isScrollingRef.current = false;
         scrollTimer = null;
       }, 50);
@@ -1904,9 +1891,6 @@ export function PathStoreTreesView({
       scrollElement.removeEventListener('scroll', onScroll);
       if (scrollTimer != null) {
         clearTimeout(scrollTimer);
-      }
-      if (listElement != null) {
-        delete listElement.dataset.isScrolling;
       }
       isScrollingRef.current = false;
       resizeObserver?.disconnect();
@@ -2423,7 +2407,6 @@ export function PathStoreTreesView({
       ) : null}
       <div ref={scrollRef} data-file-tree-virtualized-scroll="true">
         <div
-          ref={listRef}
           data-file-tree-virtualized-list="true"
           style={{ height: `${stickyLayout.totalHeight}px` }}
         >

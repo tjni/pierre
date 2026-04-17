@@ -497,10 +497,6 @@
     min-height: 100%;
     width: 100%;
     overflow-anchor: none;
-
-    &[data-is-scrolling] {
-      pointer-events: none;
-    }
   }
 
   [data-file-tree-virtualized-sticky-offset='true'] {
