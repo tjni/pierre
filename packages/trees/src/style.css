@@ -490,6 +490,13 @@
     overflow-y: auto;
     flex: 1 1 0;
     min-height: 0;
+    /* NOTE(amadeus): There's a chance in many cases a user could use strict
+     * here, however not trying to assume, therefore `content` felt like the safest
+     * bet */
+    contain: content;
+    /* NOTE(amadeus): will-change _may_ help with heavy scroll state, but may
+     * also not be worth it. */
+    will-change: scroll-position;
   }
 
   [data-file-tree-virtualized-list='true'] {
@@ -500,7 +507,7 @@
   }
 
   [data-file-tree-virtualized-sticky-offset='true'] {
-    contain: layout size;
+    contain: strict;
   }
 
   [data-file-tree-virtualized-sticky='true'] {
@@ -509,6 +516,13 @@
     display: flex;
     flex-direction: column;
     isolation: isolate;
+    /* NOTE(amadeus): Strict _may_ help hear with the heavey dom thrash this
+     * component will have */
+    contain: strict;
+    /* NOTE(amadeus): will-change _may_ help with the noisy virtualized state */
+    will-change: contents;
+    /* NOTE(amadeus): background color here _may_ help with compositing */
+    background-color: var(--trees-bg);
   }
 
   [data-file-tree-search-container] {
