@@ -10,17 +10,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ExampleCard } from '../_components/ExampleCard';
 import { StateLog, useStateLog } from '../_components/StateLog';
-import { AOSP_PREVIEW_PATHS, AOSP_TOTAL_PATH_COUNT } from '../_lib/aospPreview';
 import { createPresortedPreparedInput } from '../_lib/createPresortedPreparedInput';
-import { fetchUpgradePayload } from '../_lib/fetchUpgradePayload';
-import {
-  AOSP_UPGRADE_DATA_URL,
-  FILE_TREE_PROOF_VIEWPORT_HEIGHT,
-} from '../_lib/workloadMeta';
+import { FILE_TREE_PROOF_VIEWPORT_HEIGHT } from '../_lib/workloadMeta';
 import { ImperativeFileTreeMount } from './ImperativeFileTreeMount';
 
-const PREVIEW_FOCUS_PATH = 'art/artd/artd.cc';
-const BULK_PREPARED_INPUT = createPresortedPreparedInput(AOSP_PREVIEW_PATHS);
+const PREVIEW_EXPAND_PATH = 'linux-1/' as const;
+const PREVIEW_FOCUS_PATH = 'linux-1/arch/alpha/boot/tools/mkbb.c' as const;
 const BULK_CHUNK_SIZE = 40_000;
 
 async function* createBulkChunks(
@@ -49,13 +44,23 @@ function getDirectoryHandle(
   return item as FileTreeDirectoryHandle;
 }
 
+interface BulkIngestDemoClientProps {
+  mountId: string;
+  payloadHtml: string;
+  previewPaths: readonly string[];
+  totalPathCount: number;
+  workloadLabel: string;
+  workloadName: string;
+}
+
 export function BulkIngestDemoClient({
   mountId,
   payloadHtml,
-}: {
-  mountId: string;
-  payloadHtml: string;
-}) {
+  previewPaths,
+  totalPathCount,
+  workloadLabel,
+  workloadName,
+}: BulkIngestDemoClientProps) {
   const { addLog, log } = useStateLog();
   const treeRef = useRef<FileTree | null>(null);
   const bulkUnsubscribeRef = useRef<(() => void) | null>(null);
@@ -63,31 +68,38 @@ export function BulkIngestDemoClient({
   const [, setBulkInfoRevision] = useState(0);
   const [focusedPath, setFocusedPath] = useState<string | null>(null);
   const [selectedPaths, setSelectedPaths] = useState<readonly string[]>([]);
+  const preparedInput = useMemo(
+    () => createPresortedPreparedInput(previewPaths),
+    [previewPaths]
+  );
+  const remainingPathCount = totalPathCount - previewPaths.length;
 
   const options = useMemo<FileTreeOptions>(() => {
     const source: FileTreeBulkIngestSource = {
       async openSession(signal) {
-        addLog(`bulk: fetching ${AOSP_UPGRADE_DATA_URL}`);
-        const payload = await fetchUpgradePayload(
-          AOSP_UPGRADE_DATA_URL,
-          signal
-        );
-        const previewLength = AOSP_PREVIEW_PATHS.length;
-        const previewPrefix = payload.paths.slice(0, previewLength);
+        addLog(`bulk: loading ${workloadLabel}`);
+        const { getVirtualizationWorkload } =
+          await import('@pierre/tree-test-data');
+        if (signal.aborted) {
+          throw new DOMException('The operation was aborted.', 'AbortError');
+        }
+
+        const workload = getVirtualizationWorkload(workloadName);
+        const fullPaths = workload.presortedFiles;
+        const previewLength = previewPaths.length;
+        const previewPrefix = fullPaths.slice(0, previewLength);
         if (
           previewPrefix.length !== previewLength ||
-          previewPrefix.some(
-            (path, index) => path !== AOSP_PREVIEW_PATHS[index]
-          )
+          previewPrefix.some((path, index) => path !== previewPaths[index])
         ) {
           throw new Error(
-            'AOSP preview seed is not a prefix of the fetched dataset.'
+            `${workloadLabel} preview seed is not a prefix of the selected workload.`
           );
         }
 
         return {
-          chunks: createBulkChunks(payload.paths.slice(previewLength), signal),
-          header: { totalPathCount: payload.paths.length },
+          chunks: createBulkChunks(fullPaths.slice(previewLength), signal),
+          header: { totalPathCount: fullPaths.length },
         };
       },
     };
@@ -103,13 +115,13 @@ export function BulkIngestDemoClient({
         },
         source,
       },
-      paths: AOSP_PREVIEW_PATHS,
-      preparedInput: BULK_PREPARED_INPUT,
+      paths: previewPaths,
+      preparedInput,
       renaming: true,
       search: true,
       viewportHeight: FILE_TREE_PROOF_VIEWPORT_HEIGHT,
     };
-  }, [addLog]);
+  }, [addLog, preparedInput, previewPaths, workloadLabel, workloadName]);
 
   const refreshTreeState = useCallback(() => {
     const tree = treeRef.current;
@@ -169,7 +181,7 @@ export function BulkIngestDemoClient({
     <div className="space-y-6">
       <ExampleCard
         title="Bulk ingest"
-        description={`This demo starts from the committed ${AOSP_PREVIEW_PATHS.length.toLocaleString()}-path AOSP preview seed and upgrades into the full ${AOSP_TOTAL_PATH_COUNT.toLocaleString()}-path dataset through the public bulk ingest facade. Start the ingest, then expand folders, focus rows, select a file, or press F2 to open an inline rename draft while checkpoints continue to publish.`}
+        description={`This demo starts from a ${previewPaths.length.toLocaleString()}-path ${workloadLabel} preview slice and bulk ingests the remaining ${remainingPathCount.toLocaleString()} paths until the tree reaches the full ${totalPathCount.toLocaleString()}-path dataset. Start the ingest, then expand folders, focus rows, select a file, or press F2 to open an inline rename draft while checkpoints continue to publish.`}
       >
         <div className="mb-3 flex flex-wrap gap-2 text-xs">
           <button
@@ -201,12 +213,12 @@ export function BulkIngestDemoClient({
             className="rounded-sm border px-2 py-1"
             style={{ borderColor: 'var(--color-border)' }}
             onClick={() => {
-              runTreeAction('expand art', (tree) => {
-                getDirectoryHandle(tree, 'art/')?.expand();
+              runTreeAction(`expand ${PREVIEW_EXPAND_PATH}`, (tree) => {
+                getDirectoryHandle(tree, PREVIEW_EXPAND_PATH)?.expand();
               });
             }}
           >
-            Expand art/
+            Expand {PREVIEW_EXPAND_PATH}
           </button>
           <button
             type="button"
@@ -218,7 +230,7 @@ export function BulkIngestDemoClient({
               });
             }}
           >
-            Focus art/artd/artd.cc
+            Focus {PREVIEW_FOCUS_PATH}
           </button>
           <button
             type="button"
@@ -231,7 +243,7 @@ export function BulkIngestDemoClient({
               });
             }}
           >
-            Select art/artd/artd.cc
+            Select {PREVIEW_FOCUS_PATH}
           </button>
           <button
             type="button"
