@@ -66,6 +66,7 @@ import type {
   PathStoreEventForType,
   PathStoreEventType,
   PathStoreLoadAttempt,
+  PathStoreMarkDirectoryUnloadedOptions,
   PathStoreMoveOptions,
   PathStoreOperation,
   PathStoreOptions,
@@ -86,11 +87,14 @@ import {
   beginDirectoryLoad,
   completeDirectoryLoad,
   failDirectoryLoad,
+  getDirectoryKnownChildCount,
+  getDirectoryLoadError as getStoredDirectoryLoadError,
   getDirectoryLoadState as getStoredDirectoryLoadState,
   isDirectoryExpanded,
   isDirectoryLoadAttemptCurrent,
   markDirectoryUnloadedState,
   setDirectoryExpanded,
+  setDirectoryKnownChildCount,
 } from './state';
 import { createPathStoreState } from './state';
 import type { PathStoreState } from './state';
@@ -564,7 +568,20 @@ export class PathStore {
     return getStoredDirectoryLoadState(this.#state, directoryNodeId);
   }
 
-  public markDirectoryUnloaded(path: string): void {
+  public getDirectoryLoadError(path: string): string | null {
+    const directoryNodeId = this.requireDirectoryNodeId(path);
+    return getStoredDirectoryLoadError(this.#state, directoryNodeId);
+  }
+
+  public getDirectoryKnownChildCount(path: string): number | null {
+    const directoryNodeId = this.requireDirectoryNodeId(path);
+    return getDirectoryKnownChildCount(this.#state, directoryNodeId);
+  }
+
+  public markDirectoryUnloaded(
+    path: string,
+    options: PathStoreMarkDirectoryUnloadedOptions = {}
+  ): void {
     withBenchmarkPhase(
       this.#state.instrumentation,
       'store.markDirectoryUnloaded',
@@ -579,7 +596,11 @@ export class PathStore {
         }
 
         const previousVisibleCount = getVisibleCount(this.#state);
-        markDirectoryUnloadedState(this.#state, directoryNodeId);
+        markDirectoryUnloadedState(
+          this.#state,
+          directoryNodeId,
+          options.knownChildCount ?? null
+        );
         recordEvent(
           this.#state,
           finalizeEvent(
@@ -659,6 +680,14 @@ export class PathStore {
 
         const directoryPath = materializeNodePath(this.#state, directoryNodeId);
         this.validateChildPatch(directoryPath, patch);
+        if (patch.metadata?.knownChildCount !== undefined) {
+          setDirectoryKnownChildCount(
+            this.#state,
+            directoryNodeId,
+            patch.metadata.knownChildCount
+          );
+        }
+
         const previousVisibleCount = getVisibleCount(this.#state);
         const childEvents: import('./public-types').PathStoreSemanticEvent[] =
           [];

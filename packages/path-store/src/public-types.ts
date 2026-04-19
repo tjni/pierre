@@ -53,6 +53,10 @@ export type PathStoreDirectoryLoadState =
   | 'loaded'
   | 'error';
 
+export interface PathStoreMarkDirectoryUnloadedOptions {
+  knownChildCount?: number;
+}
+
 export interface PathStoreChildPatch {
   metadata?: {
     knownChildCount?: number;

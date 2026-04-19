@@ -176,6 +176,7 @@ function collectDirectoryLoadInfos(
       info: {
         activeAttemptId: null,
         errorMessage: info.errorMessage,
+        knownChildCount: info.knownChildCount,
         nextAttemptId: info.nextAttemptId,
         state: info.state,
       },
@@ -237,6 +238,7 @@ function restoreDirectoryLoadInfos(
     state.directoryLoadInfoById.set(nodeId, {
       activeAttemptId: null,
       errorMessage: retainedInfo.info.errorMessage,
+      knownChildCount: retainedInfo.info.knownChildCount,
       nextAttemptId: retainedInfo.info.nextAttemptId,
       state: retainedInfo.info.state,
     });

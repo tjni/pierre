@@ -7,6 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   createVisibleTreeProjection,
   PathStore,
+  PathStorePreparedInputBuilder,
   StaticPathStore,
 } from '../src/index';
 import type {
@@ -312,6 +313,42 @@ describe('preparePaths', () => {
         sort,
       })
     ).toEqual(['b.ts', 'a.ts', 'dir/']);
+  });
+});
+
+describe('PathStorePreparedInputBuilder', () => {
+  test('appends chunks and builds prepared input snapshots', () => {
+    const builder = new PathStorePreparedInputBuilder({
+      flattenEmptyDirectories: true,
+    });
+
+    builder.appendPresortedPaths(['alpha/', 'alpha/file.ts'], true);
+    builder.appendPaths(['beta/z.ts', 'beta/a.ts']);
+
+    const preparedInput = builder.build();
+    expect(preparedInput.paths).toEqual([
+      'alpha/',
+      'alpha/file.ts',
+      'beta/a.ts',
+      'beta/z.ts',
+    ]);
+
+    const store = new PathStore({
+      flattenEmptyDirectories: true,
+      preparedInput,
+    });
+
+    expect(store.list()).toEqual(['alpha/file.ts', 'beta/a.ts', 'beta/z.ts']);
+  });
+
+  test('rejects out-of-order public builder appends', () => {
+    const builder = new PathStorePreparedInputBuilder();
+
+    builder.appendPresortedPaths(['beta.ts']);
+
+    expect(() => builder.appendPresortedPaths(['alpha.ts'])).toThrow(
+      'Builder input must be sorted before appendPaths()'
+    );
   });
 });
 
@@ -1351,6 +1388,40 @@ describe('PathStore', () => {
         path: 'src/',
       },
     ]);
+  });
+
+  test('exposes load error text and known child count hints through public getters', () => {
+    const store = new PathStore({
+      flattenEmptyDirectories: false,
+      initialExpansion: 'open',
+      paths: ['src/'],
+    });
+
+    expect(store.getDirectoryLoadError('src/')).toBeNull();
+    expect(store.getDirectoryKnownChildCount('src/')).toBeNull();
+
+    store.markDirectoryUnloaded('src/', { knownChildCount: 12 });
+    expect(store.getDirectoryKnownChildCount('src/')).toBe(12);
+
+    const firstAttempt = store.beginChildLoad('src/');
+    expect(store.failChildLoad(firstAttempt, 'boom')).toBe(true);
+    expect(store.getDirectoryLoadError('src/')).toBe('boom');
+    expect(store.getDirectoryKnownChildCount('src/')).toBe(12);
+
+    store.markDirectoryUnloaded('src/');
+    expect(store.getDirectoryLoadError('src/')).toBeNull();
+    expect(store.getDirectoryKnownChildCount('src/')).toBeNull();
+
+    const retryAttempt = store.beginChildLoad('src/');
+    expect(
+      store.applyChildPatch(retryAttempt, {
+        metadata: { knownChildCount: 1 },
+        operations: [{ path: 'src/file.ts', type: 'add' }],
+      })
+    ).toBe(true);
+    expect(store.completeChildLoad(retryAttempt)).toBe(true);
+    expect(store.getDirectoryLoadError('src/')).toBeNull();
+    expect(store.getDirectoryKnownChildCount('src/')).toBe(1);
   });
 
   test('rejects marking a directory with known children as unloaded', () => {
