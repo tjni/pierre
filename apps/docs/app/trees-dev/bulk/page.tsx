@@ -35,13 +35,9 @@ export default async function TreesDevBulkPage({
 
   return (
     <BulkIngestDemoClient
-      key={`${routeState.workloadName}:${routeState.expansionMode}:${routeState.ingestMode}:${String(routeState.headChunkSize)}:${routeState.useWorker ? 'worker' : 'main'}`}
-      expansionMode={routeState.expansionMode}
-      headChunkSize={routeState.headChunkSize}
-      ingestMode={routeState.ingestMode}
+      key={JSON.stringify(routeState)}
       payloadHtml={payload.html}
-      useWorker={routeState.useWorker}
-      workloadName={routeState.workloadName}
+      {...routeState}
     />
   );
 }

@@ -15,19 +15,49 @@ export type BulkExperimentWorkloadName =
 export type BulkExperimentIngestMode = 'chunked' | 'head-start' | 'oneshot';
 export type BulkExperimentExpansionMode = 'all-open' | 'all-closed' | 'seeded';
 export type BulkExperimentHeadChunkSize = 1000 | 5000 | 10000 | 25000;
+export type BulkExperimentReadStrategy =
+  | 'exact'
+  | 'latest-only'
+  | 'latest-only-slab';
+export type BulkExperimentReadSlabMultiplier = 1 | 2 | 4;
+export type BulkExperimentPublishStrategy =
+  | 'every-checkpoint'
+  | 'checkpoint-count'
+  | 'time-budget'
+  | 'path-budget';
+export type BulkExperimentPublishCheckpointInterval = 1 | 2 | 4;
+export type BulkExperimentPublishTimeBudgetMs = 50 | 100 | 250;
+export type BulkExperimentPublishPathBudget = 40_000 | 80_000 | 160_000;
+export type BulkExperimentRowTransport = 'clone' | 'transferable';
 
 export interface BulkExperimentPageSearchParams {
   expansion?: string | readonly string[];
+  frontier?: string | readonly string[];
   head?: string | readonly string[];
   ingest?: string | readonly string[];
+  publish?: string | readonly string[];
+  publishCheckpoints?: string | readonly string[];
+  publishMs?: string | readonly string[];
+  publishPaths?: string | readonly string[];
+  read?: string | readonly string[];
+  slab?: string | readonly string[];
+  transport?: string | readonly string[];
   worker?: string | readonly string[];
   workload?: string | readonly string[];
 }
 
 export interface BulkExperimentRouteState {
   expansionMode: BulkExperimentExpansionMode;
+  frontierGating: boolean;
   headChunkSize: BulkExperimentHeadChunkSize;
   ingestMode: BulkExperimentIngestMode;
+  publishCheckpointInterval: BulkExperimentPublishCheckpointInterval;
+  publishPathBudget: BulkExperimentPublishPathBudget;
+  publishStrategy: BulkExperimentPublishStrategy;
+  publishTimeBudgetMs: BulkExperimentPublishTimeBudgetMs;
+  readSlabMultiplier: BulkExperimentReadSlabMultiplier;
+  readStrategy: BulkExperimentReadStrategy;
+  rowTransport: BulkExperimentRowTransport;
   useWorker: boolean;
   workloadName: BulkExperimentWorkloadName;
 }
@@ -53,6 +83,17 @@ export const DEFAULT_BULK_EXPERIMENT_INGEST_MODE: BulkExperimentIngestMode =
 export const DEFAULT_BULK_EXPERIMENT_EXPANSION_MODE: BulkExperimentExpansionMode =
   'all-open';
 export const DEFAULT_BULK_EXPERIMENT_HEAD_CHUNK_SIZE: BulkExperimentHeadChunkSize = 10_000;
+export const DEFAULT_BULK_EXPERIMENT_READ_STRATEGY: BulkExperimentReadStrategy =
+  'latest-only-slab';
+export const DEFAULT_BULK_EXPERIMENT_READ_SLAB_MULTIPLIER: BulkExperimentReadSlabMultiplier = 2;
+export const DEFAULT_BULK_EXPERIMENT_FRONTIER_GATING = true;
+export const DEFAULT_BULK_EXPERIMENT_PUBLISH_STRATEGY: BulkExperimentPublishStrategy =
+  'checkpoint-count';
+export const DEFAULT_BULK_EXPERIMENT_PUBLISH_CHECKPOINT_INTERVAL: BulkExperimentPublishCheckpointInterval = 2;
+export const DEFAULT_BULK_EXPERIMENT_PUBLISH_TIME_BUDGET_MS: BulkExperimentPublishTimeBudgetMs = 100;
+export const DEFAULT_BULK_EXPERIMENT_PUBLISH_PATH_BUDGET: BulkExperimentPublishPathBudget = 80_000;
+export const DEFAULT_BULK_EXPERIMENT_ROW_TRANSPORT: BulkExperimentRowTransport =
+  'clone';
 
 export const BULK_EXPERIMENT_WORKLOAD_NAMES = [
   'linux-1x',
@@ -92,6 +133,68 @@ export const BULK_EXPERIMENT_EXPANSION_OPTIONS = [
 ] as const satisfies readonly {
   label: string;
   value: BulkExperimentExpansionMode;
+}[];
+
+export const BULK_EXPERIMENT_READ_STRATEGY_OPTIONS = [
+  { label: 'Exact', value: 'exact' },
+  { label: 'Latest only', value: 'latest-only' },
+  { label: 'Latest only + slab cache', value: 'latest-only-slab' },
+] as const satisfies readonly {
+  label: string;
+  value: BulkExperimentReadStrategy;
+}[];
+
+export const BULK_EXPERIMENT_READ_SLAB_MULTIPLIER_OPTIONS = [
+  { label: '1x viewport', value: 1 },
+  { label: '2x viewport', value: 2 },
+  { label: '4x viewport', value: 4 },
+] as const satisfies readonly {
+  label: string;
+  value: BulkExperimentReadSlabMultiplier;
+}[];
+export const BULK_EXPERIMENT_ROW_TRANSPORT_OPTIONS = [
+  { label: 'Structured clone', value: 'clone' },
+  { label: 'Transferable slab', value: 'transferable' },
+] as const satisfies readonly {
+  label: string;
+  value: BulkExperimentRowTransport;
+}[];
+
+export const BULK_EXPERIMENT_PUBLISH_STRATEGY_OPTIONS = [
+  { label: 'Every checkpoint', value: 'every-checkpoint' },
+  { label: 'Every N checkpoints', value: 'checkpoint-count' },
+  { label: 'Time budget', value: 'time-budget' },
+  { label: 'Path budget', value: 'path-budget' },
+] as const satisfies readonly {
+  label: string;
+  value: BulkExperimentPublishStrategy;
+}[];
+
+export const BULK_EXPERIMENT_PUBLISH_CHECKPOINT_INTERVAL_OPTIONS = [
+  { label: '1 checkpoint', value: 1 },
+  { label: '2 checkpoints', value: 2 },
+  { label: '4 checkpoints', value: 4 },
+] as const satisfies readonly {
+  label: string;
+  value: BulkExperimentPublishCheckpointInterval;
+}[];
+
+export const BULK_EXPERIMENT_PUBLISH_TIME_BUDGET_OPTIONS = [
+  { label: '50 ms', value: 50 },
+  { label: '100 ms', value: 100 },
+  { label: '250 ms', value: 250 },
+] as const satisfies readonly {
+  label: string;
+  value: BulkExperimentPublishTimeBudgetMs;
+}[];
+
+export const BULK_EXPERIMENT_PUBLISH_PATH_BUDGET_OPTIONS = [
+  { label: '40k paths', value: 40_000 },
+  { label: '80k paths', value: 80_000 },
+  { label: '160k paths', value: 160_000 },
+] as const satisfies readonly {
+  label: string;
+  value: BulkExperimentPublishPathBudget;
 }[];
 
 const BULK_WORKLOAD_ASSET_URL_BY_NAME = {
@@ -214,6 +317,90 @@ export function resolveBulkExperimentHeadChunkSize(
     : DEFAULT_BULK_EXPERIMENT_HEAD_CHUNK_SIZE;
 }
 
+export function resolveBulkExperimentReadStrategy(
+  value: string | null | undefined
+): BulkExperimentReadStrategy {
+  return BULK_EXPERIMENT_READ_STRATEGY_OPTIONS.some(
+    (option) => option.value === value
+  )
+    ? (value as BulkExperimentReadStrategy)
+    : DEFAULT_BULK_EXPERIMENT_READ_STRATEGY;
+}
+
+export function resolveBulkExperimentReadSlabMultiplier(
+  value: string | null | undefined
+): BulkExperimentReadSlabMultiplier {
+  const parsedValue = Number(value);
+  return BULK_EXPERIMENT_READ_SLAB_MULTIPLIER_OPTIONS.some(
+    (option) => option.value === parsedValue
+  )
+    ? (parsedValue as BulkExperimentReadSlabMultiplier)
+    : DEFAULT_BULK_EXPERIMENT_READ_SLAB_MULTIPLIER;
+}
+
+export function resolveBulkExperimentFrontierGating(
+  value: string | null | undefined
+): boolean {
+  if (value == null) {
+    return DEFAULT_BULK_EXPERIMENT_FRONTIER_GATING;
+  }
+
+  return value === '1' || value === 'true';
+}
+
+export function resolveBulkExperimentPublishStrategy(
+  value: string | null | undefined
+): BulkExperimentPublishStrategy {
+  return BULK_EXPERIMENT_PUBLISH_STRATEGY_OPTIONS.some(
+    (option) => option.value === value
+  )
+    ? (value as BulkExperimentPublishStrategy)
+    : DEFAULT_BULK_EXPERIMENT_PUBLISH_STRATEGY;
+}
+
+export function resolveBulkExperimentPublishCheckpointInterval(
+  value: string | null | undefined
+): BulkExperimentPublishCheckpointInterval {
+  const parsedValue = Number(value);
+  return BULK_EXPERIMENT_PUBLISH_CHECKPOINT_INTERVAL_OPTIONS.some(
+    (option) => option.value === parsedValue
+  )
+    ? (parsedValue as BulkExperimentPublishCheckpointInterval)
+    : DEFAULT_BULK_EXPERIMENT_PUBLISH_CHECKPOINT_INTERVAL;
+}
+
+export function resolveBulkExperimentPublishTimeBudgetMs(
+  value: string | null | undefined
+): BulkExperimentPublishTimeBudgetMs {
+  const parsedValue = Number(value);
+  return BULK_EXPERIMENT_PUBLISH_TIME_BUDGET_OPTIONS.some(
+    (option) => option.value === parsedValue
+  )
+    ? (parsedValue as BulkExperimentPublishTimeBudgetMs)
+    : DEFAULT_BULK_EXPERIMENT_PUBLISH_TIME_BUDGET_MS;
+}
+
+export function resolveBulkExperimentPublishPathBudget(
+  value: string | null | undefined
+): BulkExperimentPublishPathBudget {
+  const parsedValue = Number(value);
+  return BULK_EXPERIMENT_PUBLISH_PATH_BUDGET_OPTIONS.some(
+    (option) => option.value === parsedValue
+  )
+    ? (parsedValue as BulkExperimentPublishPathBudget)
+    : DEFAULT_BULK_EXPERIMENT_PUBLISH_PATH_BUDGET;
+}
+
+export function resolveBulkExperimentRowTransport(
+  value: string | null | undefined
+): BulkExperimentRowTransport {
+  return BULK_EXPERIMENT_ROW_TRANSPORT_OPTIONS.some(
+    (option) => option.value === value
+  )
+    ? (value as BulkExperimentRowTransport)
+    : DEFAULT_BULK_EXPERIMENT_ROW_TRANSPORT;
+}
+
 export function resolveBulkExperimentUseWorker(
   value: string | null | undefined
 ): boolean {
@@ -231,11 +418,35 @@ export function getRequestedBulkExperimentRouteState(
     expansionMode: resolveBulkExperimentExpansionMode(
       getRequestedSearchParamValue(searchParams?.expansion)
     ),
+    frontierGating: resolveBulkExperimentFrontierGating(
+      getRequestedSearchParamValue(searchParams?.frontier)
+    ),
     headChunkSize: resolveBulkExperimentHeadChunkSize(
       getRequestedSearchParamValue(searchParams?.head)
     ),
     ingestMode: resolveBulkExperimentIngestMode(
       getRequestedSearchParamValue(searchParams?.ingest)
+    ),
+    publishCheckpointInterval: resolveBulkExperimentPublishCheckpointInterval(
+      getRequestedSearchParamValue(searchParams?.publishCheckpoints)
+    ),
+    publishPathBudget: resolveBulkExperimentPublishPathBudget(
+      getRequestedSearchParamValue(searchParams?.publishPaths)
+    ),
+    publishStrategy: resolveBulkExperimentPublishStrategy(
+      getRequestedSearchParamValue(searchParams?.publish)
+    ),
+    publishTimeBudgetMs: resolveBulkExperimentPublishTimeBudgetMs(
+      getRequestedSearchParamValue(searchParams?.publishMs)
+    ),
+    readSlabMultiplier: resolveBulkExperimentReadSlabMultiplier(
+      getRequestedSearchParamValue(searchParams?.slab)
+    ),
+    readStrategy: resolveBulkExperimentReadStrategy(
+      getRequestedSearchParamValue(searchParams?.read)
+    ),
+    rowTransport: resolveBulkExperimentRowTransport(
+      getRequestedSearchParamValue(searchParams?.transport)
     ),
     useWorker: resolveBulkExperimentUseWorker(
       getRequestedSearchParamValue(searchParams?.worker)

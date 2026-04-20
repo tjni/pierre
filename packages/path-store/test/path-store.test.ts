@@ -2208,6 +2208,34 @@ describe('PathStore', () => {
     expect(projection.setSizeByIndex[511]).toBe(1000);
   });
 
+  test('static store projection data matches the mutable store snapshot', () => {
+    const mutableStore = new PathStore({
+      flattenEmptyDirectories: false,
+      initialExpansion: 'open',
+      paths: createDeepChainWithSiblingDirectoryPaths(3),
+    });
+    mutableStore.collapse('sibling-folder/');
+
+    const staticStore = mutableStore.toStaticStore();
+    const mutableProjection = mutableStore.getVisibleTreeProjectionData();
+    const staticProjection = staticStore.getVisibleTreeProjectionData();
+
+    expect(staticProjection.paths).toEqual(mutableProjection.paths);
+    expect([...staticProjection.posInSetByIndex]).toEqual([
+      ...mutableProjection.posInSetByIndex,
+    ]);
+    expect([...staticProjection.setSizeByIndex]).toEqual([
+      ...mutableProjection.setSizeByIndex,
+    ]);
+    expect(Array.from(staticProjection.visibleIndexByPath.entries())).toEqual(
+      Array.from(mutableProjection.visibleIndexByPath.entries())
+    );
+    expect(staticStore.getPathInfo('level1/level2')).toEqual(
+      mutableStore.getPathInfo('level1/level2')
+    );
+    expect(staticStore.getPathInfo('missing.ts')).toBeNull();
+  });
+
   test('supports visible tree projection depths beyond the initial typed-array capacity', () => {
     const depth = 80;
     const rows = Array.from({ length: depth }, (_, index) => ({
@@ -2372,6 +2400,29 @@ describe('PathStore', () => {
     expect(getVisibleRowsSansIds(staticStore, 0, 20)).toEqual(
       getVisibleRowsSansIds(mutableStore, 0, 20)
     );
+  });
+
+  test('toStaticStore freezes the current visible snapshot while the mutable store keeps changing', () => {
+    const mutableStore = new PathStore({
+      flattenEmptyDirectories: false,
+      initialExpansion: 'open',
+      paths: ['README.md', 'src/a.ts', 'src/b.ts'],
+    });
+    mutableStore.collapse('src/');
+
+    const staticStore = mutableStore.toStaticStore();
+
+    mutableStore.expand('src/');
+    mutableStore.add('src/c.ts');
+
+    expect(getVisiblePaths(staticStore, 0, 9)).toEqual(['src/', 'README.md']);
+    expect(getVisiblePaths(mutableStore, 0, 9)).toEqual([
+      'src/',
+      'src/a.ts',
+      'src/b.ts',
+      'src/c.ts',
+      'README.md',
+    ]);
   });
 
   test('static store exposes no topology mutation methods', () => {

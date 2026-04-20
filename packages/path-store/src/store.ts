@@ -108,6 +108,7 @@ import {
 } from './state';
 import { createPathStoreState } from './state';
 import type { PathStoreState } from './state';
+import { StaticPathStore } from './static-store';
 
 // Initializes the common all-directories-open startup shape without rerunning
 // the generic count-repair walk the constructor uses for arbitrary expansion
@@ -578,6 +579,15 @@ export class PathStore {
       'store.getVisibleIndex',
       () => getVisibleIndexByPath(this.#state, path)
     );
+  }
+
+  /**
+   * Freezes the current mutable store state into a read-optimized static store
+   * so callers can keep serving stable snapshots while the live store keeps
+   * mutating.
+   */
+  public toStaticStore(): StaticPathStore {
+    return StaticPathStore.fromState(this.#state);
   }
 
   /**

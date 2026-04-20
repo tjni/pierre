@@ -2,18 +2,38 @@
 
 import { BulkExperimentModel } from '../_lib/bulkExperimentModel';
 import type {
+  BulkExperimentInitOptions,
   BulkExperimentWorkerMessage,
   BulkExperimentWorkerRequest,
   BulkExperimentWorkerResponse,
 } from '../_lib/bulkExperimentProtocol';
+import { encodeVisibleRowsTransferPayload } from '../_lib/bulkExperimentVisibleRowsTransfer';
 
 const workerScope = self as unknown as DedicatedWorkerGlobalScope;
 
 let model: BulkExperimentModel | null = null;
 let unsubscribe: (() => void) | null = null;
 
-function postMessage(message: BulkExperimentWorkerMessage): void {
-  workerScope.postMessage(message);
+let initOptions: BulkExperimentInitOptions | null = null;
+
+// Read-latency spans the page and the worker, so these timestamps must share
+// one absolute clock instead of using context-local performance.now() values.
+function absoluteNow(): number {
+  return typeof performance === 'undefined'
+    ? Date.now()
+    : performance.timeOrigin + performance.now();
+}
+
+function postMessage(
+  message: BulkExperimentWorkerMessage,
+  transfer?: Transferable[]
+): void {
+  if (transfer == null || transfer.length === 0) {
+    workerScope.postMessage(message);
+    return;
+  }
+
+  workerScope.postMessage(message, transfer);
 }
 
 function postAck(id: number): void {
@@ -58,6 +78,8 @@ workerScope.onmessage = async (
   try {
     switch (message.type) {
       case 'initialize': {
+        initOptions = message.options;
+
         replaceModel(new BulkExperimentModel(message.options));
         postAck(message.id);
         return;
@@ -83,23 +105,64 @@ workerScope.onmessage = async (
         return;
       }
       case 'getVisibleIndex': {
+        const workerStartedAt = absoluteNow();
+        const index = requireModel().getVisibleIndex(message.path);
+        const workerFinishedAt = absoluteNow();
         postMessage({
           id: message.id,
-          index: requireModel().getVisibleIndex(message.path),
+          index,
+          timing: {
+            sentAt: message.sentAt,
+            workerFinishedAt,
+            workerStartedAt,
+          },
           type: 'visibleIndex',
         });
         return;
       }
       case 'getVisibleRows': {
+        const workerStartedAt = absoluteNow();
+        const rows = requireModel().getVisibleRows(message.start, message.end);
+        const workerFinishedAt = absoluteNow();
+        if (initOptions?.rowTransport === 'transferable') {
+          const { payload, transfer } = encodeVisibleRowsTransferPayload(
+            message.start,
+            rows
+          );
+          postMessage(
+            {
+              id: message.id,
+              rowTransport: 'transferable',
+              timing: {
+                sentAt: message.sentAt,
+                workerFinishedAt,
+                workerStartedAt,
+              },
+              transferredRows: payload,
+              type: 'visibleRows',
+            },
+            transfer
+          );
+          return;
+        }
+
         postMessage({
           id: message.id,
-          rows: requireModel().getVisibleRows(message.start, message.end),
+          rowTransport: 'clone',
+          rows,
+          timing: {
+            sentAt: message.sentAt,
+            workerFinishedAt,
+            workerStartedAt,
+          },
           type: 'visibleRows',
         });
         return;
       }
       case 'dispose': {
         unsubscribe?.();
+        initOptions = null;
+
         unsubscribe = null;
         model?.destroy();
         model = null;

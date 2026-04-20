@@ -31,15 +31,37 @@ import {
   BULK_EXPERIMENT_EXPANSION_OPTIONS,
   BULK_EXPERIMENT_HEAD_CHUNK_SIZE_OPTIONS,
   BULK_EXPERIMENT_INGEST_OPTIONS,
+  BULK_EXPERIMENT_PUBLISH_CHECKPOINT_INTERVAL_OPTIONS,
+  BULK_EXPERIMENT_PUBLISH_PATH_BUDGET_OPTIONS,
+  BULK_EXPERIMENT_PUBLISH_STRATEGY_OPTIONS,
+  BULK_EXPERIMENT_PUBLISH_TIME_BUDGET_OPTIONS,
+  BULK_EXPERIMENT_READ_SLAB_MULTIPLIER_OPTIONS,
+  BULK_EXPERIMENT_READ_STRATEGY_OPTIONS,
+  BULK_EXPERIMENT_ROW_TRANSPORT_OPTIONS,
   BULK_EXPERIMENT_WORKLOAD_OPTIONS,
   type BulkExperimentExpansionMode,
   type BulkExperimentHeadChunkSize,
   type BulkExperimentIngestMode,
+  type BulkExperimentPublishCheckpointInterval,
+  type BulkExperimentPublishPathBudget,
+  type BulkExperimentPublishStrategy,
+  type BulkExperimentPublishTimeBudgetMs,
+  type BulkExperimentReadSlabMultiplier,
+  type BulkExperimentReadStrategy,
   type BulkExperimentRouteState,
+  type BulkExperimentRowTransport,
   type BulkExperimentWorkloadName,
   DEFAULT_BULK_EXPERIMENT_EXPANSION_MODE,
+  DEFAULT_BULK_EXPERIMENT_FRONTIER_GATING,
   DEFAULT_BULK_EXPERIMENT_HEAD_CHUNK_SIZE,
   DEFAULT_BULK_EXPERIMENT_INGEST_MODE,
+  DEFAULT_BULK_EXPERIMENT_PUBLISH_CHECKPOINT_INTERVAL,
+  DEFAULT_BULK_EXPERIMENT_PUBLISH_PATH_BUDGET,
+  DEFAULT_BULK_EXPERIMENT_PUBLISH_STRATEGY,
+  DEFAULT_BULK_EXPERIMENT_PUBLISH_TIME_BUDGET_MS,
+  DEFAULT_BULK_EXPERIMENT_READ_SLAB_MULTIPLIER,
+  DEFAULT_BULK_EXPERIMENT_READ_STRATEGY,
+  DEFAULT_BULK_EXPERIMENT_ROW_TRANSPORT,
   DEFAULT_BULK_EXPERIMENT_WORKLOAD_NAME,
   getBulkExperimentAssetUrl,
   getBulkExperimentExpansionOptions,
@@ -49,11 +71,19 @@ import { BulkExperimentModel } from '../_lib/bulkExperimentModel';
 import { BULK_EXPERIMENT_PREVIEW_DATA } from '../_lib/bulkExperimentPreviewData';
 import type {
   BulkExperimentInitOptions,
+  BulkExperimentLatencyMetricSummary,
+  BulkExperimentReadLatencyPhase,
+  BulkExperimentReadLatencySummaryByKind,
+  BulkExperimentReadRequestKind,
+  BulkExperimentReadRequestLatencySample,
+  BulkExperimentReadRequestLatencySummary,
+  BulkExperimentReadRequestTiming,
   BulkExperimentSnapshot,
   BulkExperimentVisibleRow,
   BulkExperimentWorkerMessage,
   BulkExperimentWorkerRequest,
 } from '../_lib/bulkExperimentProtocol';
+import { decodeVisibleRowsTransferPayload } from '../_lib/bulkExperimentVisibleRowsTransfer';
 import { FILE_TREE_PROOF_VIEWPORT_HEIGHT } from '../_lib/workloadMeta';
 
 function rangesEqual(left: FileTreeRange, right: FileTreeRange): boolean {
@@ -89,9 +119,12 @@ interface LongTaskStats {
 
 interface BulkExperimentSummary {
   applyMs: number;
+  committedIngestedPathCount: number;
+  committedPublishCount: number;
   expansionMode: BulkExperimentExpansionMode;
   fetchCompletedAt: number | null;
   fetchMs: number;
+  frontierGating: boolean;
   headChunkCompletedAt: number | null;
   headChunkMaterializedVisibleCount: number | null;
   ingestMode: BulkExperimentIngestMode;
@@ -100,11 +133,206 @@ interface BulkExperimentSummary {
   parseCompletedAt: number | null;
   parseMs: number;
   previewInteractivePaintedAt: number | null;
+  publishP95Ms: number | null;
+  publishSampleCount: number;
+  publishStrategy: BulkExperimentPublishStrategy;
+  readSlabMultiplier: BulkExperimentReadSlabMultiplier;
+  readStrategy: BulkExperimentReadStrategy;
+  rowTransport: BulkExperimentRowTransport;
+
   status: BulkExperimentSnapshot['bulkInfo']['status'];
   tailChunkCompletedAt: readonly number[];
   totalMs: number;
+  unpublishedPathCount: number;
+  viewportRowsCacheHitCount: number;
+  viewportRowsCacheMissCount: number;
+  viewportRowsRequestCompletedCount: number;
+  viewportRowsRequestDroppedCount: number;
+  viewportRowsRequestSentCount: number;
   workerMode: 'main' | 'worker';
+  workingCheckpointCount: number;
+  workingIngestedPathCount: number;
   workloadName: BulkExperimentWorkloadName;
+}
+
+type BulkExperimentReadLatencyBuckets = {
+  visibleIndex: Record<
+    BulkExperimentReadLatencyPhase,
+    BulkExperimentReadRequestLatencySample[]
+  >;
+  visibleRows: Record<
+    BulkExperimentReadLatencyPhase,
+    BulkExperimentReadRequestLatencySample[]
+  >;
+};
+
+type BulkExperimentReadLatencyListener = (
+  sample: BulkExperimentReadRequestLatencySample
+) => void;
+
+function createEmptyLatencyMetricSummary(): BulkExperimentLatencyMetricSummary {
+  return {
+    averageMs: null,
+    maxMs: null,
+    p50Ms: null,
+    p95Ms: null,
+    sampleCount: 0,
+  };
+}
+
+function createEmptyReadLatencySummary(): BulkExperimentReadRequestLatencySummary {
+  return {
+    compute: createEmptyLatencyMetricSummary(),
+    queueWait: createEmptyLatencyMetricSummary(),
+    total: createEmptyLatencyMetricSummary(),
+    transport: createEmptyLatencyMetricSummary(),
+  };
+}
+
+function createEmptyReadLatencySummaryByKind(): BulkExperimentReadLatencySummaryByKind {
+  return {
+    visibleIndex: {
+      activeIngest: createEmptyReadLatencySummary(),
+      postCompletion: createEmptyReadLatencySummary(),
+    },
+    visibleRows: {
+      activeIngest: createEmptyReadLatencySummary(),
+      postCompletion: createEmptyReadLatencySummary(),
+    },
+  };
+}
+
+function createEmptyReadLatencyBuckets(): BulkExperimentReadLatencyBuckets {
+  return {
+    visibleIndex: { activeIngest: [], postCompletion: [] },
+    visibleRows: { activeIngest: [], postCompletion: [] },
+  };
+}
+
+function classifyReadLatencyPhase(
+  status: BulkExperimentSnapshot['bulkInfo']['status']
+): BulkExperimentReadLatencyPhase {
+  return status === 'ingesting' ? 'activeIngest' : 'postCompletion';
+}
+
+// Converts absolute request timestamps into the queue, compute, transport, and
+// total phases the demo surfaces for read responsiveness.
+function createReadLatencySample({
+  phase,
+  receivedAt,
+  requestKind,
+  timing,
+}: {
+  phase: BulkExperimentReadLatencyPhase;
+  receivedAt: number;
+  requestKind: BulkExperimentReadRequestKind;
+  timing: BulkExperimentReadRequestTiming;
+}): BulkExperimentReadRequestLatencySample {
+  return {
+    computeMs: Math.max(0, timing.workerFinishedAt - timing.workerStartedAt),
+    phase,
+    receivedAt,
+    requestKind,
+    queueWaitMs: Math.max(0, timing.workerStartedAt - timing.sentAt),
+    sentAt: timing.sentAt,
+    totalMs: Math.max(0, receivedAt - timing.sentAt),
+    transportMs: Math.max(0, receivedAt - timing.workerFinishedAt),
+    workerFinishedAt: timing.workerFinishedAt,
+    workerStartedAt: timing.workerStartedAt,
+  };
+}
+
+function selectPercentile(
+  sortedValues: readonly number[],
+  fraction: number
+): number | null {
+  if (sortedValues.length === 0) {
+    return null;
+  }
+
+  const percentileIndex = Math.min(
+    sortedValues.length - 1,
+    Math.max(0, Math.ceil(sortedValues.length * fraction) - 1)
+  );
+  return sortedValues[percentileIndex] ?? null;
+}
+
+function summarizeLatencyValues(
+  values: readonly number[]
+): BulkExperimentLatencyMetricSummary {
+  if (values.length === 0) {
+    return createEmptyLatencyMetricSummary();
+  }
+
+  const sortedValues = [...values].sort((left, right) => left - right);
+  const total = values.reduce((sum, value) => sum + value, 0);
+  return {
+    averageMs: total / values.length,
+    maxMs: sortedValues.at(-1) ?? null,
+    p50Ms: selectPercentile(sortedValues, 0.5),
+    p95Ms: selectPercentile(sortedValues, 0.95),
+    sampleCount: values.length,
+  };
+}
+
+function summarizeReadLatencySamples(
+  samples: readonly BulkExperimentReadRequestLatencySample[]
+): BulkExperimentReadRequestLatencySummary {
+  if (samples.length === 0) {
+    return createEmptyReadLatencySummary();
+  }
+
+  const computeValues: number[] = [];
+  const queueWaitValues: number[] = [];
+  const totalValues: number[] = [];
+  const transportValues: number[] = [];
+  for (const sample of samples) {
+    computeValues.push(sample.computeMs);
+    queueWaitValues.push(sample.queueWaitMs);
+    totalValues.push(sample.totalMs);
+    transportValues.push(sample.transportMs);
+  }
+
+  return {
+    compute: summarizeLatencyValues(computeValues),
+    queueWait: summarizeLatencyValues(queueWaitValues),
+    total: summarizeLatencyValues(totalValues),
+    transport: summarizeLatencyValues(transportValues),
+  };
+}
+
+function summarizeReadLatencyBuckets(
+  buckets: BulkExperimentReadLatencyBuckets
+): BulkExperimentReadLatencySummaryByKind {
+  return {
+    visibleIndex: {
+      activeIngest: summarizeReadLatencySamples(
+        buckets.visibleIndex.activeIngest
+      ),
+      postCompletion: summarizeReadLatencySamples(
+        buckets.visibleIndex.postCompletion
+      ),
+    },
+    visibleRows: {
+      activeIngest: summarizeReadLatencySamples(
+        buckets.visibleRows.activeIngest
+      ),
+      postCompletion: summarizeReadLatencySamples(
+        buckets.visibleRows.postCompletion
+      ),
+    },
+  };
+}
+
+function hasReadLatencySamples(
+  summary: BulkExperimentReadLatencySummaryByKind
+): boolean {
+  return (
+    summary.visibleIndex.activeIngest.total.sampleCount > 0 ||
+    summary.visibleIndex.postCompletion.total.sampleCount > 0 ||
+    summary.visibleRows.activeIngest.total.sampleCount > 0 ||
+    summary.visibleRows.postCompletion.total.sampleCount > 0
+  );
 }
 
 function roundMetric(value: number | null): number | null {
@@ -121,11 +349,57 @@ function formatMetricList(values: readonly number[]): string {
     : values.map((value) => `${value.toFixed(1)} ms`).join(', ');
 }
 
+function formatLatencyMetricSummary(
+  summary: BulkExperimentLatencyMetricSummary
+): string {
+  return summary.sampleCount === 0
+    ? 'n/a'
+    : `n=${String(summary.sampleCount)} p50=${formatMetric(summary.p50Ms)} p95=${formatMetric(summary.p95Ms)} avg=${formatMetric(summary.averageMs)} max=${formatMetric(summary.maxMs)}`;
+}
+
+function formatReadLatencySummary(
+  summary: BulkExperimentReadRequestLatencySummary
+): string {
+  return [
+    `total=${formatLatencyMetricSummary(summary.total)}`,
+    `queue=${formatLatencyMetricSummary(summary.queueWait)}`,
+    `compute=${formatLatencyMetricSummary(summary.compute)}`,
+    `transport=${formatLatencyMetricSummary(summary.transport)}`,
+  ].join(' ');
+}
+
+// Worker and main-thread latency phases only compare correctly when both sides
+// stamp requests against the same absolute high-resolution clock.
+function absoluteNow(): number {
+  return typeof performance === 'undefined'
+    ? Date.now()
+    : performance.timeOrigin + performance.now();
+}
+
 function formatProgress(snapshot: BulkExperimentSnapshot): string {
   const { ingestedPathCount, totalPathCount } = snapshot.bulkInfo;
   return totalPathCount == null
     ? ingestedPathCount.toLocaleString()
     : `${ingestedPathCount.toLocaleString()} / ${totalPathCount.toLocaleString()}`;
+}
+
+function formatWorkingProgress(snapshot: BulkExperimentSnapshot): string {
+  const { totalPathCount } = snapshot.bulkInfo;
+  return totalPathCount == null
+    ? snapshot.workingIngestedPathCount.toLocaleString()
+    : `${snapshot.workingIngestedPathCount.toLocaleString()} / ${totalPathCount.toLocaleString()}`;
+}
+
+function formatViewportRowsStats(
+  viewportRowsStats: BulkExperimentViewportRowsStats
+): string {
+  return [
+    `sent=${String(viewportRowsStats.requestSentCount)}`,
+    `completed=${String(viewportRowsStats.requestCompletedCount)}`,
+    `dropped=${String(viewportRowsStats.requestDroppedCount)}`,
+    `hits=${String(viewportRowsStats.cacheHitCount)}`,
+    `misses=${String(viewportRowsStats.cacheMissCount)}`,
+  ].join(' ');
 }
 
 function formatRowLabel(row: BulkExperimentVisibleRow): string {
@@ -219,6 +493,330 @@ function createPreviewFallbackRows(
   );
 }
 
+interface BulkExperimentViewportRowsStats {
+  cacheHitCount: number;
+  cacheMissCount: number;
+  requestCompletedCount: number;
+  requestDroppedCount: number;
+  requestSentCount: number;
+}
+
+interface BulkExperimentViewportRowsSlab {
+  end: number;
+  rows: readonly BulkExperimentVisibleRow[];
+  start: number;
+}
+
+interface BulkExperimentViewportRowsRequest {
+  desiredRange: FileTreeRange;
+  effectiveRange: FileTreeRange;
+  reject: (error: Error) => void;
+  resolve: (rows: readonly BulkExperimentVisibleRow[]) => void;
+}
+
+function createEmptyViewportRowsStats(): BulkExperimentViewportRowsStats {
+  return {
+    cacheHitCount: 0,
+    cacheMissCount: 0,
+    requestCompletedCount: 0,
+    requestDroppedCount: 0,
+    requestSentCount: 0,
+  };
+}
+
+function rowsCoverRange(
+  rows: readonly BulkExperimentVisibleRow[],
+  range: FileTreeRange
+): boolean {
+  if (rows.length === 0) {
+    return false;
+  }
+
+  const firstRow = rows[0];
+  const lastRow = rows.at(-1);
+  return (
+    (firstRow?.index ?? Number.MAX_SAFE_INTEGER) <= range.start &&
+    (lastRow?.index ?? -1) >= range.end
+  );
+}
+
+function rangeContainsRange(
+  outerRange: FileTreeRange,
+  innerRange: FileTreeRange
+): boolean {
+  return (
+    outerRange.start <= innerRange.start && outerRange.end >= innerRange.end
+  );
+}
+
+function sliceViewportRowsFromSlab(
+  slab: BulkExperimentViewportRowsSlab,
+  range: FileTreeRange
+): readonly BulkExperimentVisibleRow[] {
+  if (!rangeContainsRange({ end: slab.end, start: slab.start }, range)) {
+    return [];
+  }
+
+  const sliceStart = range.start - slab.start;
+  const sliceEnd = sliceStart + (range.end - range.start) + 1;
+  return slab.rows.slice(sliceStart, sliceEnd);
+}
+
+function createViewportRowsAbortError(): Error {
+  return new DOMException(
+    'Viewport rows request was superseded.',
+    'AbortError'
+  );
+}
+
+function resolveViewportReadRange(
+  desiredRange: FileTreeRange,
+  readStrategy: BulkExperimentReadStrategy,
+  readSlabMultiplier: BulkExperimentReadSlabMultiplier
+): FileTreeRange {
+  if (readStrategy !== 'latest-only-slab') {
+    return desiredRange;
+  }
+
+  const rowCount = Math.max(1, desiredRange.end - desiredRange.start + 1);
+  const extraRowCount = rowCount * (readSlabMultiplier - 1);
+  const leadingPadding = Math.floor(extraRowCount / 2);
+  const trailingPadding = extraRowCount - leadingPadding;
+  return {
+    end: desiredRange.end + trailingPadding,
+    start: Math.max(0, desiredRange.start - leadingPadding),
+  };
+}
+
+// Coordinates viewport-driven visibleRows reads so the demo can compare exact
+// requests with latest-only coalescing and slab-backed cache reuse.
+function useViewportRowsRequester({
+  adapter,
+  readSlabMultiplier,
+  readStrategy,
+}: {
+  adapter: BulkExperimentAdapter | null;
+  readSlabMultiplier: BulkExperimentReadSlabMultiplier;
+  readStrategy: BulkExperimentReadStrategy;
+}): {
+  invalidateCachedRowsFrom: (changeStartIndex: number | null) => void;
+  requestViewportRows: (
+    start: number,
+    end: number
+  ) => Promise<readonly BulkExperimentVisibleRow[]>;
+  viewportRowsStats: BulkExperimentViewportRowsStats;
+} {
+  const [viewportRowsStats, setViewportRowsStats] =
+    useState<BulkExperimentViewportRowsStats>(() =>
+      createEmptyViewportRowsStats()
+    );
+  const cacheRef = useRef<BulkExperimentViewportRowsSlab | null>(null);
+  const generationRef = useRef(0);
+  const inFlightRef = useRef<{
+    effectiveRange: FileTreeRange;
+    promise: Promise<BulkExperimentViewportRowsSlab>;
+  } | null>(null);
+  const pendingRequestRef = useRef<BulkExperimentViewportRowsRequest | null>(
+    null
+  );
+
+  const updateViewportRowsStats = useCallback(
+    (
+      update: (
+        previous: BulkExperimentViewportRowsStats
+      ) => BulkExperimentViewportRowsStats
+    ) => {
+      setViewportRowsStats((previous) => update(previous));
+    },
+    []
+  );
+
+  const invalidateCachedRowsFrom = useCallback(
+    (changeStartIndex: number | null) => {
+      if (changeStartIndex == null) {
+        return;
+      }
+
+      const cachedSlab = cacheRef.current;
+      if (cachedSlab != null && changeStartIndex <= cachedSlab.end) {
+        cacheRef.current = null;
+      }
+    },
+    []
+  );
+
+  const startViewportRowsRequest = useCallback(
+    (
+      request: BulkExperimentViewportRowsRequest
+    ): Promise<BulkExperimentViewportRowsSlab> => {
+      if (adapter == null) {
+        request.resolve([]);
+        return Promise.resolve({
+          end: request.desiredRange.end,
+          rows: [],
+          start: request.desiredRange.start,
+        });
+      }
+
+      const requestGeneration = generationRef.current;
+      updateViewportRowsStats((previous) => ({
+        ...previous,
+        cacheMissCount: previous.cacheMissCount + 1,
+        requestSentCount: previous.requestSentCount + 1,
+      }));
+
+      const promise = adapter
+        .getVisibleRows(
+          request.effectiveRange.start,
+          request.effectiveRange.end
+        )
+        .then((rows) => {
+          const slab = {
+            end: request.effectiveRange.end,
+            rows,
+            start: request.effectiveRange.start,
+          } satisfies BulkExperimentViewportRowsSlab;
+          if (generationRef.current !== requestGeneration) {
+            return slab;
+          }
+
+          if (readStrategy === 'latest-only-slab') {
+            cacheRef.current = slab;
+          }
+          updateViewportRowsStats((previous) => ({
+            ...previous,
+            requestCompletedCount: previous.requestCompletedCount + 1,
+          }));
+          request.resolve(
+            sliceViewportRowsFromSlab(slab, request.desiredRange)
+          );
+          inFlightRef.current = null;
+
+          const pendingRequest = pendingRequestRef.current;
+          pendingRequestRef.current = null;
+          if (pendingRequest != null) {
+            void startViewportRowsRequest(pendingRequest);
+          }
+
+          return slab;
+        })
+        .catch((error: Error) => {
+          if (generationRef.current === requestGeneration) {
+            request.reject(error);
+            inFlightRef.current = null;
+            const pendingRequest = pendingRequestRef.current;
+            pendingRequestRef.current = null;
+            if (pendingRequest != null) {
+              void startViewportRowsRequest(pendingRequest);
+            }
+          }
+          throw error;
+        });
+
+      inFlightRef.current = { effectiveRange: request.effectiveRange, promise };
+      return promise;
+    },
+    [adapter, readStrategy, updateViewportRowsStats]
+  );
+
+  const requestViewportRows = useCallback(
+    (
+      start: number,
+      end: number
+    ): Promise<readonly BulkExperimentVisibleRow[]> => {
+      const desiredRange = { end, start };
+      const effectiveRange = resolveViewportReadRange(
+        desiredRange,
+        readStrategy,
+        readSlabMultiplier
+      );
+
+      const cachedSlab = cacheRef.current;
+      if (
+        cachedSlab != null &&
+        rangeContainsRange(
+          { end: cachedSlab.end, start: cachedSlab.start },
+          desiredRange
+        )
+      ) {
+        updateViewportRowsStats((previous) => ({
+          ...previous,
+          cacheHitCount: previous.cacheHitCount + 1,
+        }));
+        return Promise.resolve(
+          sliceViewportRowsFromSlab(cachedSlab, desiredRange)
+        );
+      }
+
+      if (readStrategy === 'exact') {
+        return new Promise((resolve, reject) => {
+          void startViewportRowsRequest({
+            desiredRange,
+            effectiveRange,
+            reject,
+            resolve,
+          });
+        });
+      }
+
+      const inFlightRequest = inFlightRef.current;
+      if (
+        inFlightRequest != null &&
+        rangesEqual(inFlightRequest.effectiveRange, effectiveRange)
+      ) {
+        return inFlightRequest.promise.then((slab) =>
+          sliceViewportRowsFromSlab(slab, desiredRange)
+        );
+      }
+
+      return new Promise((resolve, reject) => {
+        const pendingRequest = pendingRequestRef.current;
+        if (pendingRequest != null) {
+          pendingRequest.reject(createViewportRowsAbortError());
+          updateViewportRowsStats((previous) => ({
+            ...previous,
+            requestDroppedCount: previous.requestDroppedCount + 1,
+          }));
+        }
+
+        const nextRequest = {
+          desiredRange,
+          effectiveRange,
+          reject,
+          resolve,
+        } satisfies BulkExperimentViewportRowsRequest;
+        if (inFlightRef.current == null) {
+          void startViewportRowsRequest(nextRequest);
+          return;
+        }
+
+        pendingRequestRef.current = nextRequest;
+      });
+    },
+    [
+      readSlabMultiplier,
+      readStrategy,
+      startViewportRowsRequest,
+      updateViewportRowsStats,
+    ]
+  );
+
+  useEffect(() => {
+    generationRef.current += 1;
+    cacheRef.current = null;
+    pendingRequestRef.current?.reject(createViewportRowsAbortError());
+    pendingRequestRef.current = null;
+    inFlightRef.current = null;
+    setViewportRowsStats(createEmptyViewportRowsStats());
+  }, [adapter, readSlabMultiplier, readStrategy]);
+
+  return {
+    invalidateCachedRowsFrom,
+    requestViewportRows,
+    viewportRowsStats,
+  };
+}
+
 function createLongTaskMonitor(): { stop(): LongTaskStats } | null {
   if (typeof PerformanceObserver === 'undefined') {
     return null;
@@ -259,48 +857,79 @@ function createInitialSnapshot(
       status: 'idle',
       totalPathCount: options.totalPathCount,
     },
+    committedSnapshotAgeMs: 0,
+    committedVisibleVersion: 0,
     estimatedVisibleCount: options.finalVisibleCount,
     expansionMode: options.expansionMode,
     headChunkSize: options.headChunkSize,
     ingestMode: options.ingestMode,
+    lastCommittedChangeStartIndex: null,
     materializedVisibleCount: options.previewVisibleCount,
     metrics: null,
     unresolvedFrontier: null,
+    unpublishedPathCount: 0,
     visibleCount: options.previewVisibleCount,
+    workingIngestedPathCount: options.previewPaths.length,
     workloadName: options.workloadName,
   };
 }
 
 function createBulkExperimentOptions(
-  workloadName: BulkExperimentWorkloadName,
-  ingestMode: BulkExperimentIngestMode,
-  expansionMode: BulkExperimentExpansionMode,
-  headChunkSize: BulkExperimentHeadChunkSize
+  routeState: BulkExperimentRouteState
 ): BulkExperimentInitOptions {
-  const previewData = BULK_EXPERIMENT_PREVIEW_DATA[workloadName];
+  const previewData = BULK_EXPERIMENT_PREVIEW_DATA[routeState.workloadName];
   const finalVisibleCount =
-    previewData.finalVisibleCountByExpansionMode[expansionMode];
+    previewData.finalVisibleCountByExpansionMode[routeState.expansionMode];
   const previewVisibleCount =
-    previewData.previewVisibleCountByExpansionMode[expansionMode];
+    previewData.previewVisibleCountByExpansionMode[routeState.expansionMode];
 
   return {
-    assetUrl: getBulkExperimentAssetUrl(workloadName),
-    expansionMode,
+    assetUrl: getBulkExperimentAssetUrl(routeState.workloadName),
+    expansionMode: routeState.expansionMode,
     finalVisibleCount,
-    headChunkSize,
-    ingestMode,
+    headChunkSize: routeState.headChunkSize,
+    ingestMode: routeState.ingestMode,
     previewPaths: previewData.previewPaths,
     previewVisibleCount,
-    seededExpandedPaths: getBulkExperimentSeededExpandedPaths(workloadName),
+    publishCheckpointInterval: routeState.publishCheckpointInterval,
+    publishPathBudget: routeState.publishPathBudget,
+    publishStrategy: routeState.publishStrategy,
+    publishTimeBudgetMs: routeState.publishTimeBudgetMs,
+    seededExpandedPaths: getBulkExperimentSeededExpandedPaths(
+      routeState.workloadName
+    ),
+    rowTransport: routeState.rowTransport,
+
     totalPathCount: previewData.totalPathCount,
-    workloadName,
+    workloadName: routeState.workloadName,
   };
 }
 
 function createLocalAdapter(
-  options: BulkExperimentInitOptions
+  options: BulkExperimentInitOptions,
+  onReadLatencySample?: BulkExperimentReadLatencyListener
 ): BulkExperimentAdapter {
   const model = new BulkExperimentModel(options);
+
+  const executeRead = <TValue,>(
+    requestKind: BulkExperimentReadRequestKind,
+    read: () => TValue
+  ): Promise<TValue> => {
+    const phase = classifyReadLatencyPhase(model.getSnapshot().bulkInfo.status);
+    const sentAt = absoluteNow();
+    const workerStartedAt = sentAt;
+    const value = read();
+    const workerFinishedAt = absoluteNow();
+    onReadLatencySample?.(
+      createReadLatencySample({
+        phase,
+        receivedAt: workerFinishedAt,
+        requestKind,
+        timing: { sentAt, workerFinishedAt, workerStartedAt },
+      })
+    );
+    return Promise.resolve(value);
+  };
 
   return {
     async cancelIngest() {
@@ -319,10 +948,10 @@ function createLocalAdapter(
       return model.getSnapshot();
     },
     async getVisibleIndex(path) {
-      return model.getVisibleIndex(path);
+      return executeRead('visibleIndex', () => model.getVisibleIndex(path));
     },
     async getVisibleRows(start, end) {
-      return model.getVisibleRows(start, end);
+      return executeRead('visibleRows', () => model.getVisibleRows(start, end));
     },
     async startIngest() {
       await model.startIngest();
@@ -334,7 +963,8 @@ function createLocalAdapter(
 }
 
 async function createWorkerAdapter(
-  options: BulkExperimentInitOptions
+  options: BulkExperimentInitOptions,
+  onReadLatencySample?: BulkExperimentReadLatencyListener
 ): Promise<BulkExperimentAdapter> {
   const worker = new Worker(
     new URL('../_workers/bulkExperiment.worker.ts', import.meta.url),
@@ -356,11 +986,13 @@ async function createWorkerAdapter(
       }
     | {
         kind: 'index';
+        phase: BulkExperimentReadLatencyPhase;
         reject: (error: Error) => void;
         resolve: (index: number | null) => void;
       }
     | {
         kind: 'rows';
+        phase: BulkExperimentReadLatencyPhase;
         reject: (error: Error) => void;
         resolve: (rows: readonly BulkExperimentVisibleRow[]) => void;
       }
@@ -409,6 +1041,7 @@ async function createWorkerAdapter(
       return;
     }
 
+    const receivedAt = absoluteNow();
     if (pendingRequest.kind === 'index') {
       if (message.type !== 'visibleIndex') {
         pendingRequest.reject(
@@ -418,6 +1051,14 @@ async function createWorkerAdapter(
         );
         return;
       }
+      onReadLatencySample?.(
+        createReadLatencySample({
+          phase: pendingRequest.phase,
+          receivedAt,
+          requestKind: 'visibleIndex',
+          timing: message.timing,
+        })
+      );
       pendingRequest.resolve(message.index);
       return;
     }
@@ -429,7 +1070,19 @@ async function createWorkerAdapter(
       return;
     }
 
-    pendingRequest.resolve(message.rows);
+    onReadLatencySample?.(
+      createReadLatencySample({
+        phase: pendingRequest.phase,
+        receivedAt,
+        requestKind: 'visibleRows',
+        timing: message.timing,
+      })
+    );
+    pendingRequest.resolve(
+      message.rowTransport === 'transferable'
+        ? decodeVisibleRowsTransferPayload(message.transferredRows)
+        : message.rows
+    );
   };
 
   const handleError = (event: ErrorEvent): void => {
@@ -461,12 +1114,15 @@ async function createWorkerAdapter(
   const requestVisibleIndex = (path: string): Promise<number | null> => {
     const id = nextRequestId;
     nextRequestId += 1;
+    const phase = classifyReadLatencyPhase(snapshot.bulkInfo.status);
+    const sentAt = absoluteNow();
 
     return new Promise<number | null>((resolve, reject) => {
-      pending.set(id, { kind: 'index', reject, resolve });
+      pending.set(id, { kind: 'index', phase, reject, resolve });
       worker.postMessage({
         id,
         path,
+        sentAt,
         type: 'getVisibleIndex',
       } satisfies BulkExperimentWorkerRequest);
     });
@@ -478,13 +1134,16 @@ async function createWorkerAdapter(
   ): Promise<readonly BulkExperimentVisibleRow[]> => {
     const id = nextRequestId;
     nextRequestId += 1;
+    const phase = classifyReadLatencyPhase(snapshot.bulkInfo.status);
+    const sentAt = absoluteNow();
 
     return new Promise<readonly BulkExperimentVisibleRow[]>(
       (resolve, reject) => {
-        pending.set(id, { kind: 'rows', reject, resolve });
+        pending.set(id, { kind: 'rows', phase, reject, resolve });
         worker.postMessage({
           end,
           id,
+          sentAt,
           start,
           type: 'getVisibleRows',
         } satisfies BulkExperimentWorkerRequest);
@@ -572,6 +1231,74 @@ function applyBulkExperimentRouteState(
     searchParams.set('head', String(state.headChunkSize));
   }
 
+  if (state.readStrategy === DEFAULT_BULK_EXPERIMENT_READ_STRATEGY) {
+    searchParams.delete('read');
+  } else {
+    searchParams.set('read', state.readStrategy);
+  }
+
+  if (state.readStrategy !== 'latest-only-slab') {
+    searchParams.delete('slab');
+  } else if (
+    state.readSlabMultiplier === DEFAULT_BULK_EXPERIMENT_READ_SLAB_MULTIPLIER
+  ) {
+    searchParams.delete('slab');
+  } else {
+    searchParams.set('slab', String(state.readSlabMultiplier));
+  }
+
+  if (state.frontierGating === DEFAULT_BULK_EXPERIMENT_FRONTIER_GATING) {
+    searchParams.delete('frontier');
+  } else {
+    searchParams.set('frontier', state.frontierGating ? '1' : '0');
+  }
+
+  if (state.publishStrategy === DEFAULT_BULK_EXPERIMENT_PUBLISH_STRATEGY) {
+    searchParams.delete('publish');
+  } else {
+    searchParams.set('publish', state.publishStrategy);
+  }
+
+  if (state.publishStrategy !== 'checkpoint-count') {
+    searchParams.delete('publishCheckpoints');
+  } else if (
+    state.publishCheckpointInterval ===
+    DEFAULT_BULK_EXPERIMENT_PUBLISH_CHECKPOINT_INTERVAL
+  ) {
+    searchParams.delete('publishCheckpoints');
+  } else {
+    searchParams.set(
+      'publishCheckpoints',
+      String(state.publishCheckpointInterval)
+    );
+  }
+
+  if (state.publishStrategy !== 'time-budget') {
+    searchParams.delete('publishMs');
+  } else if (
+    state.publishTimeBudgetMs === DEFAULT_BULK_EXPERIMENT_PUBLISH_TIME_BUDGET_MS
+  ) {
+    searchParams.delete('publishMs');
+  } else {
+    searchParams.set('publishMs', String(state.publishTimeBudgetMs));
+  }
+
+  if (state.rowTransport === DEFAULT_BULK_EXPERIMENT_ROW_TRANSPORT) {
+    searchParams.delete('transport');
+  } else {
+    searchParams.set('transport', state.rowTransport);
+  }
+
+  if (state.publishStrategy !== 'path-budget') {
+    searchParams.delete('publishPaths');
+  } else if (
+    state.publishPathBudget === DEFAULT_BULK_EXPERIMENT_PUBLISH_PATH_BUDGET
+  ) {
+    searchParams.delete('publishPaths');
+  } else {
+    searchParams.set('publishPaths', String(state.publishPathBudget));
+  }
+
   if (state.useWorker) {
     searchParams.delete('worker');
   } else {
@@ -581,9 +1308,18 @@ function applyBulkExperimentRouteState(
 
 export function BulkIngestDemoClient({
   expansionMode,
+  frontierGating,
   headChunkSize,
   ingestMode,
   payloadHtml,
+  publishCheckpointInterval,
+  publishPathBudget,
+  publishStrategy,
+  publishTimeBudgetMs,
+  readSlabMultiplier,
+  readStrategy,
+  rowTransport,
+
   useWorker,
   workloadName,
 }: BulkIngestDemoClientProps) {
@@ -593,6 +1329,41 @@ export function BulkIngestDemoClient({
   const [, startConfigTransition] = useTransition();
   const [hasHydrated, setHasHydrated] = useState(false);
   const [resetToken, setResetToken] = useState(0);
+
+  const currentRouteState = useMemo(
+    () => ({
+      expansionMode,
+      frontierGating,
+      headChunkSize,
+      ingestMode,
+      publishCheckpointInterval,
+      publishPathBudget,
+      publishStrategy,
+      publishTimeBudgetMs,
+      readSlabMultiplier,
+      readStrategy,
+      rowTransport,
+
+      useWorker,
+      workloadName,
+    }),
+    [
+      expansionMode,
+      frontierGating,
+      headChunkSize,
+      ingestMode,
+      publishCheckpointInterval,
+      publishPathBudget,
+      publishStrategy,
+      publishTimeBudgetMs,
+      readSlabMultiplier,
+      readStrategy,
+      rowTransport,
+
+      useWorker,
+      workloadName,
+    ]
+  );
 
   useEffect(() => {
     setHasHydrated(true);
@@ -615,35 +1386,72 @@ export function BulkIngestDemoClient({
 
   return (
     <BulkExperimentSession
-      key={`${workloadName}:${expansionMode}:${ingestMode}:${String(headChunkSize)}:${useWorker ? 'worker' : 'main'}:${String(resetToken)}`}
-      expansionMode={expansionMode}
-      headChunkSize={headChunkSize}
-      ingestMode={ingestMode}
+      key={`${JSON.stringify(currentRouteState)}:${String(resetToken)}`}
+      {...currentRouteState}
       onExpansionModeChange={(nextExpansionMode) => {
         replaceRouteState({
+          ...currentRouteState,
           expansionMode: nextExpansionMode,
-          headChunkSize,
-          ingestMode,
-          useWorker,
-          workloadName,
+        });
+      }}
+      onFrontierGatingChange={(nextFrontierGating) => {
+        replaceRouteState({
+          ...currentRouteState,
+          frontierGating: nextFrontierGating,
         });
       }}
       onHeadChunkSizeChange={(nextHeadChunkSize) => {
         replaceRouteState({
-          expansionMode,
+          ...currentRouteState,
           headChunkSize: nextHeadChunkSize,
-          ingestMode,
-          useWorker,
-          workloadName,
         });
       }}
       onIngestModeChange={(nextIngestMode) => {
         replaceRouteState({
-          expansionMode,
-          headChunkSize,
+          ...currentRouteState,
           ingestMode: nextIngestMode,
-          useWorker,
-          workloadName,
+        });
+      }}
+      onPublishCheckpointIntervalChange={(nextPublishCheckpointInterval) => {
+        replaceRouteState({
+          ...currentRouteState,
+          publishCheckpointInterval: nextPublishCheckpointInterval,
+        });
+      }}
+      onPublishPathBudgetChange={(nextPublishPathBudget) => {
+        replaceRouteState({
+          ...currentRouteState,
+          publishPathBudget: nextPublishPathBudget,
+        });
+      }}
+      onPublishStrategyChange={(nextPublishStrategy) => {
+        replaceRouteState({
+          ...currentRouteState,
+          publishStrategy: nextPublishStrategy,
+        });
+      }}
+      onPublishTimeBudgetMsChange={(nextPublishTimeBudgetMs) => {
+        replaceRouteState({
+          ...currentRouteState,
+          publishTimeBudgetMs: nextPublishTimeBudgetMs,
+        });
+      }}
+      onRowTransportChange={(nextRowTransport) => {
+        replaceRouteState({
+          ...currentRouteState,
+          rowTransport: nextRowTransport,
+        });
+      }}
+      onReadSlabMultiplierChange={(nextReadSlabMultiplier) => {
+        replaceRouteState({
+          ...currentRouteState,
+          readSlabMultiplier: nextReadSlabMultiplier,
+        });
+      }}
+      onReadStrategyChange={(nextReadStrategy) => {
+        replaceRouteState({
+          ...currentRouteState,
+          readStrategy: nextReadStrategy,
         });
       }}
       onReset={() => {
@@ -651,69 +1459,117 @@ export function BulkIngestDemoClient({
       }}
       onUseWorkerChange={(nextUseWorker) => {
         replaceRouteState({
-          expansionMode,
-          headChunkSize,
-          ingestMode,
+          ...currentRouteState,
           useWorker: nextUseWorker,
-          workloadName,
         });
       }}
       onWorkloadChange={(nextWorkloadName) => {
         replaceRouteState({
-          expansionMode,
-          headChunkSize,
-          ingestMode,
-          useWorker,
+          ...currentRouteState,
           workloadName: nextWorkloadName,
         });
       }}
       payloadHtml={payloadHtml}
       showServerPreview={!hasHydrated}
-      useWorker={useWorker}
-      workloadName={workloadName}
     />
   );
 }
 
-function BulkExperimentSession({
-  expansionMode,
-  headChunkSize,
-  ingestMode,
-  onExpansionModeChange,
-  onHeadChunkSizeChange,
-  onIngestModeChange,
-  onReset,
-  onUseWorkerChange,
-  onWorkloadChange,
-  payloadHtml,
-  showServerPreview,
-  useWorker,
-  workloadName,
-}: {
-  expansionMode: BulkExperimentExpansionMode;
-  headChunkSize: BulkExperimentHeadChunkSize;
-  ingestMode: BulkExperimentIngestMode;
+interface BulkExperimentSessionProps extends BulkExperimentRouteState {
   onExpansionModeChange: (value: BulkExperimentExpansionMode) => void;
+  onFrontierGatingChange: (value: boolean) => void;
   onHeadChunkSizeChange: (value: BulkExperimentHeadChunkSize) => void;
   onIngestModeChange: (value: BulkExperimentIngestMode) => void;
+  onPublishCheckpointIntervalChange: (
+    value: BulkExperimentPublishCheckpointInterval
+  ) => void;
+  onPublishPathBudgetChange: (value: BulkExperimentPublishPathBudget) => void;
+  onPublishStrategyChange: (value: BulkExperimentPublishStrategy) => void;
+  onPublishTimeBudgetMsChange: (
+    value: BulkExperimentPublishTimeBudgetMs
+  ) => void;
+  onReadSlabMultiplierChange: (value: BulkExperimentReadSlabMultiplier) => void;
+  onReadStrategyChange: (value: BulkExperimentReadStrategy) => void;
+  onRowTransportChange: (value: BulkExperimentRowTransport) => void;
+
   onReset: () => void;
   onUseWorkerChange: (value: boolean) => void;
   onWorkloadChange: (value: BulkExperimentWorkloadName) => void;
   payloadHtml: string;
   showServerPreview: boolean;
-  useWorker: boolean;
-  workloadName: BulkExperimentWorkloadName;
-}) {
+}
+
+function BulkExperimentSession({
+  expansionMode,
+  frontierGating,
+  headChunkSize,
+  ingestMode,
+  onExpansionModeChange,
+  onFrontierGatingChange,
+  onHeadChunkSizeChange,
+  onIngestModeChange,
+  onPublishCheckpointIntervalChange,
+  onPublishPathBudgetChange,
+  onPublishStrategyChange,
+  onPublishTimeBudgetMsChange,
+  onReadSlabMultiplierChange,
+  onReadStrategyChange,
+  onRowTransportChange,
+
+  onReset,
+  onUseWorkerChange,
+  onWorkloadChange,
+  payloadHtml,
+  publishCheckpointInterval,
+  publishPathBudget,
+  publishStrategy,
+  publishTimeBudgetMs,
+  readSlabMultiplier,
+  readStrategy,
+  rowTransport,
+
+  showServerPreview,
+  useWorker,
+  workloadName,
+}: BulkExperimentSessionProps) {
   const { addLog, log } = useStateLog();
+  const currentRouteState = useMemo(
+    () => ({
+      expansionMode,
+      frontierGating,
+      headChunkSize,
+      ingestMode,
+      publishCheckpointInterval,
+      publishPathBudget,
+      publishStrategy,
+      publishTimeBudgetMs,
+      readSlabMultiplier,
+      readStrategy,
+      rowTransport,
+
+      useWorker,
+      workloadName,
+    }),
+    [
+      expansionMode,
+      frontierGating,
+      headChunkSize,
+      ingestMode,
+      publishCheckpointInterval,
+      publishPathBudget,
+      publishStrategy,
+      publishTimeBudgetMs,
+      readSlabMultiplier,
+      readStrategy,
+      rowTransport,
+
+      useWorker,
+      workloadName,
+    ]
+  );
   const experimentOptions = useMemo(
-    () =>
-      createBulkExperimentOptions(
-        workloadName,
-        ingestMode,
-        expansionMode,
-        headChunkSize
-      ),
-    [expansionMode, headChunkSize, ingestMode, workloadName]
+    () => createBulkExperimentOptions(currentRouteState),
+    [currentRouteState]
   );
   const previewFallbackRows = useMemo(
     () => createPreviewFallbackRows(experimentOptions),
@@ -751,14 +1607,32 @@ function BulkExperimentSession({
   const [selectedPaths, setSelectedPaths] = useState<readonly string[]>([]);
   const [latestSummary, setLatestSummary] =
     useState<BulkExperimentSummary | null>(null);
+  const [readLatencySummary, setReadLatencySummary] =
+    useState<BulkExperimentReadLatencySummaryByKind>(() =>
+      createEmptyReadLatencySummaryByKind()
+    );
+
+  const { invalidateCachedRowsFrom, requestViewportRows, viewportRowsStats } =
+    useViewportRowsRequester({
+      adapter,
+      readSlabMultiplier,
+      readStrategy,
+    });
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const rowButtonByPathRef = useRef(new Map<string, HTMLButtonElement>());
   const longTaskMonitorRef = useRef<ReturnType<
     typeof createLongTaskMonitor
   > | null>(null);
+  const previousCommittedVersionRef = useRef<number | null>(null);
+
   const previousBulkInfoKeyRef = useRef<string | null>(null);
   const lastSummaryKeyRef = useRef<string | null>(null);
+  const lastReadLatencyLogKeyRef = useRef<string | null>(null);
+  const readLatencyBucketsRef = useRef(createEmptyReadLatencyBuckets());
+  const readLatencyRefreshTimeoutRef = useRef<number | null>(null);
+
   const sessionStartedAtRef = useRef(
     typeof performance !== 'undefined' ? performance.now() : Date.now()
   );
@@ -780,6 +1654,44 @@ function BulkExperimentSession({
     tailChunkCount: 0,
   });
 
+  const scheduleReadLatencySummaryRefresh = useCallback(() => {
+    if (readLatencyRefreshTimeoutRef.current != null) {
+      return;
+    }
+
+    readLatencyRefreshTimeoutRef.current = window.setTimeout(() => {
+      readLatencyRefreshTimeoutRef.current = null;
+      setReadLatencySummary(
+        summarizeReadLatencyBuckets(readLatencyBucketsRef.current)
+      );
+    }, 50);
+  }, []);
+
+  const recordReadLatencySample = useCallback(
+    (sample: BulkExperimentReadRequestLatencySample): void => {
+      readLatencyBucketsRef.current[sample.requestKind][sample.phase].push(
+        sample
+      );
+      scheduleReadLatencySummaryRefresh();
+    },
+    [scheduleReadLatencySummaryRefresh]
+  );
+
+  useEffect(() => {
+    if (
+      previousCommittedVersionRef.current === snapshot.committedVisibleVersion
+    ) {
+      return;
+    }
+
+    invalidateCachedRowsFrom(snapshot.lastCommittedChangeStartIndex);
+    previousCommittedVersionRef.current = snapshot.committedVisibleVersion;
+  }, [
+    invalidateCachedRowsFrom,
+    snapshot.committedVisibleVersion,
+    snapshot.lastCommittedChangeStartIndex,
+  ]);
+
   useEffect(() => {
     let disposed = false;
     let unsubscribe: (() => void) | null = null;
@@ -787,8 +1699,8 @@ function BulkExperimentSession({
 
     void (async () => {
       const createdAdapter = useWorker
-        ? await createWorkerAdapter(experimentOptions)
-        : createLocalAdapter(experimentOptions);
+        ? await createWorkerAdapter(experimentOptions, recordReadLatencySample)
+        : createLocalAdapter(experimentOptions, recordReadLatencySample);
       if (disposed) {
         createdAdapter.dispose();
         return;
@@ -803,7 +1715,7 @@ function BulkExperimentSession({
         }
       });
       addLog(
-        `mode:${useWorker ? 'worker' : 'main'} workload:${workloadName} expansion:${expansionMode} ingest:${ingestMode}`
+        `mode:${useWorker ? 'worker' : 'main'} workload:${workloadName} expansion:${expansionMode} ingest:${ingestMode} read:${readStrategy}${readStrategy === 'latest-only-slab' ? ` x${String(readSlabMultiplier)}` : ''} transport:${rowTransport} publish:${publishStrategy} frontier:${frontierGating ? 'on' : 'off'}`
       );
     })();
 
@@ -813,12 +1725,23 @@ function BulkExperimentSession({
       nextAdapter?.dispose();
       longTaskMonitorRef.current?.stop();
       longTaskMonitorRef.current = null;
+      if (readLatencyRefreshTimeoutRef.current != null) {
+        window.clearTimeout(readLatencyRefreshTimeoutRef.current);
+        readLatencyRefreshTimeoutRef.current = null;
+      }
     };
   }, [
     addLog,
     expansionMode,
     experimentOptions,
+    frontierGating,
     ingestMode,
+    publishStrategy,
+    readSlabMultiplier,
+    readStrategy,
+    rowTransport,
+
+    recordReadLatencySample,
     useWorker,
     workloadName,
   ]);
@@ -1037,6 +1960,14 @@ function BulkExperimentSession({
       return;
     }
 
+    if (
+      frontierGating &&
+      snapshot.lastCommittedChangeStartIndex != null &&
+      range.end < snapshot.lastCommittedChangeStartIndex
+    ) {
+      return;
+    }
+
     const nextEstimatedVisibleCount = snapshot.estimatedVisibleCount;
     void adapter.getVisibleIndex(anchor.path).then((nextIndex) => {
       const nextScrollElement = scrollRef.current;
@@ -1058,8 +1989,11 @@ function BulkExperimentSession({
     });
   }, [
     adapter,
+    frontierGating,
+    range.end,
     resolvedViewportHeight,
     snapshot.estimatedVisibleCount,
+    snapshot.lastCommittedChangeStartIndex,
     snapshot.materializedVisibleCount,
   ]);
 
@@ -1071,16 +2005,39 @@ function BulkExperimentSession({
       return;
     }
 
-    void adapter.getVisibleRows(range.start, range.end).then((nextRows) => {
-      if (!cancelled) {
-        setRows(nextRows);
-      }
-    });
+    if (
+      frontierGating &&
+      snapshot.lastCommittedChangeStartIndex != null &&
+      range.end < snapshot.lastCommittedChangeStartIndex &&
+      rowsCoverRange(rows, range)
+    ) {
+      return;
+    }
+
+    void requestViewportRows(range.start, range.end)
+      .then((nextRows) => {
+        if (!cancelled) {
+          setRows(nextRows);
+        }
+      })
+      .catch((error: Error) => {
+        if (error.name !== 'AbortError') {
+          console.error(error);
+        }
+      });
 
     return () => {
       cancelled = true;
     };
-  }, [adapter, range.end, range.start, snapshot.materializedVisibleCount]);
+  }, [
+    adapter,
+    frontierGating,
+    range.end,
+    range.start,
+    requestViewportRows,
+    snapshot.committedVisibleVersion,
+    snapshot.lastCommittedChangeStartIndex,
+  ]);
 
   const stickyLayout = useMemo(
     () =>
@@ -1119,26 +2076,31 @@ function BulkExperimentSession({
     ) {
       milestoneLogRef.current.headCompletedAt = metrics.headChunk.completedAt;
       addLog(
-        `head:complete at=${metrics.headChunk.completedAt.toFixed(1)}ms frontier=${metrics.headChunk.materializedVisibleCount.toLocaleString()} rows`
+        `head:checkpoint at=${metrics.headChunk.completedAt.toFixed(1)}ms published=${metrics.headChunk.published ? 'yes' : 'no'} committed=${metrics.headChunk.committedIngestedPathCount.toLocaleString()} working=${metrics.headChunk.workingIngestedPathCount.toLocaleString()} frontier=${metrics.headChunk.materializedVisibleCount.toLocaleString()} rows`
       );
     }
     if (milestoneLogRef.current.tailChunkCount !== metrics.tailChunks.length) {
-      milestoneLogRef.current.tailChunkCount = metrics.tailChunks.length;
-      addLog(
-        `tail:complete milestones=${metrics.tailChunks.map((chunk) => chunk.completedAt.toFixed(1)).join(', ')}ms`
+      const nextTailChunks = metrics.tailChunks.slice(
+        milestoneLogRef.current.tailChunkCount
       );
+      milestoneLogRef.current.tailChunkCount = metrics.tailChunks.length;
+      for (const chunk of nextTailChunks) {
+        addLog(
+          `tail:checkpoint at=${chunk.completedAt.toFixed(1)}ms published=${chunk.published ? 'yes' : 'no'} committed=${chunk.committedIngestedPathCount.toLocaleString()} working=${chunk.workingIngestedPathCount.toLocaleString()}`
+        );
+      }
     }
   }, [addLog, snapshot.metrics]);
 
   useEffect(() => {
-    const bulkInfoKey = `${snapshot.bulkInfo.status}:${snapshot.bulkInfo.ingestedPathCount}:${String(snapshot.bulkInfo.totalPathCount)}:${snapshot.bulkInfo.errorMessage ?? ''}`;
+    const bulkInfoKey = `${snapshot.bulkInfo.status}:${snapshot.bulkInfo.ingestedPathCount}:${snapshot.workingIngestedPathCount}:${snapshot.unpublishedPathCount}:${String(snapshot.bulkInfo.totalPathCount)}:${snapshot.bulkInfo.errorMessage ?? ''}`;
     if (previousBulkInfoKeyRef.current === bulkInfoKey) {
       return;
     }
     previousBulkInfoKeyRef.current = bulkInfoKey;
 
     addLog(
-      `bulk:${snapshot.bulkInfo.status} progress=${formatProgress(snapshot)}${snapshot.bulkInfo.errorMessage == null ? '' : ` error=${snapshot.bulkInfo.errorMessage}`}`
+      `bulk:${snapshot.bulkInfo.status} committed=${formatProgress(snapshot)} working=${formatWorkingProgress(snapshot)} unpublished=${snapshot.unpublishedPathCount.toLocaleString()}${snapshot.bulkInfo.errorMessage == null ? '' : ` error=${snapshot.bulkInfo.errorMessage}`}`
     );
   }, [addLog, snapshot]);
 
@@ -1167,6 +2129,10 @@ function BulkExperimentSession({
       snapshot.bulkInfo.status,
       snapshot.bulkInfo.ingestedPathCount,
       snapshot.metrics.totalMs,
+      snapshot.metrics.committedPublishCount,
+      snapshot.metrics.workingCheckpointCount,
+      viewportRowsStats.requestSentCount,
+      viewportRowsStats.requestDroppedCount,
       longTaskStats.count,
       longTaskStats.longestMs,
     ]);
@@ -1177,9 +2143,12 @@ function BulkExperimentSession({
 
     const summary: BulkExperimentSummary = {
       applyMs: roundMetric(snapshot.metrics.applyMs) ?? 0,
+      committedIngestedPathCount: snapshot.bulkInfo.ingestedPathCount,
+      committedPublishCount: snapshot.metrics.committedPublishCount,
       expansionMode,
       fetchCompletedAt: roundMetric(snapshot.metrics.fetchCompletedAt),
       fetchMs: roundMetric(snapshot.metrics.fetchMs) ?? 0,
+      frontierGating,
       headChunkCompletedAt: roundMetric(
         snapshot.metrics.headChunk?.completedAt ?? null
       ),
@@ -1191,24 +2160,83 @@ function BulkExperimentSession({
       parseCompletedAt: roundMetric(snapshot.metrics.parseCompletedAt),
       parseMs: roundMetric(snapshot.metrics.parseMs) ?? 0,
       previewInteractivePaintedAt,
+      publishP95Ms: roundMetric(snapshot.metrics.publishMs.p95Ms),
+      publishSampleCount: snapshot.metrics.publishMs.sampleCount,
+      publishStrategy,
+      readSlabMultiplier,
+      readStrategy,
+      rowTransport,
+
       status: snapshot.bulkInfo.status,
       tailChunkCompletedAt: snapshot.metrics.tailChunks.map(
         (chunk) => roundMetric(chunk.completedAt) ?? 0
       ),
       totalMs: roundMetric(snapshot.metrics.totalMs) ?? 0,
+      unpublishedPathCount: snapshot.unpublishedPathCount,
+      viewportRowsCacheHitCount: viewportRowsStats.cacheHitCount,
+      viewportRowsCacheMissCount: viewportRowsStats.cacheMissCount,
+      viewportRowsRequestCompletedCount:
+        viewportRowsStats.requestCompletedCount,
+      viewportRowsRequestDroppedCount: viewportRowsStats.requestDroppedCount,
+      viewportRowsRequestSentCount: viewportRowsStats.requestSentCount,
       workerMode: useWorker ? 'worker' : 'main',
+      workingCheckpointCount: snapshot.metrics.workingCheckpointCount,
+      workingIngestedPathCount: snapshot.workingIngestedPathCount,
       workloadName,
     };
     setLatestSummary(summary);
     console.table([summary]);
   }, [
     expansionMode,
+    frontierGating,
     ingestMode,
     previewInteractivePaintedAt,
+    publishStrategy,
+    readSlabMultiplier,
+    readStrategy,
+    rowTransport,
+
     snapshot,
     useWorker,
+    viewportRowsStats,
     workloadName,
   ]);
+
+  useEffect(() => {
+    if (
+      snapshot.bulkInfo.status === 'idle' ||
+      snapshot.bulkInfo.status === 'ingesting' ||
+      !hasReadLatencySamples(readLatencySummary)
+    ) {
+      return;
+    }
+
+    const summaryKey = JSON.stringify(readLatencySummary);
+    if (lastReadLatencyLogKeyRef.current === summaryKey) {
+      return;
+    }
+    lastReadLatencyLogKeyRef.current = summaryKey;
+
+    addLog(
+      `visibleRows:active ${formatReadLatencySummary(readLatencySummary.visibleRows.activeIngest)}`
+    );
+    if (readLatencySummary.visibleRows.postCompletion.total.sampleCount > 0) {
+      addLog(
+        `visibleRows:post ${formatReadLatencySummary(readLatencySummary.visibleRows.postCompletion)}`
+      );
+    }
+
+    if (readLatencySummary.visibleIndex.activeIngest.total.sampleCount > 0) {
+      addLog(
+        `visibleIndex:active ${formatReadLatencySummary(readLatencySummary.visibleIndex.activeIngest)}`
+      );
+    }
+    if (readLatencySummary.visibleIndex.postCompletion.total.sampleCount > 0) {
+      addLog(
+        `visibleIndex:post ${formatReadLatencySummary(readLatencySummary.visibleIndex.postCompletion)}`
+      );
+    }
+  }, [addLog, readLatencySummary, snapshot.bulkInfo.status]);
 
   useLayoutEffect(() => {
     if (focusedPath == null) {
@@ -1365,43 +2393,92 @@ function BulkExperimentSession({
   const showEmptyState =
     displayRows.length === 0 && unresolvedWindowHeight === 0;
 
-  const latestMetricsContent =
-    latestSummary == null ? (
-      <span className="text-muted-foreground italic">
-        Reset the session to replay preview activation and ingest milestones.
-      </span>
-    ) : (
-      <div className="text-muted-foreground mt-1 space-y-1">
-        <div>
-          {latestSummary.workerMode} / {latestSummary.workloadName} /{' '}
-          {latestSummary.ingestMode}
-        </div>
-        <div>
-          preview={formatMetric(latestSummary.previewInteractivePaintedAt)}{' '}
-          fetch=
-          {formatMetric(latestSummary.fetchCompletedAt)} parse=
-          {formatMetric(latestSummary.parseCompletedAt)}
-        </div>
-        <div>
-          head={formatMetric(latestSummary.headChunkCompletedAt)} frontier=
-          {latestSummary.headChunkMaterializedVisibleCount == null
-            ? 'n/a'
-            : `${latestSummary.headChunkMaterializedVisibleCount.toLocaleString()} rows`}
-        </div>
-        <div>tail={formatMetricList(latestSummary.tailChunkCompletedAt)}</div>
-        <div>
-          apply={formatMetric(latestSummary.applyMs)} total=
-          {formatMetric(latestSummary.totalMs)}
-        </div>
-        <div>
-          longtasks=
-          {latestSummary.longTaskCount == null
-            ? 'n/a'
-            : String(latestSummary.longTaskCount)}
-          {' / '}longest={formatMetric(latestSummary.longestLongTaskMs)}
-        </div>
+  const latestMetricsContent = (
+    <div className="text-muted-foreground mt-1 space-y-1">
+      <div>
+        {useWorker ? 'worker' : 'main'} / {workloadName} / {ingestMode} / read=
+        {readStrategy}
+        {readStrategy === 'latest-only-slab'
+          ? ` x${String(readSlabMultiplier)}`
+          : ''}{' '}
+        / transport={rowTransport} / publish={publishStrategy}
       </div>
-    );
+      <div>
+        committed={formatProgress(snapshot)} working=
+        {formatWorkingProgress(snapshot)}
+      </div>
+      <div>
+        unpublished={snapshot.unpublishedPathCount.toLocaleString()} frontier=
+        {snapshot.lastCommittedChangeStartIndex == null
+          ? 'n/a'
+          : snapshot.lastCommittedChangeStartIndex.toLocaleString()}{' '}
+        age=
+        {formatMetric(snapshot.committedSnapshotAgeMs)} gating=
+        {frontierGating ? 'on' : 'off'}
+      </div>
+      <div>viewportRows={formatViewportRowsStats(viewportRowsStats)}</div>
+      {snapshot.metrics == null ? null : (
+        <div>
+          publishes={String(snapshot.metrics.committedPublishCount)}{' '}
+          checkpoints=
+          {String(snapshot.metrics.workingCheckpointCount)} publish=
+          {formatLatencyMetricSummary(snapshot.metrics.publishMs)}
+        </div>
+      )}
+      {latestSummary == null ? (
+        <span className="italic">
+          Reset the session to replay preview activation, ingest milestones, and
+          final latency summaries.
+        </span>
+      ) : (
+        <>
+          <div>
+            preview={formatMetric(latestSummary.previewInteractivePaintedAt)}{' '}
+            fetch={formatMetric(latestSummary.fetchCompletedAt)} parse=
+            {formatMetric(latestSummary.parseCompletedAt)}
+          </div>
+          <div>
+            head={formatMetric(latestSummary.headChunkCompletedAt)} frontier=
+            {latestSummary.headChunkMaterializedVisibleCount == null
+              ? 'n/a'
+              : `${latestSummary.headChunkMaterializedVisibleCount.toLocaleString()} rows`}
+          </div>
+          <div>tail={formatMetricList(latestSummary.tailChunkCompletedAt)}</div>
+          <div>
+            apply={formatMetric(latestSummary.applyMs)} total=
+            {formatMetric(latestSummary.totalMs)}
+          </div>
+          <div>
+            longtasks=
+            {latestSummary.longTaskCount == null
+              ? 'n/a'
+              : String(latestSummary.longTaskCount)}
+            {' / '}longest={formatMetric(latestSummary.longestLongTaskMs)}
+          </div>
+        </>
+      )}
+      <div className="pt-1">
+        rows(active)=
+        {formatReadLatencySummary(readLatencySummary.visibleRows.activeIngest)}
+      </div>
+      <div>
+        rows(post)=
+        {formatReadLatencySummary(
+          readLatencySummary.visibleRows.postCompletion
+        )}
+      </div>
+      <div>
+        index(active)=
+        {formatReadLatencySummary(readLatencySummary.visibleIndex.activeIngest)}
+      </div>
+      <div>
+        index(post)=
+        {formatReadLatencySummary(
+          readLatencySummary.visibleIndex.postCompletion
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] xl:items-start">
@@ -1488,6 +2565,162 @@ function BulkExperimentSession({
                 }}
               >
                 {BULK_EXPERIMENT_HEAD_CHUNK_SIZE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+        </div>
+        <div className="mb-3 grid gap-3 text-xs md:grid-cols-2 xl:grid-cols-5">
+          <label className="grid gap-1">
+            <span className="font-medium">Read strategy</span>
+            <select
+              value={readStrategy}
+              onChange={(event) => {
+                onReadStrategyChange(
+                  event.target.value as BulkExperimentReadStrategy
+                );
+              }}
+            >
+              {BULK_EXPERIMENT_READ_STRATEGY_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {readStrategy === 'latest-only-slab' ? (
+            <label className="grid gap-1">
+              <span className="font-medium">Read slab</span>
+              <select
+                value={readSlabMultiplier}
+                onChange={(event) => {
+                  onReadSlabMultiplierChange(
+                    Number(
+                      event.target.value
+                    ) as BulkExperimentReadSlabMultiplier
+                  );
+                }}
+              >
+                {BULK_EXPERIMENT_READ_SLAB_MULTIPLIER_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+
+          <label className="grid gap-1">
+            <span className="font-medium">Row transport</span>
+            <select
+              value={rowTransport}
+              onChange={(event) => {
+                onRowTransportChange(
+                  event.target.value as BulkExperimentRowTransport
+                );
+              }}
+            >
+              {BULK_EXPERIMENT_ROW_TRANSPORT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="flex cursor-pointer items-center gap-2 select-none">
+            <input
+              checked={frontierGating}
+              type="checkbox"
+              onChange={(event) => {
+                onFrontierGatingChange(event.target.checked);
+              }}
+            />
+            Frontier gating
+          </label>
+
+          <label className="grid gap-1">
+            <span className="font-medium">Publish strategy</span>
+            <select
+              value={publishStrategy}
+              onChange={(event) => {
+                onPublishStrategyChange(
+                  event.target.value as BulkExperimentPublishStrategy
+                );
+              }}
+            >
+              {BULK_EXPERIMENT_PUBLISH_STRATEGY_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {publishStrategy === 'checkpoint-count' ? (
+            <label className="grid gap-1">
+              <span className="font-medium">Publish every</span>
+              <select
+                value={publishCheckpointInterval}
+                onChange={(event) => {
+                  onPublishCheckpointIntervalChange(
+                    Number(
+                      event.target.value
+                    ) as BulkExperimentPublishCheckpointInterval
+                  );
+                }}
+              >
+                {BULK_EXPERIMENT_PUBLISH_CHECKPOINT_INTERVAL_OPTIONS.map(
+                  (option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  )
+                )}
+              </select>
+            </label>
+          ) : null}
+
+          {publishStrategy === 'time-budget' ? (
+            <label className="grid gap-1">
+              <span className="font-medium">Publish budget</span>
+              <select
+                value={publishTimeBudgetMs}
+                onChange={(event) => {
+                  onPublishTimeBudgetMsChange(
+                    Number(
+                      event.target.value
+                    ) as BulkExperimentPublishTimeBudgetMs
+                  );
+                }}
+              >
+                {BULK_EXPERIMENT_PUBLISH_TIME_BUDGET_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+
+          {publishStrategy === 'path-budget' ? (
+            <label className="grid gap-1">
+              <span className="font-medium">Publish paths</span>
+              <select
+                value={publishPathBudget}
+                onChange={(event) => {
+                  onPublishPathBudgetChange(
+                    Number(
+                      event.target.value
+                    ) as BulkExperimentPublishPathBudget
+                  );
+                }}
+              >
+                {BULK_EXPERIMENT_PUBLISH_PATH_BUDGET_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
                   </option>
