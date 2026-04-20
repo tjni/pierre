@@ -1,6 +1,6 @@
 'use client';
 
-import { IconRefresh } from '@pierre/icons';
+import { IconFilePlus, IconFolderPlus, IconRefresh } from '@pierre/icons';
 import type {
   ContextMenuTriggerMode,
   FileTreeCompositionOptions,
@@ -52,6 +52,207 @@ const TRIGGER_MODE_DEMOS: readonly TriggerModeDemo[] = [
 
 interface DemoContextMenuClientProps {
   preloadedDataById: Readonly<Record<string, FileTreePreloadedData>>;
+}
+
+function LocalProjectHeader({
+  projectName,
+  onAddFile,
+  onAddFolder,
+}: {
+  projectName: string;
+  onAddFile: () => void;
+  onAddFolder: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2 px-3 py-2">
+      <div className="min-w-0 truncate text-sm font-medium text-neutral-200">
+        {projectName}/
+      </div>
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          title="New file"
+          onClick={onAddFile}
+          className="h-4 w-4 text-neutral-400 hover:text-neutral-100"
+        >
+          <IconFilePlus aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          title="New folder"
+          onClick={onAddFolder}
+          className="h-4 w-4 text-neutral-400 hover:text-neutral-100"
+        >
+          <IconFolderPlus aria-hidden="true" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function getParentPath(path: string): string {
+  const normalizedPath = path.endsWith('/') ? path.slice(0, -1) : path;
+  const lastSlashIndex = normalizedPath.lastIndexOf('/');
+  return lastSlashIndex < 0
+    ? ''
+    : `${normalizedPath.slice(0, lastSlashIndex + 1)}`;
+}
+
+function getUniquePath(model: FileTreeModel, basePath: string): string {
+  let suffix = 0;
+  let candidate = basePath;
+  while (model.getItem(candidate) != null) {
+    suffix += 1;
+    if (basePath.endsWith('/')) {
+      candidate = `${basePath.slice(0, -1)}-${String(suffix)}/`;
+      continue;
+    }
+
+    const dotIndex = basePath.lastIndexOf('.');
+    const slashIndex = basePath.lastIndexOf('/');
+    if (dotIndex > slashIndex) {
+      candidate = `${basePath.slice(0, dotIndex)}-${String(suffix)}${basePath.slice(dotIndex)}`;
+      continue;
+    }
+
+    candidate = `${basePath}-${String(suffix)}`;
+  }
+  return candidate;
+}
+
+function ContextMenuContents({
+  context,
+  portalContainer,
+  onAddFile,
+  onAddFolder,
+  onDelete,
+  onRename,
+}: {
+  context: Pick<
+    ContextMenuOpenContext,
+    'anchorRect' | 'close' | 'restoreFocus'
+  >;
+  portalContainer?: HTMLElement | null;
+  onAddFile: () => void;
+  onAddFolder: () => void;
+  onDelete: () => void;
+  onRename: () => void;
+}) {
+  const closeAfter = (action: () => void) => {
+    action();
+    context.close();
+  };
+
+  return (
+    <DropdownMenu
+      open
+      modal={false}
+      onOpenChange={(open) => !open && context.close()}
+    >
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-hidden="true"
+          tabIndex={-1}
+          style={getFloatingContextMenuTriggerStyle(context.anchorRect)}
+        />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        container={portalContainer}
+        data-file-tree-context-menu-root="true"
+        align="center"
+        side="bottom"
+        sideOffset={4}
+        className="min-w-[180px]"
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          context.restoreFocus();
+        }}
+      >
+        <DropdownMenuItem
+          onSelect={() => {
+            closeAfter(onAddFile);
+          }}
+        >
+          New file
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={() => {
+            closeAfter(onAddFolder);
+          }}
+        >
+          New folder
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={() => {
+            context.close({ restoreFocus: false });
+            onRename();
+          }}
+        >
+          Rename
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          variant="danger"
+          onSelect={() => {
+            closeAfter(onDelete);
+          }}
+        >
+          Delete
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function clearContextMenuSlot({
+  menuRootRef,
+  slotElement,
+}: {
+  menuRootRef: { current: ReactDomRoot | null };
+  slotElement: HTMLDivElement;
+}): void {
+  const currentRoot = menuRootRef.current;
+  if (currentRoot == null) {
+    return;
+  }
+
+  slotElement.style.display = 'none';
+  currentRoot.render(null);
+}
+
+function useHeaderSlotRenderer(
+  modelRef: { current: FileTreeModel | null },
+  projectName: string
+) {
+  const slotElementRef = useRef<HTMLDivElement | null>(null);
+  const headerRootRef = useRef<ReactDomRoot | null>(null);
+
+  return useCallback(() => {
+    const slotElement = slotElementRef.current ?? document.createElement('div');
+    slotElementRef.current = slotElement;
+    slotElement.style.display = 'block';
+    headerRootRef.current ??= createRoot(slotElement);
+
+    const model = modelRef.current;
+    if (model == null) {
+      return slotElement;
+    }
+
+    headerRootRef.current.render(
+      <LocalProjectHeader
+        projectName={projectName}
+        onAddFile={() => {
+          model.add(getUniquePath(model, 'new-file.ts'));
+        }}
+        onAddFolder={() => {
+          model.add(getUniquePath(model, 'new-folder/'));
+        }}
+      />
+    );
+
+    return slotElement;
+  }, [modelRef, projectName]);
 }
 
 function getProjectNameForMode(mode: ContextMenuTriggerMode): string {
