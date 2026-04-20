@@ -1,11 +1,18 @@
 'use client';
 
+import { PathStore } from '@pierre/path-store';
+import type {
+  PathStoreVisibleRow,
+  PathStoreVisibleTreeProjectionData,
+} from '@pierre/path-store';
 import {
+  computeStickyWindowLayout,
   computeWindowRange,
   FILE_TREE_DEFAULT_ITEM_HEIGHT,
   FILE_TREE_DEFAULT_OVERSCAN,
   type FileTreeRange,
 } from '@pierre/trees';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
@@ -15,6 +22,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useTransition,
 } from 'react';
 
 import { ExampleCard } from '../_components/ExampleCard';
@@ -27,12 +35,14 @@ import {
   type BulkExperimentExpansionMode,
   type BulkExperimentHeadChunkSize,
   type BulkExperimentIngestMode,
+  type BulkExperimentRouteState,
   type BulkExperimentWorkloadName,
   DEFAULT_BULK_EXPERIMENT_EXPANSION_MODE,
   DEFAULT_BULK_EXPERIMENT_HEAD_CHUNK_SIZE,
   DEFAULT_BULK_EXPERIMENT_INGEST_MODE,
   DEFAULT_BULK_EXPERIMENT_WORKLOAD_NAME,
   getBulkExperimentAssetUrl,
+  getBulkExperimentExpansionOptions,
   getBulkExperimentSeededExpandedPaths,
 } from '../_lib/bulkExperimentMeta';
 import { BulkExperimentModel } from '../_lib/bulkExperimentModel';
@@ -46,7 +56,9 @@ import type {
 } from '../_lib/bulkExperimentProtocol';
 import { FILE_TREE_PROOF_VIEWPORT_HEIGHT } from '../_lib/workloadMeta';
 
-const EMPTY_RANGE: FileTreeRange = { start: 0, end: -1 };
+function rangesEqual(left: FileTreeRange, right: FileTreeRange): boolean {
+  return left.start === right.start && left.end === right.end;
+}
 
 interface BulkExperimentAdapter {
   cancelIngest(): Promise<void>;
@@ -123,6 +135,88 @@ function formatRowLabel(row: BulkExperimentVisibleRow): string {
   }
 
   return flattenedSegments.map((segment) => segment.name).join(' / ');
+}
+
+interface BulkExperimentVisibleProjection {
+  getParentIndex(index: number): number;
+  paths: readonly string[];
+  posInSetByIndex: Int32Array<ArrayBufferLike>;
+  setSizeByIndex: Int32Array<ArrayBufferLike>;
+}
+
+function createVisibleProjection(
+  projection: PathStoreVisibleTreeProjectionData
+): BulkExperimentVisibleProjection {
+  return {
+    getParentIndex: projection.getParentIndex,
+    paths: projection.paths,
+    posInSetByIndex: projection.posInSetByIndex,
+    setSizeByIndex: projection.setSizeByIndex,
+  };
+}
+
+// Builds a tiny main-thread fallback for the preview prefix so the first rows do
+// not disappear while the worker is busy ingesting deeper ranges.
+function createPreviewFallbackRows(
+  options: BulkExperimentInitOptions
+): readonly BulkExperimentVisibleRow[] {
+  const store = new PathStore({
+    flattenEmptyDirectories: false,
+    ...getBulkExperimentExpansionOptions(
+      options.workloadName,
+      options.expansionMode
+    ),
+    preparedInput: PathStore.preparePresortedInput(options.previewPaths),
+  });
+  const visibleCount = store.getVisibleCount();
+  if (visibleCount <= 0) {
+    return [];
+  }
+
+  const projection = createVisibleProjection(
+    store.getVisibleTreeProjectionData()
+  );
+  const ancestorPathsByIndex = new Map<number, readonly string[]>();
+  const getAncestorPaths = (index: number): readonly string[] => {
+    const cached = ancestorPathsByIndex.get(index);
+    if (cached != null) {
+      return cached;
+    }
+
+    const parentIndex = projection.getParentIndex(index);
+    const ancestorPaths =
+      parentIndex < 0
+        ? []
+        : [
+            ...getAncestorPaths(parentIndex),
+            projection.paths[parentIndex] ?? '',
+          ].filter((path) => path !== '');
+    ancestorPathsByIndex.set(index, ancestorPaths);
+    return ancestorPaths;
+  };
+
+  return store.getVisibleSlice(0, visibleCount - 1).map(
+    (row: PathStoreVisibleRow, index) =>
+      ({
+        ancestorPaths: getAncestorPaths(index),
+        depth: row.depth,
+        flattenedSegments: row.flattenedSegments?.map((segment) => ({
+          isTerminal: segment.isTerminal,
+          name: segment.name,
+          path: segment.path,
+        })),
+        hasChildren: row.hasChildren,
+        index,
+        isExpanded: row.isExpanded,
+        isFlattened: row.isFlattened,
+        kind: row.kind,
+        level: row.depth,
+        name: row.name,
+        path: projection.paths[index] ?? row.path,
+        posInSet: projection.posInSetByIndex[index] ?? 0,
+        setSize: projection.setSizeByIndex[index] ?? 0,
+      }) satisfies BulkExperimentVisibleRow
+  );
 }
 
 function createLongTaskMonitor(): { stop(): LongTaskStats } | null {
@@ -444,43 +538,135 @@ function summarizeSelection(selectedPaths: readonly string[]): string {
   return selectedPaths.length === 0 ? '[]' : `[${selectedPaths.join(', ')}]`;
 }
 
-export function BulkIngestDemoClient({ payloadHtml }: { payloadHtml: string }) {
+interface BulkIngestDemoClientProps extends BulkExperimentRouteState {
+  payloadHtml: string;
+}
+
+function applyBulkExperimentRouteState(
+  searchParams: URLSearchParams,
+  state: BulkExperimentRouteState
+): void {
+  if (state.workloadName === DEFAULT_BULK_EXPERIMENT_WORKLOAD_NAME) {
+    searchParams.delete('workload');
+  } else {
+    searchParams.set('workload', state.workloadName);
+  }
+
+  if (state.expansionMode === DEFAULT_BULK_EXPERIMENT_EXPANSION_MODE) {
+    searchParams.delete('expansion');
+  } else {
+    searchParams.set('expansion', state.expansionMode);
+  }
+
+  if (state.ingestMode === DEFAULT_BULK_EXPERIMENT_INGEST_MODE) {
+    searchParams.delete('ingest');
+  } else {
+    searchParams.set('ingest', state.ingestMode);
+  }
+
+  if (state.ingestMode !== 'head-start') {
+    searchParams.delete('head');
+  } else if (state.headChunkSize === DEFAULT_BULK_EXPERIMENT_HEAD_CHUNK_SIZE) {
+    searchParams.delete('head');
+  } else {
+    searchParams.set('head', String(state.headChunkSize));
+  }
+
+  if (state.useWorker) {
+    searchParams.delete('worker');
+  } else {
+    searchParams.set('worker', '0');
+  }
+}
+
+export function BulkIngestDemoClient({
+  expansionMode,
+  headChunkSize,
+  ingestMode,
+  payloadHtml,
+  useWorker,
+  workloadName,
+}: BulkIngestDemoClientProps) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [, startConfigTransition] = useTransition();
   const [hasHydrated, setHasHydrated] = useState(false);
-  const [useWorker, setUseWorker] = useState(true);
-  const [workloadName, setWorkloadName] = useState<BulkExperimentWorkloadName>(
-    DEFAULT_BULK_EXPERIMENT_WORKLOAD_NAME
-  );
-  const [ingestMode, setIngestMode] = useState<BulkExperimentIngestMode>(
-    DEFAULT_BULK_EXPERIMENT_INGEST_MODE
-  );
-  const [expansionMode, setExpansionMode] =
-    useState<BulkExperimentExpansionMode>(
-      DEFAULT_BULK_EXPERIMENT_EXPANSION_MODE
-    );
-  const [headChunkSize, setHeadChunkSize] =
-    useState<BulkExperimentHeadChunkSize>(
-      DEFAULT_BULK_EXPERIMENT_HEAD_CHUNK_SIZE
-    );
   const [resetToken, setResetToken] = useState(0);
 
   useEffect(() => {
     setHasHydrated(true);
   }, []);
 
+  const replaceRouteState = useCallback(
+    (nextState: BulkExperimentRouteState) => {
+      const nextSearchParams = new URLSearchParams(searchParams.toString());
+      applyBulkExperimentRouteState(nextSearchParams, nextState);
+      const nextUrl =
+        nextSearchParams.size > 0
+          ? `${pathname}?${nextSearchParams.toString()}`
+          : pathname;
+      startConfigTransition(() => {
+        router.replace(nextUrl, { scroll: false });
+      });
+    },
+    [pathname, router, searchParams, startConfigTransition]
+  );
+
   return (
     <BulkExperimentSession
-      key={`${useWorker ? 'worker' : 'main'}:${workloadName}:${ingestMode}:${expansionMode}:${String(headChunkSize)}:${String(resetToken)}`}
+      key={`${workloadName}:${expansionMode}:${ingestMode}:${String(headChunkSize)}:${useWorker ? 'worker' : 'main'}:${String(resetToken)}`}
       expansionMode={expansionMode}
       headChunkSize={headChunkSize}
       ingestMode={ingestMode}
-      onExpansionModeChange={setExpansionMode}
-      onHeadChunkSizeChange={setHeadChunkSize}
-      onIngestModeChange={setIngestMode}
+      onExpansionModeChange={(nextExpansionMode) => {
+        replaceRouteState({
+          expansionMode: nextExpansionMode,
+          headChunkSize,
+          ingestMode,
+          useWorker,
+          workloadName,
+        });
+      }}
+      onHeadChunkSizeChange={(nextHeadChunkSize) => {
+        replaceRouteState({
+          expansionMode,
+          headChunkSize: nextHeadChunkSize,
+          ingestMode,
+          useWorker,
+          workloadName,
+        });
+      }}
+      onIngestModeChange={(nextIngestMode) => {
+        replaceRouteState({
+          expansionMode,
+          headChunkSize,
+          ingestMode: nextIngestMode,
+          useWorker,
+          workloadName,
+        });
+      }}
       onReset={() => {
         setResetToken((value) => value + 1);
       }}
-      onUseWorkerChange={setUseWorker}
-      onWorkloadChange={setWorkloadName}
+      onUseWorkerChange={(nextUseWorker) => {
+        replaceRouteState({
+          expansionMode,
+          headChunkSize,
+          ingestMode,
+          useWorker: nextUseWorker,
+          workloadName,
+        });
+      }}
+      onWorkloadChange={(nextWorkloadName) => {
+        replaceRouteState({
+          expansionMode,
+          headChunkSize,
+          ingestMode,
+          useWorker,
+          workloadName: nextWorkloadName,
+        });
+      }}
       payloadHtml={payloadHtml}
       showServerPreview={!hasHydrated}
       useWorker={useWorker}
@@ -529,6 +715,10 @@ function BulkExperimentSession({
       ),
     [expansionMode, headChunkSize, ingestMode, workloadName]
   );
+  const previewFallbackRows = useMemo(
+    () => createPreviewFallbackRows(experimentOptions),
+    [experimentOptions]
+  );
   const previewData = BULK_EXPERIMENT_PREVIEW_DATA[workloadName];
   const workloadOption = useMemo(
     () =>
@@ -542,13 +732,27 @@ function BulkExperimentSession({
     createInitialSnapshot(experimentOptions)
   );
   const [rows, setRows] = useState<readonly BulkExperimentVisibleRow[]>([]);
+  const [itemCount, setItemCount] = useState(snapshot.estimatedVisibleCount);
+  const [resolvedViewportHeight, setResolvedViewportHeight] = useState(
+    FILE_TREE_PROOF_VIEWPORT_HEIGHT
+  );
   const [scrollTop, setScrollTop] = useState(0);
+  const [range, setRange] = useState(() =>
+    computeWindowRange({
+      itemCount: snapshot.estimatedVisibleCount,
+      itemHeight: FILE_TREE_DEFAULT_ITEM_HEIGHT,
+      overscan: FILE_TREE_DEFAULT_OVERSCAN,
+      scrollTop: 0,
+      viewportHeight: FILE_TREE_PROOF_VIEWPORT_HEIGHT,
+    })
+  );
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const [focusedPath, setFocusedPath] = useState<string | null>(null);
   const [selectedPaths, setSelectedPaths] = useState<readonly string[]>([]);
   const [latestSummary, setLatestSummary] =
     useState<BulkExperimentSummary | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const rowButtonByPathRef = useRef(new Map<string, HTMLButtonElement>());
   const longTaskMonitorRef = useRef<ReturnType<
     typeof createLongTaskMonitor
@@ -659,25 +863,130 @@ function BulkExperimentSession({
     };
   }, [adapter, addLog, showServerPreview, snapshot.bulkInfo.status]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (showServerPreview || adapter == null) {
+      return;
+    }
+
+    let scrollTimer: ReturnType<typeof setTimeout> | null = null;
     const scrollElement = scrollRef.current;
+    const listElement = listRef.current;
     if (scrollElement == null) {
       return;
     }
 
-    const maxScrollTop = Math.max(
-      0,
-      snapshot.estimatedVisibleCount * FILE_TREE_DEFAULT_ITEM_HEIGHT -
-        FILE_TREE_PROOF_VIEWPORT_HEIGHT
+    const update = (): void => {
+      const nextItemCount = snapshot.estimatedVisibleCount;
+      const nextViewportHeight =
+        scrollElement.clientHeight > 0
+          ? scrollElement.clientHeight
+          : FILE_TREE_PROOF_VIEWPORT_HEIGHT;
+      const maxScrollTop = Math.max(
+        0,
+        nextItemCount * FILE_TREE_DEFAULT_ITEM_HEIGHT - nextViewportHeight
+      );
+      if (scrollElement.scrollTop > maxScrollTop) {
+        scrollElement.scrollTop = maxScrollTop;
+      }
+
+      const nextScrollTop = Math.min(scrollElement.scrollTop, maxScrollTop);
+      setScrollTop((previousScrollTop) =>
+        previousScrollTop === nextScrollTop ? previousScrollTop : nextScrollTop
+      );
+      setItemCount((previousCount) =>
+        previousCount === nextItemCount ? previousCount : nextItemCount
+      );
+      setResolvedViewportHeight((previousViewportHeight) =>
+        previousViewportHeight === nextViewportHeight
+          ? previousViewportHeight
+          : nextViewportHeight
+      );
+      setRange((previousRange) => {
+        const nextRange = computeWindowRange(
+          {
+            itemCount: nextItemCount,
+            itemHeight: FILE_TREE_DEFAULT_ITEM_HEIGHT,
+            overscan: FILE_TREE_DEFAULT_OVERSCAN,
+            scrollTop: nextScrollTop,
+            viewportHeight: nextViewportHeight,
+          },
+          previousRange
+        );
+        return rangesEqual(previousRange, nextRange)
+          ? previousRange
+          : nextRange;
+      });
+    };
+
+    const onScroll = (): void => {
+      update();
+      if (listElement == null) {
+        return;
+      }
+
+      listElement.dataset.isScrolling ??= '';
+      if (scrollTimer != null) {
+        clearTimeout(scrollTimer);
+      }
+      scrollTimer = setTimeout(() => {
+        delete listElement.dataset.isScrolling;
+        scrollTimer = null;
+      }, 50);
+    };
+
+    scrollElement.addEventListener('scroll', onScroll, { passive: true });
+    const resizeObserver =
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(() => {
+            update();
+          })
+        : null;
+    resizeObserver?.observe(scrollElement);
+    update();
+
+    return () => {
+      scrollElement.removeEventListener('scroll', onScroll);
+      if (scrollTimer != null) {
+        clearTimeout(scrollTimer);
+      }
+      if (listElement != null) {
+        delete listElement.dataset.isScrolling;
+      }
+      resizeObserver?.disconnect();
+    };
+  }, [adapter, showServerPreview, snapshot.estimatedVisibleCount]);
+  const displayRows = useMemo(() => {
+    const rangedRows = rows.filter(
+      (row) => row.index >= range.start && row.index <= range.end
     );
-    if (scrollElement.scrollTop > maxScrollTop) {
-      scrollElement.scrollTop = maxScrollTop;
-      setScrollTop(maxScrollTop);
+    if (range.end < range.start || range.start >= previewFallbackRows.length) {
+      return rangedRows;
     }
-  }, [snapshot.estimatedVisibleCount]);
+
+    const previewOverlapEnd = Math.min(
+      range.end,
+      previewFallbackRows.length - 1
+    );
+    const rowsByIndex = new Map(rangedRows.map((row) => [row.index, row]));
+    const mergedRows: BulkExperimentVisibleRow[] = [];
+    for (let index = range.start; index <= previewOverlapEnd; index += 1) {
+      const nextRow = rowsByIndex.get(index) ?? previewFallbackRows[index];
+      if (nextRow != null) {
+        mergedRows.push(nextRow);
+      }
+    }
+
+    for (const row of rangedRows) {
+      if (row.index > previewOverlapEnd) {
+        mergedRows.push(row);
+      }
+    }
+
+    return mergedRows;
+  }, [previewFallbackRows, range.end, range.start, rows]);
 
   useEffect(() => {
-    if (snapshot.materializedVisibleCount <= 0 || rows.length === 0) {
+    if (snapshot.materializedVisibleCount <= 0 || displayRows.length === 0) {
       topResolvedAnchorRef.current = null;
       return;
     }
@@ -689,7 +998,7 @@ function BulkExperimentSession({
         Math.floor(scrollTop / FILE_TREE_DEFAULT_ITEM_HEIGHT)
       )
     );
-    const anchorRow = rows.find((row) => row.index === anchorIndex);
+    const anchorRow = displayRows.find((row) => row.index === anchorIndex);
     if (anchorRow == null) {
       return;
     }
@@ -704,7 +1013,7 @@ function BulkExperimentSession({
       ),
       path: anchorRow.path,
     };
-  }, [rows, scrollTop, snapshot.materializedVisibleCount]);
+  }, [displayRows, scrollTop, snapshot.materializedVisibleCount]);
 
   useEffect(() => {
     const previousGeometry = previousGeometryRef.current;
@@ -738,7 +1047,7 @@ function BulkExperimentSession({
       const maxScrollTop = Math.max(
         0,
         nextEstimatedVisibleCount * FILE_TREE_DEFAULT_ITEM_HEIGHT -
-          FILE_TREE_PROOF_VIEWPORT_HEIGHT
+          resolvedViewportHeight
       );
       const nextScrollTop = Math.min(
         maxScrollTop,
@@ -749,23 +1058,10 @@ function BulkExperimentSession({
     });
   }, [
     adapter,
+    resolvedViewportHeight,
     snapshot.estimatedVisibleCount,
     snapshot.materializedVisibleCount,
   ]);
-
-  const range = useMemo(
-    () =>
-      adapter == null
-        ? EMPTY_RANGE
-        : computeWindowRange({
-            itemCount: snapshot.estimatedVisibleCount,
-            itemHeight: FILE_TREE_DEFAULT_ITEM_HEIGHT,
-            overscan: FILE_TREE_DEFAULT_OVERSCAN,
-            scrollTop,
-            viewportHeight: FILE_TREE_PROOF_VIEWPORT_HEIGHT,
-          }),
-    [adapter, scrollTop, snapshot.estimatedVisibleCount]
-  );
 
   useEffect(() => {
     let cancelled = false;
@@ -785,6 +1081,17 @@ function BulkExperimentSession({
       cancelled = true;
     };
   }, [adapter, range.end, range.start, snapshot.materializedVisibleCount]);
+
+  const stickyLayout = useMemo(
+    () =>
+      computeStickyWindowLayout({
+        itemCount,
+        itemHeight: FILE_TREE_DEFAULT_ITEM_HEIGHT,
+        range,
+        viewportHeight: resolvedViewportHeight,
+      }),
+    [itemCount, range, resolvedViewportHeight]
+  );
 
   useEffect(() => {
     const metrics = snapshot.metrics;
@@ -1037,14 +1344,6 @@ function BulkExperimentSession({
     [adapter, addLog, moveFocus, setSelectionForRow]
   );
 
-  const totalHeight =
-    snapshot.estimatedVisibleCount * FILE_TREE_DEFAULT_ITEM_HEIGHT;
-  const offsetHeight =
-    range.end < range.start ? 0 : range.start * FILE_TREE_DEFAULT_ITEM_HEIGHT;
-  const windowHeight =
-    range.end < range.start
-      ? 0
-      : (range.end - range.start + 1) * FILE_TREE_DEFAULT_ITEM_HEIGHT;
   const unresolvedWindowStart = Math.max(
     range.start,
     snapshot.materializedVisibleCount
@@ -1063,7 +1362,8 @@ function BulkExperimentSession({
     snapshot.unresolvedFrontier == null
       ? undefined
       : `${String(snapshot.unresolvedFrontier.level * 14 + 4)}px`;
-  const trailingHeight = Math.max(0, totalHeight - offsetHeight - windowHeight);
+  const showEmptyState =
+    displayRows.length === 0 && unresolvedWindowHeight === 0;
 
   const latestMetricsContent =
     latestSummary == null ? (
@@ -1244,129 +1544,159 @@ function BulkExperimentSession({
         ) : (
           <div
             ref={scrollRef}
+            data-file-tree-virtualized-scroll="true"
             className="overflow-auto rounded border"
             style={{
               borderColor: 'var(--color-border)',
               height: `${String(FILE_TREE_PROOF_VIEWPORT_HEIGHT)}px`,
             }}
-            onScroll={(event) => {
-              setScrollTop(event.currentTarget.scrollTop);
-            }}
           >
-            <div role="tree" aria-label="Bulk ingest experiment tree">
-              <div style={{ height: `${offsetHeight}px` }} />
-              {rows.length === 0 && unresolvedWindowHeight === 0 ? (
-                <div className="text-muted-foreground px-3 py-2 text-xs italic">
-                  No visible rows for the current expansion state.
-                </div>
-              ) : (
-                <>
-                  {rows.map((row) => {
-                    const isFocused = focusedPath === row.path;
-                    const isSelected = selectedPathSet.has(row.path);
-                    const canToggle =
-                      row.kind === 'directory' && row.hasChildren;
-                    return (
+            <div
+              ref={listRef}
+              data-file-tree-virtualized-list="true"
+              style={{
+                height: `${stickyLayout.totalHeight}px`,
+                minHeight: '100%',
+                overflowAnchor: 'none',
+                position: 'relative',
+                width: '100%',
+              }}
+            >
+              <div
+                data-file-tree-virtualized-sticky-offset="true"
+                aria-hidden="true"
+                style={{
+                  contain: 'layout size',
+                  height: `${stickyLayout.offsetHeight}px`,
+                }}
+              />
+              <div
+                data-file-tree-virtualized-sticky="true"
+                role="tree"
+                aria-label="Bulk ingest experiment tree"
+                style={{
+                  bottom: `${stickyLayout.stickyInset}px`,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  height: `${stickyLayout.windowHeight}px`,
+                  isolation: 'isolate',
+                  position: 'sticky',
+                  top: `${stickyLayout.stickyInset}px`,
+                  width: '100%',
+                }}
+              >
+                {showEmptyState ? (
+                  <div className="text-muted-foreground px-3 py-2 text-xs italic">
+                    No visible rows for the current expansion state.
+                  </div>
+                ) : (
+                  <>
+                    {displayRows.map((row) => {
+                      const isFocused = focusedPath === row.path;
+                      const isSelected = selectedPathSet.has(row.path);
+                      const canToggle =
+                        row.kind === 'directory' && row.hasChildren;
+                      return (
+                        <div
+                          key={`${row.index}:${row.path}`}
+                          className="flex items-center gap-1 px-2"
+                          style={{
+                            minHeight: `${String(FILE_TREE_DEFAULT_ITEM_HEIGHT)}px`,
+                            paddingLeft: `${String(row.level * 14 + 4)}px`,
+                          }}
+                        >
+                          <button
+                            type="button"
+                            className="text-muted-foreground w-5 shrink-0 text-center"
+                            aria-hidden={!canToggle}
+                            disabled={!canToggle}
+                            onClick={() => {
+                              if (!canToggle || adapter == null) {
+                                return;
+                              }
+
+                              if (row.isExpanded) {
+                                void adapter.collapsePath(row.path);
+                                addLog(`collapse:${row.path}`);
+                              } else {
+                                void adapter.expandPath(row.path);
+                                addLog(`expand:${row.path}`);
+                              }
+                              setFocusedIndex(row.index);
+                              setFocusedPath(row.path);
+                            }}
+                          >
+                            {canToggle ? (row.isExpanded ? '▾' : '▸') : '·'}
+                          </button>
+                          <button
+                            type="button"
+                            ref={(element) => {
+                              if (element == null) {
+                                rowButtonByPathRef.current.delete(row.path);
+                                return;
+                              }
+
+                              rowButtonByPathRef.current.set(row.path, element);
+                            }}
+                            role="treeitem"
+                            aria-expanded={
+                              row.kind === 'directory'
+                                ? row.isExpanded
+                                : undefined
+                            }
+                            aria-level={row.level + 1}
+                            aria-posinset={row.posInSet + 1}
+                            aria-selected={isSelected}
+                            aria-setsize={row.setSize}
+                            className="min-w-0 flex-1 rounded-sm px-2 py-1 text-left text-xs"
+                            data-row-path={row.path}
+                            style={{
+                              backgroundColor: isSelected
+                                ? 'var(--color-muted)'
+                                : 'transparent',
+                              outlineColor: isFocused
+                                ? 'var(--color-primary)'
+                                : undefined,
+                            }}
+                            tabIndex={isFocused ? 0 : -1}
+                            onClick={(event) => {
+                              handleRowClick(event, row);
+                            }}
+                            onFocus={() => {
+                              setFocusedIndex(row.index);
+                              setFocusedPath(row.path);
+                            }}
+                            onKeyDown={(event) => {
+                              void handleRowKeyDown(event, row);
+                            }}
+                          >
+                            <span className="truncate">
+                              {formatRowLabel(row)}
+                            </span>
+                          </button>
+                        </div>
+                      );
+                    })}
+                    {unresolvedWindowHeight > 0 ? (
                       <div
-                        key={`${row.index}:${row.path}`}
-                        className="flex items-center gap-1 px-2"
+                        aria-hidden="true"
+                        className="text-muted-foreground flex items-start px-2 pt-2 text-xs italic"
                         style={{
-                          minHeight: `${String(FILE_TREE_DEFAULT_ITEM_HEIGHT)}px`,
-                          paddingLeft: `${String(row.level * 14 + 4)}px`,
+                          backgroundColor: 'var(--color-muted)',
+                          height: `${String(unresolvedWindowHeight)}px`,
+                          paddingLeft: showLocalUnresolvedBand
+                            ? unresolvedBandPaddingLeft
+                            : undefined,
                         }}
                       >
-                        <button
-                          type="button"
-                          className="text-muted-foreground w-5 shrink-0 text-center"
-                          aria-hidden={!canToggle}
-                          disabled={!canToggle}
-                          onClick={() => {
-                            if (!canToggle || adapter == null) {
-                              return;
-                            }
-
-                            if (row.isExpanded) {
-                              void adapter.collapsePath(row.path);
-                              addLog(`collapse:${row.path}`);
-                            } else {
-                              void adapter.expandPath(row.path);
-                              addLog(`expand:${row.path}`);
-                            }
-                            setFocusedIndex(row.index);
-                            setFocusedPath(row.path);
-                          }}
-                        >
-                          {canToggle ? (row.isExpanded ? '▾' : '▸') : '·'}
-                        </button>
-                        <button
-                          type="button"
-                          ref={(element) => {
-                            if (element == null) {
-                              rowButtonByPathRef.current.delete(row.path);
-                              return;
-                            }
-
-                            rowButtonByPathRef.current.set(row.path, element);
-                          }}
-                          role="treeitem"
-                          aria-expanded={
-                            row.kind === 'directory'
-                              ? row.isExpanded
-                              : undefined
-                          }
-                          aria-level={row.level + 1}
-                          aria-posinset={row.posInSet + 1}
-                          aria-selected={isSelected}
-                          aria-setsize={row.setSize}
-                          className="min-w-0 flex-1 rounded-sm px-2 py-1 text-left text-xs"
-                          data-row-path={row.path}
-                          style={{
-                            backgroundColor: isSelected
-                              ? 'var(--color-muted)'
-                              : 'transparent',
-                            outlineColor: isFocused
-                              ? 'var(--color-primary)'
-                              : undefined,
-                          }}
-                          tabIndex={isFocused ? 0 : -1}
-                          onClick={(event) => {
-                            handleRowClick(event, row);
-                          }}
-                          onFocus={() => {
-                            setFocusedIndex(row.index);
-                            setFocusedPath(row.path);
-                          }}
-                          onKeyDown={(event) => {
-                            void handleRowKeyDown(event, row);
-                          }}
-                        >
-                          <span className="truncate">
-                            {formatRowLabel(row)}
-                          </span>
-                        </button>
+                        {showLocalUnresolvedBand
+                          ? 'Unresolved descendants continue past the materialized frontier.'
+                          : 'Viewport has outrun the materialized frontier.'}
                       </div>
-                    );
-                  })}
-                  {unresolvedWindowHeight > 0 ? (
-                    <div
-                      aria-hidden="true"
-                      className="text-muted-foreground flex items-start px-2 pt-2 text-xs italic"
-                      style={{
-                        backgroundColor: 'var(--color-muted)',
-                        height: `${String(unresolvedWindowHeight)}px`,
-                        paddingLeft: showLocalUnresolvedBand
-                          ? unresolvedBandPaddingLeft
-                          : undefined,
-                      }}
-                    >
-                      {showLocalUnresolvedBand
-                        ? 'Unresolved descendants continue past the materialized frontier.'
-                        : 'Viewport has outrun the materialized frontier.'}
-                    </div>
-                  ) : null}
-                </>
-              )}
-              <div style={{ height: `${trailingHeight}px` }} />
+                    ) : null}
+                  </>
+                )}
+              </div>
             </div>
           </div>
         )}

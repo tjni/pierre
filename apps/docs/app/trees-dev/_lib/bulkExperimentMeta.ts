@@ -2,6 +2,7 @@ import type { PathStoreInitialExpansion } from '@pierre/path-store';
 
 import {
   AOSP_UPGRADE_DATA_URL,
+  getRequestedSearchParamValue,
   getWorkloadOption,
   type TreesWorkloadOption,
 } from './workloadMeta';
@@ -14,6 +15,22 @@ export type BulkExperimentWorkloadName =
 export type BulkExperimentIngestMode = 'chunked' | 'head-start' | 'oneshot';
 export type BulkExperimentExpansionMode = 'all-open' | 'all-closed' | 'seeded';
 export type BulkExperimentHeadChunkSize = 1000 | 5000 | 10000 | 25000;
+
+export interface BulkExperimentPageSearchParams {
+  expansion?: string | readonly string[];
+  head?: string | readonly string[];
+  ingest?: string | readonly string[];
+  worker?: string | readonly string[];
+  workload?: string | readonly string[];
+}
+
+export interface BulkExperimentRouteState {
+  expansionMode: BulkExperimentExpansionMode;
+  headChunkSize: BulkExperimentHeadChunkSize;
+  ingestMode: BulkExperimentIngestMode;
+  useWorker: boolean;
+  workloadName: BulkExperimentWorkloadName;
+}
 
 export interface BulkExperimentExpansionOptions {
   initialExpandedPaths?: readonly string[];
@@ -30,7 +47,7 @@ export const BULK_PREVIEW_PATH_COUNT = 100;
 export const BULK_EXPERIMENT_CHUNK_SIZE = 40_000;
 export const BULK_EXPERIMENT_HEAD_START_TAIL_CHUNK_COUNT = 4;
 export const DEFAULT_BULK_EXPERIMENT_WORKLOAD_NAME: BulkExperimentWorkloadName =
-  'linux-5x';
+  'aosp';
 export const DEFAULT_BULK_EXPERIMENT_INGEST_MODE: BulkExperimentIngestMode =
   'head-start';
 export const DEFAULT_BULK_EXPERIMENT_EXPANSION_MODE: BulkExperimentExpansionMode =
@@ -158,4 +175,73 @@ export function getBulkExperimentAssetUrl(
   workloadName: BulkExperimentWorkloadName
 ): string {
   return BULK_WORKLOAD_ASSET_URL_BY_NAME[workloadName];
+}
+
+export function resolveBulkExperimentWorkloadName(
+  value: string | null | undefined
+): BulkExperimentWorkloadName {
+  return BULK_EXPERIMENT_WORKLOAD_NAMES.some((workload) => workload === value)
+    ? (value as BulkExperimentWorkloadName)
+    : DEFAULT_BULK_EXPERIMENT_WORKLOAD_NAME;
+}
+
+export function resolveBulkExperimentIngestMode(
+  value: string | null | undefined
+): BulkExperimentIngestMode {
+  return BULK_EXPERIMENT_INGEST_OPTIONS.some((option) => option.value === value)
+    ? (value as BulkExperimentIngestMode)
+    : DEFAULT_BULK_EXPERIMENT_INGEST_MODE;
+}
+
+export function resolveBulkExperimentExpansionMode(
+  value: string | null | undefined
+): BulkExperimentExpansionMode {
+  return BULK_EXPERIMENT_EXPANSION_OPTIONS.some(
+    (option) => option.value === value
+  )
+    ? (value as BulkExperimentExpansionMode)
+    : DEFAULT_BULK_EXPERIMENT_EXPANSION_MODE;
+}
+
+export function resolveBulkExperimentHeadChunkSize(
+  value: string | null | undefined
+): BulkExperimentHeadChunkSize {
+  const parsedValue = Number(value);
+  return BULK_EXPERIMENT_HEAD_CHUNK_SIZE_OPTIONS.some(
+    (option) => option.value === parsedValue
+  )
+    ? (parsedValue as BulkExperimentHeadChunkSize)
+    : DEFAULT_BULK_EXPERIMENT_HEAD_CHUNK_SIZE;
+}
+
+export function resolveBulkExperimentUseWorker(
+  value: string | null | undefined
+): boolean {
+  if (value == null) {
+    return true;
+  }
+
+  return value === '1' || value === 'true';
+}
+
+export function getRequestedBulkExperimentRouteState(
+  searchParams: BulkExperimentPageSearchParams | undefined
+): BulkExperimentRouteState {
+  return {
+    expansionMode: resolveBulkExperimentExpansionMode(
+      getRequestedSearchParamValue(searchParams?.expansion)
+    ),
+    headChunkSize: resolveBulkExperimentHeadChunkSize(
+      getRequestedSearchParamValue(searchParams?.head)
+    ),
+    ingestMode: resolveBulkExperimentIngestMode(
+      getRequestedSearchParamValue(searchParams?.ingest)
+    ),
+    useWorker: resolveBulkExperimentUseWorker(
+      getRequestedSearchParamValue(searchParams?.worker)
+    ),
+    workloadName: resolveBulkExperimentWorkloadName(
+      getRequestedSearchParamValue(searchParams?.workload)
+    ),
+  };
 }
