@@ -82,6 +82,14 @@ workerScope.onmessage = async (
         postAck(message.id);
         return;
       }
+      case 'getVisibleIndex': {
+        postMessage({
+          id: message.id,
+          index: requireModel().getVisibleIndex(message.path),
+          type: 'visibleIndex',
+        });
+        return;
+      }
       case 'getVisibleRows': {
         postMessage({
           id: message.id,

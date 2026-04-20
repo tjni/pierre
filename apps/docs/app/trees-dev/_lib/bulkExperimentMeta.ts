@@ -1,3 +1,5 @@
+import type { PathStoreInitialExpansion } from '@pierre/path-store';
+
 import {
   AOSP_UPGRADE_DATA_URL,
   getWorkloadOption,
@@ -9,17 +11,31 @@ export type BulkExperimentWorkloadName =
   | 'linux-5x'
   | 'linux-10x'
   | 'aosp';
-export type BulkExperimentIngestMode = 'chunked' | 'oneshot';
+export type BulkExperimentIngestMode = 'chunked' | 'head-start' | 'oneshot';
 export type BulkExperimentExpansionMode = 'all-open' | 'all-closed' | 'seeded';
+export type BulkExperimentHeadChunkSize = 1000 | 5000 | 10000 | 25000;
+
+export interface BulkExperimentExpansionOptions {
+  initialExpandedPaths?: readonly string[];
+  initialExpansion: PathStoreInitialExpansion;
+}
+
+export interface BulkExperimentVisibleCountByExpansionMode {
+  'all-open': number;
+  'all-closed': number;
+  seeded: number;
+}
 
 export const BULK_PREVIEW_PATH_COUNT = 100;
 export const BULK_EXPERIMENT_CHUNK_SIZE = 40_000;
+export const BULK_EXPERIMENT_HEAD_START_TAIL_CHUNK_COUNT = 4;
 export const DEFAULT_BULK_EXPERIMENT_WORKLOAD_NAME: BulkExperimentWorkloadName =
   'linux-5x';
 export const DEFAULT_BULK_EXPERIMENT_INGEST_MODE: BulkExperimentIngestMode =
-  'chunked';
+  'head-start';
 export const DEFAULT_BULK_EXPERIMENT_EXPANSION_MODE: BulkExperimentExpansionMode =
   'all-open';
+export const DEFAULT_BULK_EXPERIMENT_HEAD_CHUNK_SIZE: BulkExperimentHeadChunkSize = 10_000;
 
 export const BULK_EXPERIMENT_WORKLOAD_NAMES = [
   'linux-1x',
@@ -34,11 +50,22 @@ export const BULK_EXPERIMENT_WORKLOAD_OPTIONS =
   ) satisfies readonly TreesWorkloadOption[];
 
 export const BULK_EXPERIMENT_INGEST_OPTIONS = [
+  { label: 'Head start', value: 'head-start' },
   { label: 'Chunked apply', value: 'chunked' },
   { label: 'One-shot apply', value: 'oneshot' },
 ] as const satisfies readonly {
   label: string;
   value: BulkExperimentIngestMode;
+}[];
+
+export const BULK_EXPERIMENT_HEAD_CHUNK_SIZE_OPTIONS = [
+  { label: '1k', value: 1_000 },
+  { label: '5k', value: 5_000 },
+  { label: '10k', value: 10_000 },
+  { label: '25k', value: 25_000 },
+] as const satisfies readonly {
+  label: string;
+  value: BulkExperimentHeadChunkSize;
 }[];
 
 export const BULK_EXPERIMENT_EXPANSION_OPTIONS = [
@@ -107,6 +134,24 @@ export function getBulkExperimentSeededExpandedPaths(
   }
 
   return seededPaths;
+}
+
+export function getBulkExperimentExpansionOptions(
+  workloadName: BulkExperimentWorkloadName,
+  expansionMode: BulkExperimentExpansionMode
+): BulkExperimentExpansionOptions {
+  switch (expansionMode) {
+    case 'all-open':
+      return { initialExpansion: 'open' };
+    case 'seeded':
+      return {
+        initialExpandedPaths:
+          getBulkExperimentSeededExpandedPaths(workloadName),
+        initialExpansion: 'closed',
+      };
+    default:
+      return { initialExpansion: 'closed' };
+  }
 }
 
 export function getBulkExperimentAssetUrl(

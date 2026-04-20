@@ -21,12 +21,15 @@ import { ExampleCard } from '../_components/ExampleCard';
 import { StateLog, useStateLog } from '../_components/StateLog';
 import {
   BULK_EXPERIMENT_EXPANSION_OPTIONS,
+  BULK_EXPERIMENT_HEAD_CHUNK_SIZE_OPTIONS,
   BULK_EXPERIMENT_INGEST_OPTIONS,
   BULK_EXPERIMENT_WORKLOAD_OPTIONS,
   type BulkExperimentExpansionMode,
+  type BulkExperimentHeadChunkSize,
   type BulkExperimentIngestMode,
   type BulkExperimentWorkloadName,
   DEFAULT_BULK_EXPERIMENT_EXPANSION_MODE,
+  DEFAULT_BULK_EXPERIMENT_HEAD_CHUNK_SIZE,
   DEFAULT_BULK_EXPERIMENT_INGEST_MODE,
   DEFAULT_BULK_EXPERIMENT_WORKLOAD_NAME,
   getBulkExperimentAssetUrl,
@@ -51,6 +54,7 @@ interface BulkExperimentAdapter {
   dispose(): void;
   expandPath(path: string): Promise<void>;
   getSnapshot(): BulkExperimentSnapshot;
+  getVisibleIndex(path: string): Promise<number | null>;
   getVisibleRows(
     start: number,
     end: number
@@ -74,12 +78,18 @@ interface LongTaskStats {
 interface BulkExperimentSummary {
   applyMs: number;
   expansionMode: BulkExperimentExpansionMode;
+  fetchCompletedAt: number | null;
   fetchMs: number;
+  headChunkCompletedAt: number | null;
+  headChunkMaterializedVisibleCount: number | null;
   ingestMode: BulkExperimentIngestMode;
   longTaskCount: number | null;
   longestLongTaskMs: number | null;
+  parseCompletedAt: number | null;
   parseMs: number;
+  previewInteractivePaintedAt: number | null;
   status: BulkExperimentSnapshot['bulkInfo']['status'];
+  tailChunkCompletedAt: readonly number[];
   totalMs: number;
   workerMode: 'main' | 'worker';
   workloadName: BulkExperimentWorkloadName;
@@ -91,6 +101,12 @@ function roundMetric(value: number | null): number | null {
 
 function formatMetric(value: number | null): string {
   return value == null ? 'n/a' : `${value.toFixed(1)} ms`;
+}
+
+function formatMetricList(values: readonly number[]): string {
+  return values.length === 0
+    ? 'n/a'
+    : values.map((value) => `${value.toFixed(1)} ms`).join(', ');
 }
 
 function formatProgress(snapshot: BulkExperimentSnapshot): string {
@@ -149,10 +165,14 @@ function createInitialSnapshot(
       status: 'idle',
       totalPathCount: options.totalPathCount,
     },
+    estimatedVisibleCount: options.finalVisibleCount,
     expansionMode: options.expansionMode,
+    headChunkSize: options.headChunkSize,
     ingestMode: options.ingestMode,
+    materializedVisibleCount: options.previewVisibleCount,
     metrics: null,
-    visibleCount: 0,
+    unresolvedFrontier: null,
+    visibleCount: options.previewVisibleCount,
     workloadName: options.workloadName,
   };
 }
@@ -160,14 +180,23 @@ function createInitialSnapshot(
 function createBulkExperimentOptions(
   workloadName: BulkExperimentWorkloadName,
   ingestMode: BulkExperimentIngestMode,
-  expansionMode: BulkExperimentExpansionMode
+  expansionMode: BulkExperimentExpansionMode,
+  headChunkSize: BulkExperimentHeadChunkSize
 ): BulkExperimentInitOptions {
   const previewData = BULK_EXPERIMENT_PREVIEW_DATA[workloadName];
+  const finalVisibleCount =
+    previewData.finalVisibleCountByExpansionMode[expansionMode];
+  const previewVisibleCount =
+    previewData.previewVisibleCountByExpansionMode[expansionMode];
+
   return {
     assetUrl: getBulkExperimentAssetUrl(workloadName),
     expansionMode,
+    finalVisibleCount,
+    headChunkSize,
     ingestMode,
     previewPaths: previewData.previewPaths,
+    previewVisibleCount,
     seededExpandedPaths: getBulkExperimentSeededExpandedPaths(workloadName),
     totalPathCount: previewData.totalPathCount,
     workloadName,
@@ -194,6 +223,9 @@ function createLocalAdapter(
     },
     getSnapshot() {
       return model.getSnapshot();
+    },
+    async getVisibleIndex(path) {
+      return model.getVisibleIndex(path);
     },
     async getVisibleRows(start, end) {
       return model.getVisibleRows(start, end);
@@ -227,6 +259,11 @@ async function createWorkerAdapter(
         kind: 'ack';
         reject: (error: Error) => void;
         resolve: () => void;
+      }
+    | {
+        kind: 'index';
+        reject: (error: Error) => void;
+        resolve: (index: number | null) => void;
       }
     | {
         kind: 'rows';
@@ -278,6 +315,19 @@ async function createWorkerAdapter(
       return;
     }
 
+    if (pendingRequest.kind === 'index') {
+      if (message.type !== 'visibleIndex') {
+        pendingRequest.reject(
+          new Error(
+            `Expected a visible index response but received ${message.type}.`
+          )
+        );
+        return;
+      }
+      pendingRequest.resolve(message.index);
+      return;
+    }
+
     if (message.type !== 'visibleRows') {
       pendingRequest.reject(
         new Error(`Expected visible rows but received ${message.type}.`)
@@ -310,6 +360,20 @@ async function createWorkerAdapter(
       worker.postMessage({
         ...request,
         id,
+      } satisfies BulkExperimentWorkerRequest);
+    });
+  };
+
+  const requestVisibleIndex = (path: string): Promise<number | null> => {
+    const id = nextRequestId;
+    nextRequestId += 1;
+
+    return new Promise<number | null>((resolve, reject) => {
+      pending.set(id, { kind: 'index', reject, resolve });
+      worker.postMessage({
+        id,
+        path,
+        type: 'getVisibleIndex',
       } satisfies BulkExperimentWorkerRequest);
     });
   };
@@ -357,6 +421,9 @@ async function createWorkerAdapter(
     getSnapshot() {
       return snapshot;
     },
+    async getVisibleIndex(path) {
+      return requestVisibleIndex(path);
+    },
     async getVisibleRows(start, end) {
       return requestVisibleRows(start, end);
     },
@@ -390,6 +457,10 @@ export function BulkIngestDemoClient({ payloadHtml }: { payloadHtml: string }) {
     useState<BulkExperimentExpansionMode>(
       DEFAULT_BULK_EXPERIMENT_EXPANSION_MODE
     );
+  const [headChunkSize, setHeadChunkSize] =
+    useState<BulkExperimentHeadChunkSize>(
+      DEFAULT_BULK_EXPERIMENT_HEAD_CHUNK_SIZE
+    );
   const [resetToken, setResetToken] = useState(0);
 
   useEffect(() => {
@@ -398,10 +469,12 @@ export function BulkIngestDemoClient({ payloadHtml }: { payloadHtml: string }) {
 
   return (
     <BulkExperimentSession
-      key={`${useWorker ? 'worker' : 'main'}:${workloadName}:${ingestMode}:${expansionMode}:${String(resetToken)}`}
+      key={`${useWorker ? 'worker' : 'main'}:${workloadName}:${ingestMode}:${expansionMode}:${String(headChunkSize)}:${String(resetToken)}`}
       expansionMode={expansionMode}
+      headChunkSize={headChunkSize}
       ingestMode={ingestMode}
       onExpansionModeChange={setExpansionMode}
+      onHeadChunkSizeChange={setHeadChunkSize}
       onIngestModeChange={setIngestMode}
       onReset={() => {
         setResetToken((value) => value + 1);
@@ -418,8 +491,10 @@ export function BulkIngestDemoClient({ payloadHtml }: { payloadHtml: string }) {
 
 function BulkExperimentSession({
   expansionMode,
+  headChunkSize,
   ingestMode,
   onExpansionModeChange,
+  onHeadChunkSizeChange,
   onIngestModeChange,
   onReset,
   onUseWorkerChange,
@@ -430,8 +505,10 @@ function BulkExperimentSession({
   workloadName,
 }: {
   expansionMode: BulkExperimentExpansionMode;
+  headChunkSize: BulkExperimentHeadChunkSize;
   ingestMode: BulkExperimentIngestMode;
   onExpansionModeChange: (value: BulkExperimentExpansionMode) => void;
+  onHeadChunkSizeChange: (value: BulkExperimentHeadChunkSize) => void;
   onIngestModeChange: (value: BulkExperimentIngestMode) => void;
   onReset: () => void;
   onUseWorkerChange: (value: boolean) => void;
@@ -443,8 +520,14 @@ function BulkExperimentSession({
 }) {
   const { addLog, log } = useStateLog();
   const experimentOptions = useMemo(
-    () => createBulkExperimentOptions(workloadName, ingestMode, expansionMode),
-    [expansionMode, ingestMode, workloadName]
+    () =>
+      createBulkExperimentOptions(
+        workloadName,
+        ingestMode,
+        expansionMode,
+        headChunkSize
+      ),
+    [expansionMode, headChunkSize, ingestMode, workloadName]
   );
   const previewData = BULK_EXPERIMENT_PREVIEW_DATA[workloadName];
   const workloadOption = useMemo(
@@ -472,6 +555,26 @@ function BulkExperimentSession({
   > | null>(null);
   const previousBulkInfoKeyRef = useRef<string | null>(null);
   const lastSummaryKeyRef = useRef<string | null>(null);
+  const sessionStartedAtRef = useRef(
+    typeof performance !== 'undefined' ? performance.now() : Date.now()
+  );
+  const didStartIngestRef = useRef(false);
+  const [previewInteractivePaintedAt, setPreviewInteractivePaintedAt] =
+    useState<number | null>(null);
+  const previousGeometryRef = useRef({
+    estimatedVisibleCount: experimentOptions.finalVisibleCount,
+    materializedVisibleCount: experimentOptions.previewVisibleCount,
+  });
+  const topResolvedAnchorRef = useRef<{
+    offset: number;
+    path: string;
+  } | null>(null);
+  const milestoneLogRef = useRef({
+    fetchCompletedAt: null as number | null,
+    headCompletedAt: null as number | null,
+    parseCompletedAt: null as number | null,
+    tailChunkCount: 0,
+  });
 
   useEffect(() => {
     let disposed = false;
@@ -517,6 +620,46 @@ function BulkExperimentSession({
   ]);
 
   useEffect(() => {
+    if (showServerPreview || adapter == null || didStartIngestRef.current) {
+      return;
+    }
+
+    if (snapshot.bulkInfo.status !== 'idle') {
+      return;
+    }
+
+    const requestFrame =
+      typeof requestAnimationFrame === 'function'
+        ? requestAnimationFrame
+        : (callback: FrameRequestCallback) =>
+            window.setTimeout(() => callback(performance.now()), 0);
+    const cancelFrame =
+      typeof cancelAnimationFrame === 'function'
+        ? cancelAnimationFrame
+        : (handle: number) => {
+            window.clearTimeout(handle);
+          };
+
+    const frameHandle = requestFrame(() => {
+      const paintedAt = roundMetric(
+        (typeof performance !== 'undefined' ? performance.now() : Date.now()) -
+          sessionStartedAtRef.current
+      );
+      setPreviewInteractivePaintedAt(paintedAt);
+      if (paintedAt != null) {
+        addLog(`preview:interactive-painted at=${paintedAt.toFixed(1)}ms`);
+      }
+
+      didStartIngestRef.current = true;
+      void adapter.startIngest();
+    });
+
+    return () => {
+      cancelFrame(frameHandle);
+    };
+  }, [adapter, addLog, showServerPreview, snapshot.bulkInfo.status]);
+
+  useEffect(() => {
     const scrollElement = scrollRef.current;
     if (scrollElement == null) {
       return;
@@ -524,27 +667,104 @@ function BulkExperimentSession({
 
     const maxScrollTop = Math.max(
       0,
-      snapshot.visibleCount * FILE_TREE_DEFAULT_ITEM_HEIGHT -
+      snapshot.estimatedVisibleCount * FILE_TREE_DEFAULT_ITEM_HEIGHT -
         FILE_TREE_PROOF_VIEWPORT_HEIGHT
     );
     if (scrollElement.scrollTop > maxScrollTop) {
       scrollElement.scrollTop = maxScrollTop;
       setScrollTop(maxScrollTop);
     }
-  }, [snapshot.visibleCount]);
+  }, [snapshot.estimatedVisibleCount]);
+
+  useEffect(() => {
+    if (snapshot.materializedVisibleCount <= 0 || rows.length === 0) {
+      topResolvedAnchorRef.current = null;
+      return;
+    }
+
+    const anchorIndex = Math.max(
+      0,
+      Math.min(
+        snapshot.materializedVisibleCount - 1,
+        Math.floor(scrollTop / FILE_TREE_DEFAULT_ITEM_HEIGHT)
+      )
+    );
+    const anchorRow = rows.find((row) => row.index === anchorIndex);
+    if (anchorRow == null) {
+      return;
+    }
+
+    topResolvedAnchorRef.current = {
+      offset: Math.max(
+        0,
+        Math.min(
+          FILE_TREE_DEFAULT_ITEM_HEIGHT - 1,
+          scrollTop - anchorIndex * FILE_TREE_DEFAULT_ITEM_HEIGHT
+        )
+      ),
+      path: anchorRow.path,
+    };
+  }, [rows, scrollTop, snapshot.materializedVisibleCount]);
+
+  useEffect(() => {
+    const previousGeometry = previousGeometryRef.current;
+    if (
+      adapter == null ||
+      previousGeometry.estimatedVisibleCount === snapshot.estimatedVisibleCount
+    ) {
+      previousGeometryRef.current = {
+        estimatedVisibleCount: snapshot.estimatedVisibleCount,
+        materializedVisibleCount: snapshot.materializedVisibleCount,
+      };
+      return;
+    }
+
+    previousGeometryRef.current = {
+      estimatedVisibleCount: snapshot.estimatedVisibleCount,
+      materializedVisibleCount: snapshot.materializedVisibleCount,
+    };
+    const anchor = topResolvedAnchorRef.current;
+    if (anchor == null) {
+      return;
+    }
+
+    const nextEstimatedVisibleCount = snapshot.estimatedVisibleCount;
+    void adapter.getVisibleIndex(anchor.path).then((nextIndex) => {
+      const nextScrollElement = scrollRef.current;
+      if (nextIndex == null || nextScrollElement == null) {
+        return;
+      }
+
+      const maxScrollTop = Math.max(
+        0,
+        nextEstimatedVisibleCount * FILE_TREE_DEFAULT_ITEM_HEIGHT -
+          FILE_TREE_PROOF_VIEWPORT_HEIGHT
+      );
+      const nextScrollTop = Math.min(
+        maxScrollTop,
+        nextIndex * FILE_TREE_DEFAULT_ITEM_HEIGHT + anchor.offset
+      );
+      nextScrollElement.scrollTop = nextScrollTop;
+      setScrollTop(nextScrollTop);
+    });
+  }, [
+    adapter,
+    snapshot.estimatedVisibleCount,
+    snapshot.materializedVisibleCount,
+  ]);
 
   const range = useMemo(
     () =>
       adapter == null
         ? EMPTY_RANGE
         : computeWindowRange({
-            itemCount: snapshot.visibleCount,
+            itemCount: snapshot.estimatedVisibleCount,
             itemHeight: FILE_TREE_DEFAULT_ITEM_HEIGHT,
             overscan: FILE_TREE_DEFAULT_OVERSCAN,
             scrollTop,
             viewportHeight: FILE_TREE_PROOF_VIEWPORT_HEIGHT,
           }),
-    [adapter, scrollTop, snapshot.visibleCount]
+    [adapter, scrollTop, snapshot.estimatedVisibleCount]
   );
 
   useEffect(() => {
@@ -564,7 +784,44 @@ function BulkExperimentSession({
     return () => {
       cancelled = true;
     };
-  }, [adapter, range.end, range.start, snapshot.visibleCount]);
+  }, [adapter, range.end, range.start, snapshot.materializedVisibleCount]);
+
+  useEffect(() => {
+    const metrics = snapshot.metrics;
+    if (metrics == null) {
+      return;
+    }
+
+    if (
+      metrics.fetchCompletedAt != null &&
+      milestoneLogRef.current.fetchCompletedAt !== metrics.fetchCompletedAt
+    ) {
+      milestoneLogRef.current.fetchCompletedAt = metrics.fetchCompletedAt;
+      addLog(`fetch:complete at=${metrics.fetchCompletedAt.toFixed(1)}ms`);
+    }
+    if (
+      metrics.parseCompletedAt != null &&
+      milestoneLogRef.current.parseCompletedAt !== metrics.parseCompletedAt
+    ) {
+      milestoneLogRef.current.parseCompletedAt = metrics.parseCompletedAt;
+      addLog(`parse:complete at=${metrics.parseCompletedAt.toFixed(1)}ms`);
+    }
+    if (
+      metrics.headChunk != null &&
+      milestoneLogRef.current.headCompletedAt !== metrics.headChunk.completedAt
+    ) {
+      milestoneLogRef.current.headCompletedAt = metrics.headChunk.completedAt;
+      addLog(
+        `head:complete at=${metrics.headChunk.completedAt.toFixed(1)}ms frontier=${metrics.headChunk.materializedVisibleCount.toLocaleString()} rows`
+      );
+    }
+    if (milestoneLogRef.current.tailChunkCount !== metrics.tailChunks.length) {
+      milestoneLogRef.current.tailChunkCount = metrics.tailChunks.length;
+      addLog(
+        `tail:complete milestones=${metrics.tailChunks.map((chunk) => chunk.completedAt.toFixed(1)).join(', ')}ms`
+      );
+    }
+  }, [addLog, snapshot.metrics]);
 
   useEffect(() => {
     const bulkInfoKey = `${snapshot.bulkInfo.status}:${snapshot.bulkInfo.ingestedPathCount}:${String(snapshot.bulkInfo.totalPathCount)}:${snapshot.bulkInfo.errorMessage ?? ''}`;
@@ -614,20 +871,37 @@ function BulkExperimentSession({
     const summary: BulkExperimentSummary = {
       applyMs: roundMetric(snapshot.metrics.applyMs) ?? 0,
       expansionMode,
+      fetchCompletedAt: roundMetric(snapshot.metrics.fetchCompletedAt),
       fetchMs: roundMetric(snapshot.metrics.fetchMs) ?? 0,
+      headChunkCompletedAt: roundMetric(
+        snapshot.metrics.headChunk?.completedAt ?? null
+      ),
+      headChunkMaterializedVisibleCount:
+        snapshot.metrics.headChunk?.materializedVisibleCount ?? null,
       ingestMode,
       longTaskCount: longTaskStats.count,
       longestLongTaskMs: roundMetric(longTaskStats.longestMs),
+      parseCompletedAt: roundMetric(snapshot.metrics.parseCompletedAt),
       parseMs: roundMetric(snapshot.metrics.parseMs) ?? 0,
+      previewInteractivePaintedAt,
       status: snapshot.bulkInfo.status,
+      tailChunkCompletedAt: snapshot.metrics.tailChunks.map(
+        (chunk) => roundMetric(chunk.completedAt) ?? 0
+      ),
       totalMs: roundMetric(snapshot.metrics.totalMs) ?? 0,
       workerMode: useWorker ? 'worker' : 'main',
       workloadName,
     };
-
     setLatestSummary(summary);
     console.table([summary]);
-  }, [expansionMode, ingestMode, snapshot, useWorker, workloadName]);
+  }, [
+    expansionMode,
+    ingestMode,
+    previewInteractivePaintedAt,
+    snapshot,
+    useWorker,
+    workloadName,
+  ]);
 
   useLayoutEffect(() => {
     if (focusedPath == null) {
@@ -667,14 +941,14 @@ function BulkExperimentSession({
 
   const moveFocus = useCallback(
     async (offset: number) => {
-      if (adapter == null || snapshot.visibleCount === 0) {
+      if (adapter == null || snapshot.materializedVisibleCount === 0) {
         return;
       }
 
       const currentIndex = focusedIndex ?? 0;
       const nextIndex = Math.max(
         0,
-        Math.min(snapshot.visibleCount - 1, currentIndex + offset)
+        Math.min(snapshot.materializedVisibleCount - 1, currentIndex + offset)
       );
       const nextRows = await adapter.getVisibleRows(nextIndex, nextIndex);
       const nextRow = nextRows[0];
@@ -686,7 +960,12 @@ function BulkExperimentSession({
       setFocusedPath(nextRow.path);
       ensureIndexVisible(nextIndex);
     },
-    [adapter, ensureIndexVisible, focusedIndex, snapshot.visibleCount]
+    [
+      adapter,
+      ensureIndexVisible,
+      focusedIndex,
+      snapshot.materializedVisibleCount,
+    ]
   );
 
   const setSelectionForRow = useCallback(
@@ -758,19 +1037,38 @@ function BulkExperimentSession({
     [adapter, addLog, moveFocus, setSelectionForRow]
   );
 
-  const totalHeight = snapshot.visibleCount * FILE_TREE_DEFAULT_ITEM_HEIGHT;
+  const totalHeight =
+    snapshot.estimatedVisibleCount * FILE_TREE_DEFAULT_ITEM_HEIGHT;
   const offsetHeight =
     range.end < range.start ? 0 : range.start * FILE_TREE_DEFAULT_ITEM_HEIGHT;
   const windowHeight =
     range.end < range.start
       ? 0
       : (range.end - range.start + 1) * FILE_TREE_DEFAULT_ITEM_HEIGHT;
+  const unresolvedWindowStart = Math.max(
+    range.start,
+    snapshot.materializedVisibleCount
+  );
+  const unresolvedWindowCount =
+    range.end < unresolvedWindowStart
+      ? 0
+      : range.end - unresolvedWindowStart + 1;
+  const unresolvedWindowHeight =
+    unresolvedWindowCount * FILE_TREE_DEFAULT_ITEM_HEIGHT;
+  const showLocalUnresolvedBand =
+    unresolvedWindowHeight > 0 &&
+    snapshot.unresolvedFrontier?.kind === 'subtree' &&
+    range.start < snapshot.materializedVisibleCount;
+  const unresolvedBandPaddingLeft =
+    snapshot.unresolvedFrontier == null
+      ? undefined
+      : `${String(snapshot.unresolvedFrontier.level * 14 + 4)}px`;
   const trailingHeight = Math.max(0, totalHeight - offsetHeight - windowHeight);
 
   const latestMetricsContent =
     latestSummary == null ? (
       <span className="text-muted-foreground italic">
-        Start, cancel, or finish a run to capture experiment metrics.
+        Reset the session to replay preview activation and ingest milestones.
       </span>
     ) : (
       <div className="text-muted-foreground mt-1 space-y-1">
@@ -779,9 +1077,18 @@ function BulkExperimentSession({
           {latestSummary.ingestMode}
         </div>
         <div>
-          fetch={formatMetric(latestSummary.fetchMs)} parse=
-          {formatMetric(latestSummary.parseMs)}
+          preview={formatMetric(latestSummary.previewInteractivePaintedAt)}{' '}
+          fetch=
+          {formatMetric(latestSummary.fetchCompletedAt)} parse=
+          {formatMetric(latestSummary.parseCompletedAt)}
         </div>
+        <div>
+          head={formatMetric(latestSummary.headChunkCompletedAt)} frontier=
+          {latestSummary.headChunkMaterializedVisibleCount == null
+            ? 'n/a'
+            : `${latestSummary.headChunkMaterializedVisibleCount.toLocaleString()} rows`}
+        </div>
+        <div>tail={formatMetricList(latestSummary.tailChunkCompletedAt)}</div>
         <div>
           apply={formatMetric(latestSummary.applyMs)} total=
           {formatMetric(latestSummary.totalMs)}
@@ -803,7 +1110,7 @@ function BulkExperimentSession({
         title="Bulk ingest worker experiment"
         description={`Previewing ${experimentOptions.previewPaths.length.toLocaleString()} of ${previewData.totalPathCount.toLocaleString()} ${workloadOption.label} paths. The same demo-local model runs either on the main thread or inside a worker so this page can compare responsiveness while holding the renderer and workload constant.`}
       >
-        <div className="mb-3 grid gap-3 text-xs md:grid-cols-2 xl:grid-cols-4">
+        <div className="mb-3 grid gap-3 text-xs md:grid-cols-2 xl:grid-cols-5">
           <label className="flex cursor-pointer items-center gap-2 select-none">
             <input
               checked={useWorker}
@@ -868,22 +1175,29 @@ function BulkExperimentSession({
               ))}
             </select>
           </label>
+
+          {ingestMode === 'head-start' ? (
+            <label className="grid gap-1">
+              <span className="font-medium">Head chunk</span>
+              <select
+                value={headChunkSize}
+                onChange={(event) => {
+                  onHeadChunkSizeChange(
+                    Number(event.target.value) as BulkExperimentHeadChunkSize
+                  );
+                }}
+              >
+                {BULK_EXPERIMENT_HEAD_CHUNK_SIZE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
         </div>
 
         <div className="mb-3 flex flex-wrap gap-2 text-xs">
-          <button
-            type="button"
-            className="rounded-sm border px-2 py-1"
-            style={{ borderColor: 'var(--color-border)' }}
-            disabled={
-              adapter == null || snapshot.bulkInfo.status === 'ingesting'
-            }
-            onClick={() => {
-              void adapter?.startIngest();
-            }}
-          >
-            Start ingest
-          </button>
           <button
             type="button"
             className="rounded-sm border px-2 py-1"
@@ -903,6 +1217,9 @@ function BulkExperimentSession({
           >
             Reset run
           </button>
+          <span className="text-muted-foreground self-center">
+            auto-start after preview paint
+          </span>
           <span className="text-muted-foreground self-center">
             progress={formatProgress(snapshot)}
           </span>
@@ -938,92 +1255,116 @@ function BulkExperimentSession({
           >
             <div role="tree" aria-label="Bulk ingest experiment tree">
               <div style={{ height: `${offsetHeight}px` }} />
-              {rows.length === 0 ? (
+              {rows.length === 0 && unresolvedWindowHeight === 0 ? (
                 <div className="text-muted-foreground px-3 py-2 text-xs italic">
                   No visible rows for the current expansion state.
                 </div>
               ) : (
-                rows.map((row) => {
-                  const isFocused = focusedPath === row.path;
-                  const isSelected = selectedPathSet.has(row.path);
-                  const canToggle = row.kind === 'directory' && row.hasChildren;
-                  return (
+                <>
+                  {rows.map((row) => {
+                    const isFocused = focusedPath === row.path;
+                    const isSelected = selectedPathSet.has(row.path);
+                    const canToggle =
+                      row.kind === 'directory' && row.hasChildren;
+                    return (
+                      <div
+                        key={`${row.index}:${row.path}`}
+                        className="flex items-center gap-1 px-2"
+                        style={{
+                          minHeight: `${String(FILE_TREE_DEFAULT_ITEM_HEIGHT)}px`,
+                          paddingLeft: `${String(row.level * 14 + 4)}px`,
+                        }}
+                      >
+                        <button
+                          type="button"
+                          className="text-muted-foreground w-5 shrink-0 text-center"
+                          aria-hidden={!canToggle}
+                          disabled={!canToggle}
+                          onClick={() => {
+                            if (!canToggle || adapter == null) {
+                              return;
+                            }
+
+                            if (row.isExpanded) {
+                              void adapter.collapsePath(row.path);
+                              addLog(`collapse:${row.path}`);
+                            } else {
+                              void adapter.expandPath(row.path);
+                              addLog(`expand:${row.path}`);
+                            }
+                            setFocusedIndex(row.index);
+                            setFocusedPath(row.path);
+                          }}
+                        >
+                          {canToggle ? (row.isExpanded ? '▾' : '▸') : '·'}
+                        </button>
+                        <button
+                          type="button"
+                          ref={(element) => {
+                            if (element == null) {
+                              rowButtonByPathRef.current.delete(row.path);
+                              return;
+                            }
+
+                            rowButtonByPathRef.current.set(row.path, element);
+                          }}
+                          role="treeitem"
+                          aria-expanded={
+                            row.kind === 'directory'
+                              ? row.isExpanded
+                              : undefined
+                          }
+                          aria-level={row.level + 1}
+                          aria-posinset={row.posInSet + 1}
+                          aria-selected={isSelected}
+                          aria-setsize={row.setSize}
+                          className="min-w-0 flex-1 rounded-sm px-2 py-1 text-left text-xs"
+                          data-row-path={row.path}
+                          style={{
+                            backgroundColor: isSelected
+                              ? 'var(--color-muted)'
+                              : 'transparent',
+                            outlineColor: isFocused
+                              ? 'var(--color-primary)'
+                              : undefined,
+                          }}
+                          tabIndex={isFocused ? 0 : -1}
+                          onClick={(event) => {
+                            handleRowClick(event, row);
+                          }}
+                          onFocus={() => {
+                            setFocusedIndex(row.index);
+                            setFocusedPath(row.path);
+                          }}
+                          onKeyDown={(event) => {
+                            void handleRowKeyDown(event, row);
+                          }}
+                        >
+                          <span className="truncate">
+                            {formatRowLabel(row)}
+                          </span>
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {unresolvedWindowHeight > 0 ? (
                     <div
-                      key={`${row.index}:${row.path}`}
-                      className="flex items-center gap-1 px-2"
+                      aria-hidden="true"
+                      className="text-muted-foreground flex items-start px-2 pt-2 text-xs italic"
                       style={{
-                        minHeight: `${String(FILE_TREE_DEFAULT_ITEM_HEIGHT)}px`,
-                        paddingLeft: `${String(row.level * 14 + 4)}px`,
+                        backgroundColor: 'var(--color-muted)',
+                        height: `${String(unresolvedWindowHeight)}px`,
+                        paddingLeft: showLocalUnresolvedBand
+                          ? unresolvedBandPaddingLeft
+                          : undefined,
                       }}
                     >
-                      <button
-                        type="button"
-                        className="text-muted-foreground w-5 shrink-0 text-center"
-                        aria-hidden={!canToggle}
-                        disabled={!canToggle}
-                        onClick={() => {
-                          if (!canToggle || adapter == null) {
-                            return;
-                          }
-
-                          if (row.isExpanded) {
-                            void adapter.collapsePath(row.path);
-                            addLog(`collapse:${row.path}`);
-                          } else {
-                            void adapter.expandPath(row.path);
-                            addLog(`expand:${row.path}`);
-                          }
-                          setFocusedIndex(row.index);
-                          setFocusedPath(row.path);
-                        }}
-                      >
-                        {canToggle ? (row.isExpanded ? '▾' : '▸') : '·'}
-                      </button>
-                      <button
-                        type="button"
-                        ref={(element) => {
-                          if (element == null) {
-                            rowButtonByPathRef.current.delete(row.path);
-                            return;
-                          }
-
-                          rowButtonByPathRef.current.set(row.path, element);
-                        }}
-                        role="treeitem"
-                        aria-expanded={
-                          row.kind === 'directory' ? row.isExpanded : undefined
-                        }
-                        aria-level={row.level + 1}
-                        aria-posinset={row.posInSet + 1}
-                        aria-selected={isSelected}
-                        aria-setsize={row.setSize}
-                        className="min-w-0 flex-1 rounded-sm px-2 py-1 text-left text-xs"
-                        data-row-path={row.path}
-                        style={{
-                          backgroundColor: isSelected
-                            ? 'var(--color-muted)'
-                            : 'transparent',
-                          outlineColor: isFocused
-                            ? 'var(--color-primary)'
-                            : undefined,
-                        }}
-                        tabIndex={isFocused ? 0 : -1}
-                        onClick={(event) => {
-                          handleRowClick(event, row);
-                        }}
-                        onFocus={() => {
-                          setFocusedIndex(row.index);
-                          setFocusedPath(row.path);
-                        }}
-                        onKeyDown={(event) => {
-                          void handleRowKeyDown(event, row);
-                        }}
-                      >
-                        <span className="truncate">{formatRowLabel(row)}</span>
-                      </button>
+                      {showLocalUnresolvedBand
+                        ? 'Unresolved descendants continue past the materialized frontier.'
+                        : 'Viewport has outrun the materialized frontier.'}
                     </div>
-                  );
-                })
+                  ) : null}
+                </>
               )}
               <div style={{ height: `${trailingHeight}px` }} />
             </div>
