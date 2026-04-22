@@ -1,5 +1,4 @@
 import { PathStore } from '@pierre/path-store';
-import type { PathStorePreparedInput } from '@pierre/path-store';
 
 import type { FileTreeSortComparator } from './model/types';
 
@@ -32,6 +31,6 @@ export function preparePresortedFileTreeInput(
 
 export function toPathStorePreparedInput(
   preparedInput: FileTreePreparedInput
-): PathStorePreparedInput {
-  return preparedInput as unknown as PathStorePreparedInput;
+): { paths: readonly string[] } {
+  return preparedInput;
 }

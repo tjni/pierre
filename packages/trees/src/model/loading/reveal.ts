@@ -1,7 +1,9 @@
 import { PathStore } from '@pierre/path-store';
-import type { PathStoreOptions } from '@pierre/path-store';
 
-import type { FileTreeRevealDirectorySnapshot } from '../types';
+import type {
+  FileTreeRevealDirectorySnapshot,
+  FileTreeSortComparator,
+} from '../types';
 
 export interface PreparedRevealDirectorySnapshot {
   childDirectoryKnownChildCountByPath: ReadonlyMap<string, number>;
@@ -55,7 +57,7 @@ export function prepareRevealDirectorySnapshot({
   directoryPath: string;
   onCustomSort: () => void;
   snapshot: FileTreeRevealDirectorySnapshot;
-  sort: PathStoreOptions['sort'] | undefined;
+  sort: 'default' | FileTreeSortComparator | undefined;
 }): PreparedRevealDirectorySnapshot {
   const childPaths = [...snapshot.children];
   const hintSidecar = snapshot.childDirectoryKnownChildCounts;

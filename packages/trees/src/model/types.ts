@@ -1,5 +1,3 @@
-import type { PathStoreDirectoryLoadState } from '@pierre/path-store';
-
 import type { FileTreeIcons, RemappedIcon } from '../iconConfig';
 import type { FileTreePreparedInput } from '../preparedInput';
 import type {
@@ -46,6 +44,12 @@ export type FileTreeSortComparator = (
 ) => number;
 
 export type FileTreeInitialExpansion = 'closed' | 'open' | number;
+
+export type FileTreeDirectoryLoadState =
+  | 'unloaded'
+  | 'loading'
+  | 'loaded'
+  | 'error';
 
 export interface FileTreeRemoveOptions {
   recursive?: boolean;
@@ -430,7 +434,7 @@ export interface FileTreeRevealLoadingInfo {
   errorMessage?: string;
   knownChildCount?: number;
   path: FileTreePublicId;
-  state: PathStoreDirectoryLoadState;
+  state: FileTreeDirectoryLoadState;
 }
 
 export interface FileTreeRevealLoadingStartedEvent {

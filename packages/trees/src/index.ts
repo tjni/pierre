@@ -68,6 +68,7 @@ export type {
   FileTreeControllerBaseOptions,
   FileTreeControllerListener,
   FileTreeControllerOptions,
+  FileTreeDirectoryLoadState,
   FileTreeDirectoryHandle,
   FileTreeDragAndDropConfig,
   FileTreeDropContext,
