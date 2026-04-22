@@ -178,6 +178,27 @@ function clearItemCustomizationContextMenuSlot({
   currentRoot.render(null);
 }
 
+function clearCurrentItemCustomizationContextMenuSlot({
+  menuRootRef,
+  slotRef,
+  unmount = false,
+}: {
+  menuRootRef: { current: ReactDomRoot | null };
+  slotRef: { current: HTMLDivElement | null };
+  unmount?: boolean;
+}): void {
+  const slotElement = slotRef.current;
+  if (slotElement == null) {
+    return;
+  }
+
+  clearItemCustomizationContextMenuSlot({
+    menuRootRef,
+    slotElement,
+    unmount,
+  });
+}
+
 // Restores any selected rows after the tree is recreated so decoration presets
 // that react to selection keep their signal when composition options change.
 function restoreSelectedPaths(
@@ -214,7 +235,7 @@ function HydratedItemCustomizationTree({
   containerHtml,
   contextMenuRootRef,
   contextMenuSlotRef,
-  desiredSelectedPaths,
+  desiredSelectedPathsRef,
   gitStatus,
   hasHydratedTreeRef,
   isRestoringSelectionRef,
@@ -223,7 +244,7 @@ function HydratedItemCustomizationTree({
   containerHtml: string;
   contextMenuRootRef: { current: ReactDomRoot | null };
   contextMenuSlotRef: { current: HTMLDivElement | null };
-  desiredSelectedPaths: readonly string[];
+  desiredSelectedPathsRef: { current: readonly string[] };
   gitStatus: FileTreePathOptions['gitStatus'];
   hasHydratedTreeRef: { current: boolean };
   isRestoringSelectionRef: { current: boolean };
@@ -256,6 +277,7 @@ function HydratedItemCustomizationTree({
     // Selection changes should update rows in place. We only snapshot the
     // current selection when mounting a replacement tree for a structural
     // control change such as a different decoration preset.
+    const desiredSelectedPaths = desiredSelectedPathsRef.current;
     isRestoringSelectionRef.current = desiredSelectedPaths.length > 0;
     const restoreSelectionFrame = requestAnimationFrame(() => {
       restoreSelectedPaths(fileTree, desiredSelectedPaths);
@@ -266,19 +288,18 @@ function HydratedItemCustomizationTree({
 
     return () => {
       cancelAnimationFrame(restoreSelectionFrame);
-      if (contextMenuSlotRef.current != null) {
-        clearItemCustomizationContextMenuSlot({
-          menuRootRef: contextMenuRootRef,
-          slotElement: contextMenuSlotRef.current,
-          unmount: true,
-        });
-      }
+      clearCurrentItemCustomizationContextMenuSlot({
+        menuRootRef: contextMenuRootRef,
+        slotRef: contextMenuSlotRef,
+        unmount: true,
+      });
       fileTree.cleanUp();
     };
   }, [
     containerHtml,
     contextMenuRootRef,
     contextMenuSlotRef,
+    desiredSelectedPathsRef,
     gitStatus,
     hasHydratedTreeRef,
     isRestoringSelectionRef,
@@ -630,7 +651,7 @@ export function ItemCustomizationDemoClient({
             containerHtml={containerHtml}
             contextMenuRootRef={contextMenuRootRef}
             contextMenuSlotRef={contextMenuSlotRef}
-            desiredSelectedPaths={desiredSelectedPathsRef.current}
+            desiredSelectedPathsRef={desiredSelectedPathsRef}
             gitStatus={gitStatus}
             hasHydratedTreeRef={hasHydratedTreeRef}
             isRestoringSelectionRef={isRestoringSelectionRef}
