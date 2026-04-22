@@ -237,6 +237,8 @@ bun test
 bun run test:e2e
 bun run benchmark
 bun run benchmark:file-tree-get-item
+bun run benchmark:sticky-scroll
+bun run benchmark -- --preset sticky-scroll --json --samples
 bun run profile:file-tree
 bun run tsc
 bun run build
