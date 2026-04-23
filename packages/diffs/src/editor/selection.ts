@@ -14,6 +14,15 @@ export type ISelections = ISelection[];
 
 export type IEditorSelection = ISelection | ISelections;
 
+export type EditorSelectionTextChange = {
+  start: number;
+  end: number;
+  text: string;
+  selectionStart: number;
+  selectionEnd: number;
+  direction: SelectionDirection;
+};
+
 export function createSelection(
   startLine: number,
   startCharacter: number,

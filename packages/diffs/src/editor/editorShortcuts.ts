@@ -2,6 +2,8 @@ export type EditorShortcutCommand =
   | 'copy'
   | 'cut'
   | 'paste'
+  | 'indent'
+  | 'outdent'
   | 'documentStart'
   | 'documentEnd'
   | 'undo'
@@ -35,6 +37,10 @@ export function resolveEditorShortcutCommand(
   const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
   const hasPrimaryModifier = getPrimaryModifier(event);
   const isMac = isMacLike();
+
+  if (!hasPrimaryModifier && key === 'Tab') {
+    return event.shiftKey ? 'outdent' : 'indent';
+  }
 
   if (!hasPrimaryModifier) {
     return undefined;

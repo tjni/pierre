@@ -10,6 +10,7 @@ import {
   coalesceMicrotask,
   createElement,
   extend,
+  getLineIndentation,
   measureMonoFontWidth,
 } from '../editor/editorUtils';
 import {
@@ -19,7 +20,11 @@ import {
   mapSelectionTextReplace,
 } from '../editor/multiSelection';
 import { normlizeEditorOptions } from '../editor/normlizeEditorOptions';
-import type { IEditorSelection, ISelection } from '../editor/selection';
+import type {
+  EditorSelectionTextChange,
+  IEditorSelection,
+  ISelection,
+} from '../editor/selection';
 import {
   cloneSelection,
   convertSelection,
@@ -98,8 +103,8 @@ export class Editor {
     this.#monoFontWidth = measureMonoFontWidth(
       'normal ' + this.#fontSize + 'px ' + this.#fontFamily
     );
-    this.#lineNumberWidth = Math.round(2 * this.#monoFontWidth);
-    this.#gutterWidth = this.#lineNumberWidth; // currently the gutter width is equal to line number width
+    this.#lineNumberWidth = this.#monoFontWidth;
+    this.#gutterWidth = this.#lineNumberWidth;
   }
 
   get options(): EditorOptions {
@@ -710,6 +715,10 @@ export class Editor {
         );
         break;
       }
+      case 'indent':
+      case 'outdent':
+        this.#changePrimaryLineIndent(command === 'outdent');
+        break;
       case 'copy':
       case 'cut':
         if (
@@ -799,6 +808,129 @@ export class Editor {
       nextSelections.length === 1 ? nextSelections[0] : nextSelections;
     textDocument.applyEdits(edits, {
       selectionBefore: selections.length === 1 ? selection : selections,
+    });
+    textDocument.setLastUndoSelectionAfter(nextSelection);
+    void this.#renderText(textDocument, nextSelection);
+  }
+
+  #changePrimaryLineIndent(outdent: boolean) {
+    const textDocument = this.#textDocument;
+    const selections = this.#selections;
+    const primarySelection = selections?.[selections.length - 1];
+    if (
+      textDocument === undefined ||
+      selections === undefined ||
+      primarySelection === undefined
+    ) {
+      return;
+    }
+    const line = primarySelection.start.line;
+    const lineText = textDocument.getLineText(line) ?? '';
+    const lineStartOffset = textDocument.offsetAt({ line, character: 0 });
+    const cursorOffset = textDocument.offsetAt(primarySelection.end);
+
+    if (!outdent) {
+      const indentUnit = this.#resolveLineIndentUnit(line);
+      const insertOffset = isCollapsedSelection(primarySelection)
+        ? cursorOffset
+        : lineStartOffset;
+      this.#applySelectionTextChange(selections, {
+        start: insertOffset,
+        end: insertOffset,
+        text: indentUnit,
+        selectionStart: insertOffset + indentUnit.length,
+        selectionEnd: insertOffset + indentUnit.length,
+        direction: SelectionDirection.None,
+      });
+      return;
+    }
+
+    const indentation = getLineIndentation(lineText);
+    if (indentation.length === 0) {
+      return;
+    }
+    const cursorColumn = Math.max(0, cursorOffset - lineStartOffset);
+    if (cursorColumn === 0) {
+      return;
+    }
+    const indentUnit = this.#resolveLineIndentUnit(line);
+    const deleteLength = indentation.startsWith('\t')
+      ? 1
+      : Math.max(
+          1,
+          Math.min(indentUnit.length, indentation.length, cursorColumn)
+        );
+    const deleteStart = cursorOffset - deleteLength;
+    const deleteSegment = lineText.slice(
+      Math.max(0, cursorColumn - deleteLength),
+      cursorColumn
+    );
+    const expectedChar = indentation.startsWith('\t') ? '\t' : ' ';
+    if ([...deleteSegment].some((char) => char !== expectedChar)) {
+      return;
+    }
+    this.#applySelectionTextChange(selections, {
+      start: deleteStart,
+      end: cursorOffset,
+      text: '',
+      selectionStart: deleteStart,
+      selectionEnd: deleteStart,
+      direction: SelectionDirection.None,
+    });
+  }
+
+  #resolveLineIndentUnit(line: number): string {
+    const textDocument = this.#textDocument;
+    if (textDocument === undefined) {
+      return ' '.repeat(this.#tabSize);
+    }
+    const resolved = this.#resolveIndentUnitFromText(
+      getLineIndentation(textDocument.getLineText(line) ?? '')
+    );
+    if (resolved !== undefined) {
+      return resolved;
+    }
+    for (let ln = line - 1; ln >= 0; ln--) {
+      const fromPrevious = this.#resolveIndentUnitFromText(
+        getLineIndentation(textDocument.getLineText(ln) ?? '')
+      );
+      if (fromPrevious !== undefined) {
+        return fromPrevious;
+      }
+    }
+    return ' '.repeat(this.#tabSize);
+  }
+
+  #resolveIndentUnitFromText(indentation: string): string | undefined {
+    if (indentation.startsWith('\t')) {
+      return '\t';
+    }
+    if (indentation.startsWith(' ')) {
+      return ' '.repeat(
+        Math.max(1, Math.min(this.#tabSize, indentation.length))
+      );
+    }
+    return undefined;
+  }
+
+  #applySelectionTextChange(
+    selections: ISelection[],
+    change: EditorSelectionTextChange
+  ) {
+    const textDocument = this.#textDocument;
+    const primarySelection = getPrimarySelection(selections);
+    if (textDocument === undefined || primarySelection === undefined) {
+      return;
+    }
+    const { edits, nextSelections } = mapSelectionTextChange(
+      textDocument,
+      selections,
+      change
+    );
+    const nextSelection =
+      nextSelections.length === 1 ? nextSelections[0] : nextSelections;
+    textDocument.applyEdits(edits, {
+      selectionBefore: selections.length === 1 ? primarySelection : selections,
     });
     textDocument.setLastUndoSelectionAfter(nextSelection);
     void this.#renderText(textDocument, nextSelection);

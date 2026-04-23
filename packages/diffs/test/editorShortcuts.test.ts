@@ -89,4 +89,12 @@ describe('resolveEditorShortcutCommand', () => {
       { event: { key: 'z', ctrlKey: true, altKey: true }, expected: undefined },
     ]);
   });
+
+  test('maps tab and shift+tab without primary modifier', () => {
+    expectShortcuts('Linux x86_64', [
+      { event: { key: 'Tab' }, expected: 'indent' },
+      { event: { key: 'Tab', shiftKey: true }, expected: 'outdent' },
+      { event: { key: 'Tab', ctrlKey: true }, expected: undefined },
+    ]);
+  });
 });
