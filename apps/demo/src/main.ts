@@ -2,6 +2,7 @@ import {
   DEFAULT_THEMES,
   DIFFS_TAG_NAME,
   type DiffsThemeNames,
+  Editor,
   File,
   type FileContents,
   FileDiff,
@@ -76,6 +77,7 @@ const diffInstances: (
   | VirtualizedFileDiff<LineCommentMetadata>
 )[] = [];
 const fileInstances: File<LineCommentMetadata>[] = [];
+const editorInstances: Editor[] = [];
 const streamingInstances: FileStream[] = [];
 const conflictInstances: UnresolvedFile<LineCommentMetadata>[] = [];
 
@@ -89,6 +91,7 @@ function cleanupInstances(container: HTMLElement) {
   for (const instances of [
     diffInstances,
     fileInstances,
+    editorInstances,
     streamingInstances,
     conflictInstances,
   ]) {
@@ -626,6 +629,7 @@ function toggleTheme() {
 
   for (const instances of [
     diffInstances,
+    editorInstances,
     fileInstances,
     streamingInstances,
     conflictInstances,
@@ -794,6 +798,21 @@ if (renderFileButton != null) {
       fileContainer,
     });
     fileInstances.push(instance);
+  });
+}
+
+const renderEditorButton = document.getElementById('render-editor');
+if (renderEditorButton != null) {
+  // oxlint-disable-next-line @typescript-oxlint/no-misused-promises
+  renderEditorButton.addEventListener('click', () => {
+    const wrapper = document.getElementById('wrapper');
+    if (wrapper == null) return;
+    cleanupInstances(wrapper);
+
+    const editor = new Editor({ theme: DEMO_THEME });
+    void editor.render({ editorContainer: wrapper });
+    editor.setText(tsContent, 'tsx');
+    editorInstances.push(editor);
   });
 }
 

@@ -3,6 +3,7 @@ import {
   createCssVariablesTheme as createCSSVariablesTheme,
 } from 'shiki';
 
+export * from './components/Editor';
 export * from './components/File';
 export * from './components/FileDiff';
 export * from './components/FileStream';
@@ -11,6 +12,7 @@ export * from './components/VirtualizedFile';
 export * from './components/VirtualizedFileDiff';
 export * from './components/Virtualizer';
 export * from './constants';
+export * from './editor/textDocument';
 export * from './highlighter/languages/areLanguagesAttached';
 export * from './highlighter/languages/attachResolvedLanguages';
 export * from './highlighter/languages/cleanUpResolvedLanguages';
