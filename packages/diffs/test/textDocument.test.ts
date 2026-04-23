@@ -140,7 +140,7 @@ describe('TextDocument', () => {
           newText: 'AA',
         },
       ],
-      { selectionBefore: caret(0, 0) }
+      caret(0, 0)
     );
     d.undo();
     expect(d.getText()).toBe('aa bb cc');
@@ -158,7 +158,7 @@ describe('TextDocument', () => {
           newText: 'two',
         },
       ],
-      { selectionBefore: caret(1, 0) }
+      caret(1, 0)
     );
     expect(d.getText()).toBe('line1\ntwo\nline3');
     d.undo();
@@ -167,34 +167,48 @@ describe('TextDocument', () => {
 
   test('undo stack depth for sequential edits', () => {
     const d = doc('');
-    d.applyEdits(
-      [
-        {
-          range: {
-            start: { line: 0, character: 0 },
-            end: { line: 0, character: 0 },
+    const originalNow = Date.now;
+    let now = 1000;
+    Object.defineProperty(Date, 'now', {
+      configurable: true,
+      value: () => now,
+    });
+    try {
+      d.applyEdits(
+        [
+          {
+            range: {
+              start: { line: 0, character: 0 },
+              end: { line: 0, character: 0 },
+            },
+            newText: 'a',
           },
-          newText: 'a',
-        },
-      ],
-      { selectionBefore: caret(0, 0), coalesceWithinMs: -1 }
-    );
-    d.applyEdits(
-      [
-        {
-          range: {
-            start: { line: 0, character: 1 },
-            end: { line: 0, character: 1 },
+        ],
+        caret(0, 0)
+      );
+      now += 600;
+      d.applyEdits(
+        [
+          {
+            range: {
+              start: { line: 0, character: 1 },
+              end: { line: 0, character: 1 },
+            },
+            newText: 'b',
           },
-          newText: 'b',
-        },
-      ],
-      { selectionBefore: caret(0, 1), coalesceWithinMs: -1 }
-    );
-    d.undo();
-    expect(d.getText()).toBe('a');
-    d.undo();
-    expect(d.getText()).toBe('');
+        ],
+        caret(0, 1)
+      );
+      d.undo();
+      expect(d.getText()).toBe('a');
+      d.undo();
+      expect(d.getText()).toBe('');
+    } finally {
+      Object.defineProperty(Date, 'now', {
+        configurable: true,
+        value: originalNow,
+      });
+    }
   });
 
   test('sequential edits within coalesce window undo as one entry', () => {
@@ -216,7 +230,7 @@ describe('TextDocument', () => {
             newText: 'a',
           },
         ],
-        { selectionBefore: caret(0, 0), coalesceWithinMs: 1000 }
+        caret(0, 0)
       );
       now += 400;
       d.applyEdits(
@@ -229,7 +243,7 @@ describe('TextDocument', () => {
             newText: 'b',
           },
         ],
-        { selectionBefore: caret(0, 1), coalesceWithinMs: 1000 }
+        caret(0, 1)
       );
       expect(d.getText()).toBe('ab');
       d.undo();
@@ -265,7 +279,7 @@ describe('TextDocument', () => {
             newText: 'ab',
           },
         ],
-        { selectionBefore: caret(0, 0), coalesceWithinMs: 1000 }
+        caret(0, 0)
       );
       now += 400;
       d.applyEdits(
@@ -278,7 +292,7 @@ describe('TextDocument', () => {
             newText: 'c',
           },
         ],
-        { selectionBefore: caret(0, 1), coalesceWithinMs: 1000 }
+        caret(0, 1)
       );
       expect(d.getText()).toBe('ac');
       d.undo();
@@ -312,7 +326,7 @@ describe('TextDocument', () => {
             newText: 'a',
           },
         ],
-        { selectionBefore: caret(0, 0), coalesceWithinMs: 1000 }
+        caret(0, 0)
       );
       now += 1200;
       d.applyEdits(
@@ -325,7 +339,7 @@ describe('TextDocument', () => {
             newText: 'b',
           },
         ],
-        { selectionBefore: caret(0, 1), coalesceWithinMs: 1000 }
+        caret(0, 1)
       );
       d.undo();
       expect(d.getText()).toBe('a');
@@ -395,7 +409,7 @@ describe('TextDocument', () => {
           newText: 'b',
         },
       ],
-      { selectionBefore: caret(0, 1) }
+      caret(0, 1)
     );
     expect(d.getText()).toBe('ab');
     expect(d.canUndo).toBe(true);
@@ -424,7 +438,7 @@ describe('TextDocument', () => {
           newText: 'b',
         },
       ],
-      { selectionBefore: caret(0, 1) }
+      caret(0, 1)
     );
     d.undo();
     d.applyEdits(
@@ -437,7 +451,7 @@ describe('TextDocument', () => {
           newText: 'c',
         },
       ],
-      { selectionBefore: caret(0, 1) }
+      caret(0, 1)
     );
     expect(d.getText()).toBe('ac');
     expect(d.canRedo).toBe(false);
@@ -455,7 +469,7 @@ describe('TextDocument', () => {
           newText: 'b',
         },
       ],
-      { selectionBefore: caret(0, 1) }
+      caret(0, 1)
     );
     expect(d.canUndo).toBe(true);
     d.setText('fresh');
@@ -488,7 +502,7 @@ describe('TextDocument', () => {
           newText: 'x',
         },
       ],
-      { selectionBefore }
+      selectionBefore
     );
     d.setLastUndoSelectionAfter(selectionAfter);
 
@@ -517,7 +531,7 @@ describe('TextDocument', () => {
           newText: '!',
         },
       ],
-      { selectionBefore }
+      selectionBefore
     );
     d.setLastUndoSelectionAfter(selectionAfter);
 

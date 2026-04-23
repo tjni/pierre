@@ -85,6 +85,13 @@ export class Editor {
   #isEditorElFocused?: boolean;
   #isTextareaElFocused?: boolean;
   #textareaState?: TextareaState;
+  #pendingTextareaSnapshot?: {
+    value: string;
+    selectionStart: number;
+    selectionEnd: number;
+    selectionDirection: HTMLTextAreaElement['selectionDirection'];
+  };
+  #typingFlushTimeout?: number;
   #selections?: ISelection[];
   #reservedSelections?: ISelection[];
   #languageLoadRequestId = 0;
@@ -217,6 +224,7 @@ export class Editor {
       }),
       addEventListener(this.#textareaEl, 'blur', () => {
         this.#isTextareaElFocused = false;
+        this.#flushPendingTextareaChanges();
       }),
       addEventListener(document, 'keydown', (e) => {
         if (!this.#hasFocusWithinEditor()) {
@@ -225,6 +233,7 @@ export class Editor {
         if (this.#isTextareaElFocused !== true) {
           const command = resolveEditorShortcutCommand(e);
           if (command !== undefined) {
+            this.#flushPendingTextareaChanges();
             e.preventDefault();
             void this.#runShortcutCommand(command);
             return;
@@ -244,6 +253,7 @@ export class Editor {
       addEventListener(this.#textareaEl, 'keydown', (e) => {
         const command = resolveEditorShortcutCommand(e);
         if (command !== undefined) {
+          this.#flushPendingTextareaChanges();
           e.preventDefault();
           void this.#runShortcutCommand(command);
         }
@@ -271,6 +281,7 @@ export class Editor {
   }
 
   public cleanUp(): void {
+    this.#clearTypingFlushTimeout();
     this.#textLineEls?.clear();
     this.#selectionEls?.clear();
     this.#disposes?.forEach((dispose) => dispose());
@@ -285,6 +296,7 @@ export class Editor {
     this.#isEditorElFocused = false;
     this.#isTextareaElFocused = false;
     this.#textareaState = undefined;
+    this.#pendingTextareaSnapshot = undefined;
     this.#reservedSelections = undefined;
   }
 
@@ -348,7 +360,7 @@ export class Editor {
           ? `background-color:${lineHighlightBackground}`
           : `border:2px solid ${selectionBackground}`) +
         ';pointer-events:none}') +
-      ('.ť{position:absolute;z-index:-10;width:100%;padding:0;' +
+      ('.ť{position:absolute;z-index:-20;width:100%;padding:0;' +
         `line-height:${lineHeightPx}px;` +
         'font:inherit;background-color:transparent;color:transparent;opacity:0;border:none;outline:none;resize:none}') +
       `.ń{display:inline-block;text-align:right;width:var(--line-number-width);padding:0 ${this.#monoFontWidth}px;box-sizing:border-box;color:${lineNumberForeground};user-select:none;pointer-events:none;cursor:default}` +
@@ -496,8 +508,9 @@ export class Editor {
       snippet: textareaSnippet,
       value: originalValue,
     } = textareaState;
+    const pendingSnapshot = this.#pendingTextareaSnapshot;
     const { selectionStart, selectionEnd, selectionDirection, value } =
-      textareaEl;
+      pendingSnapshot ?? textareaEl;
     const snippetStartOffset = textDocument.offsetAt({
       line: textareaSnippet.firstLine,
       character: 0,
@@ -532,12 +545,28 @@ export class Editor {
       );
       const nextSelection =
         nextSelections.length === 1 ? nextSelections[0] : nextSelections;
-      textDocument.applyEdits(edits, {
-        selectionBefore:
-          selectionsBefore.length === 1 ? selectionBefore : selectionsBefore,
-      });
-      textDocument.setLastUndoSelectionAfter(nextSelection);
-      void this.#renderText(textDocument, nextSelection);
+      const isBufferedTypingChange =
+        pendingSnapshot === undefined &&
+        selectionsBefore.length === 1 &&
+        isCollapsedSelection(selectionBefore) &&
+        nextSelections.length === 1 &&
+        isCollapsedSelection(nextSelections[0]) &&
+        selectionStart === selectionEnd;
+      if (isBufferedTypingChange) {
+        this.#pendingTextareaSnapshot = {
+          value,
+          selectionStart,
+          selectionEnd,
+          selectionDirection,
+        };
+        this.#scheduleTypingFlush();
+        return;
+      }
+      this.#applyResolvedTextareaChange(
+        edits,
+        selectionsBefore.length === 1 ? selectionBefore : selectionsBefore,
+        nextSelection
+      );
       // if (newChangedText.trim() && nextSelections.length === 1 && isCollapsedSelection(nextSelections[0]!)) {
       //   this.#langs.get(textDocument.languageId)?.lspDriver?.doComplete(textDocument, nextSelections[0]!.end);
       // }
@@ -557,6 +586,96 @@ export class Editor {
           : nextPrimarySelection
       );
     }
+  }
+
+  #scheduleTypingFlush() {
+    this.#clearTypingFlushTimeout();
+    this.#typingFlushTimeout = window.setTimeout(() => {
+      this.#typingFlushTimeout = undefined;
+      this.#flushPendingTextareaChanges();
+    }, 300);
+  }
+
+  #clearTypingFlushTimeout() {
+    if (this.#typingFlushTimeout !== undefined) {
+      window.clearTimeout(this.#typingFlushTimeout);
+      this.#typingFlushTimeout = undefined;
+    }
+  }
+
+  #flushPendingTextareaChanges() {
+    const textDocument = this.#textDocument;
+    const textareaState = this.#textareaState;
+    const pendingSnapshot = this.#pendingTextareaSnapshot;
+    if (
+      textDocument === undefined ||
+      textareaState === undefined ||
+      pendingSnapshot === undefined
+    ) {
+      return;
+    }
+    this.#clearTypingFlushTimeout();
+    const {
+      selections: selectionsBefore,
+      selection: selectionBefore,
+      snippet: textareaSnippet,
+      value: originalValue,
+    } = textareaState;
+    const { value, selectionStart, selectionEnd, selectionDirection } =
+      pendingSnapshot;
+    const snippetStartOffset = textDocument.offsetAt({
+      line: textareaSnippet.firstLine,
+      character: 0,
+    });
+    const {
+      start: oldChangedStart,
+      end: oldChangedEnd,
+      text: newChangedText,
+      selectionStart: nextSelectionStart,
+      selectionEnd: nextSelectionEnd,
+    } = resolveTextareaTextChange({
+      documentValue: textDocument.getText(),
+      originalValue,
+      value,
+      originalSelectionStart: textareaSnippet.selectionStart,
+      originalSelectionEnd: textareaSnippet.selectionEnd,
+      selectionStart,
+      selectionEnd,
+    });
+    const { edits, nextSelections } = mapSelectionTextChange(
+      textDocument,
+      selectionsBefore,
+      {
+        start: snippetStartOffset + oldChangedStart,
+        end: snippetStartOffset + oldChangedEnd,
+        text: newChangedText,
+        selectionStart: snippetStartOffset + nextSelectionStart,
+        selectionEnd: snippetStartOffset + nextSelectionEnd,
+        direction: fromWebSelectionDirection(selectionDirection),
+      }
+    );
+    const nextSelection =
+      nextSelections.length === 1 ? nextSelections[0] : nextSelections;
+    this.#pendingTextareaSnapshot = undefined;
+    this.#applyResolvedTextareaChange(
+      edits,
+      selectionsBefore.length === 1 ? selectionBefore : selectionsBefore,
+      nextSelection
+    );
+  }
+
+  #applyResolvedTextareaChange(
+    edits: Parameters<TextDocument['applyEdits']>[0],
+    selectionBefore: IEditorSelection,
+    nextSelection: IEditorSelection
+  ) {
+    const textDocument = this.#textDocument;
+    if (textDocument === undefined) {
+      return;
+    }
+    textDocument.applyEdits(edits, selectionBefore);
+    textDocument.setLastUndoSelectionAfter(nextSelection);
+    void this.#renderText(textDocument, nextSelection);
   }
 
   #restoreSelection(selection: IEditorSelection) {
@@ -688,6 +807,7 @@ export class Editor {
       snippet: textareaSnippet,
       value: textareaSnippet.text,
     };
+    this.#pendingTextareaSnapshot = undefined;
     textareaEl.value = textareaSnippet.text;
     textareaEl.setSelectionRange(
       textareaSnippet.selectionStart,
@@ -806,9 +926,10 @@ export class Editor {
         });
     const nextSelection =
       nextSelections.length === 1 ? nextSelections[0] : nextSelections;
-    textDocument.applyEdits(edits, {
-      selectionBefore: selections.length === 1 ? selection : selections,
-    });
+    textDocument.applyEdits(
+      edits,
+      selections.length === 1 ? selection : selections
+    );
     textDocument.setLastUndoSelectionAfter(nextSelection);
     void this.#renderText(textDocument, nextSelection);
   }
@@ -866,8 +987,10 @@ export class Editor {
       cursorColumn
     );
     const expectedChar = indentation.startsWith('\t') ? '\t' : ' ';
-    if ([...deleteSegment].some((char) => char !== expectedChar)) {
-      return;
+    for (const char of deleteSegment) {
+      if (char !== expectedChar) {
+        return;
+      }
     }
     this.#applySelectionTextChange(selections, {
       start: deleteStart,
@@ -929,9 +1052,10 @@ export class Editor {
     );
     const nextSelection =
       nextSelections.length === 1 ? nextSelections[0] : nextSelections;
-    textDocument.applyEdits(edits, {
-      selectionBefore: selections.length === 1 ? primarySelection : selections,
-    });
+    textDocument.applyEdits(
+      edits,
+      selections.length === 1 ? primarySelection : selections
+    );
     textDocument.setLastUndoSelectionAfter(nextSelection);
     void this.#renderText(textDocument, nextSelection);
   }

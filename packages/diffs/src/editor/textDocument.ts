@@ -157,28 +157,15 @@ export class TextDocument {
     this.#setDocumentText(text);
   }
 
-  applyEdits(
-    edits: TextEdit[],
-    updateHistory?: {
-      selectionBefore: IEditorSelection;
-      coalesceWithinMs?: number;
-    }
-  ): void {
+  applyEdits(edits: TextEdit[], selectionBefore?: IEditorSelection): void {
     if (edits.length === 0) {
       return;
     }
     const resolvedEdits = this.#resolveEdits(edits);
-    const T0 = this.#text;
-    const newText = applyOffsetEdits(T0, resolvedEdits);
-    if (updateHistory !== undefined) {
-      const { selectionBefore, coalesceWithinMs = 500 } = updateHistory;
-      this.#history.push(
-        T0,
-        resolvedEdits,
-        selectionBefore,
-        undefined,
-        coalesceWithinMs
-      );
+    const textBefore = this.#text;
+    const newText = applyOffsetEdits(textBefore, resolvedEdits);
+    if (selectionBefore !== undefined) {
+      this.#history.push(textBefore, resolvedEdits, selectionBefore, 500);
     }
     this.#setDocumentText(newText);
   }

@@ -285,7 +285,6 @@ export class EditHistory {
     textBefore: string,
     resolvedEdits: ResolvedEdit[],
     selectionBefore: IEditorSelection,
-    selectionAfter?: IEditorSelection,
     coalesceWithinMs?: number
   ): void {
     const timestampMs = Date.now();
@@ -318,9 +317,6 @@ export class EditHistory {
       );
       lastEntry.textLengthAfter = textLengthAfter;
       lastEntry.timestampMs = timestampMs;
-      if (selectionAfter !== undefined) {
-        lastEntry.selectionAfter = cloneEditorSelection(selectionAfter);
-      }
       return;
     }
     this.#undo.push({
@@ -329,10 +325,6 @@ export class EditHistory {
       textLengthBefore,
       textLengthAfter,
       selectionBefore: cloneEditorSelection(selectionBefore),
-      selectionAfter:
-        selectionAfter !== undefined
-          ? cloneEditorSelection(selectionAfter)
-          : undefined,
       timestampMs,
     });
     this.#redo.length = 0;

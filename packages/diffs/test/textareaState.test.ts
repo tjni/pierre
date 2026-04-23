@@ -124,7 +124,7 @@ function applyTextareaChange(
         newText: change.text,
       },
     ],
-    { selectionBefore: selection }
+    selection
   );
   return textDocument.getText();
 }
