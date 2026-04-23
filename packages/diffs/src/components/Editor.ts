@@ -612,15 +612,14 @@ export class Editor {
         this.#tabSize
       );
       const endColumn = getVisualColumn(lineText, endCharacter, this.#tabSize);
+      const startX = this.#getCharacterX(ln, startCharacter, startColumn);
+      const endX = this.#getCharacterX(ln, endCharacter, endColumn);
       const spacing =
         endCharacter === startCharacter || ln === end.line ? 0 : 4;
       const style = {
         top: this.#getLineY(ln) + 'px',
-        left: this.#gutterWidth + startColumn * this.#monoFontWidth + 'px',
-        width:
-          Math.max(endColumn - startColumn, 1) * this.#monoFontWidth +
-          spacing +
-          'px',
+        left: startX + 'px',
+        width: Math.max(endX - startX, 1) + spacing + 'px',
       };
       const selectionEl = createElement(
         'div',
@@ -642,13 +641,14 @@ export class Editor {
     const line = isBackward ? start.line : end.line;
     const character = isBackward ? start.character : end.character;
     const column = getVisualColumn(lineText, character, this.#tabSize);
+    const left = this.#getCharacterX(line, character, column);
     const cursorEl = createElement(
       'div',
       {
         class: 'ī',
         style: {
           top: this.#getLineY(line) + 'px',
-          left: this.#gutterWidth + column * this.#monoFontWidth + 'px',
+          left: left + 'px',
         },
       },
       this.#editorEl
@@ -825,6 +825,69 @@ export class Editor {
 
   #getLineY(line: number) {
     return line * this.#lineHeightPx + this.#paddingY;
+  }
+
+  #getCharacterX(line: number, character: number, visualColumn: number) {
+    const fallbackLeft = this.#gutterWidth + visualColumn * this.#monoFontWidth;
+    const lineEl = this.#textLineEls?.get(line);
+    const editorEl = this.#editorEl;
+    if (lineEl === undefined || editorEl === undefined) {
+      return fallbackLeft;
+    }
+
+    let targetSpan: HTMLElement | undefined;
+    let targetOffset = 0;
+    let lastSpan: HTMLElement | undefined;
+    let lastEnd = 0;
+    const children = lineEl.children;
+    for (let i = 0; i < children.length; i++) {
+      const child = children[i];
+      if (!(child instanceof HTMLElement) || child.tagName !== 'SPAN') {
+        continue;
+      }
+      // oxlint-disable-next-line typescript/no-explicit-any
+      const start = (child as any).CHAR as number | undefined;
+      if (start === undefined) {
+        continue;
+      }
+      const textLength = child.textContent?.length ?? 0;
+      const end = start + textLength;
+      if (character >= start && character <= end) {
+        targetSpan = child;
+        targetOffset = character - start;
+        break;
+      }
+      if (end >= lastEnd) {
+        lastSpan = child;
+        lastEnd = end;
+      }
+    }
+
+    const range = document.createRange();
+    if (targetSpan !== undefined) {
+      const textNode = targetSpan.firstChild;
+      if (textNode === null) {
+        return fallbackLeft;
+      }
+      const nodeLength = textNode.textContent?.length ?? 0;
+      const boundedOffset = Math.max(0, Math.min(targetOffset, nodeLength));
+      range.setStart(textNode, boundedOffset);
+      range.setEnd(textNode, boundedOffset);
+    } else if (lastSpan !== undefined) {
+      const textNode = lastSpan.firstChild;
+      if (textNode === null) {
+        return fallbackLeft;
+      }
+      const nodeLength = textNode.textContent?.length ?? 0;
+      range.setStart(textNode, nodeLength);
+      range.setEnd(textNode, nodeLength);
+    } else {
+      return fallbackLeft;
+    }
+
+    const editorRect = editorEl.getBoundingClientRect();
+    const pointRect = range.getBoundingClientRect();
+    return pointRect.left - editorRect.left;
   }
 
   #hasFocusWithinEditor() {
