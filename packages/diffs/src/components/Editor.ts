@@ -220,7 +220,9 @@ export class Editor {
         if (this.#isTextareaElFocused !== true) {
           const command = resolveEditorShortcutCommand(e);
           if (command !== undefined) {
+            e.preventDefault();
             void this.#runShortcutCommand(command);
+            return;
           }
         }
         if (
