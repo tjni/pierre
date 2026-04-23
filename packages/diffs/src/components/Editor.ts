@@ -21,9 +21,8 @@ import {
 } from '../editor/multiSelection';
 import { normlizeEditorOptions } from '../editor/normlizeEditorOptions';
 import type {
+  EditorSelection,
   EditorSelectionTextChange,
-  IEditorSelection,
-  ISelection,
 } from '../editor/selection';
 import {
   cloneSelection,
@@ -92,8 +91,8 @@ export class Editor {
     selectionDirection: HTMLTextAreaElement['selectionDirection'];
   };
   #typingFlushTimeout?: number;
-  #selections?: ISelection[];
-  #reservedSelections?: ISelection[];
+  #selections?: EditorSelection[];
+  #reservedSelections?: EditorSelection[];
   #languageLoadRequestId = 0;
 
   #disposes?: (() => void)[];
@@ -382,7 +381,10 @@ export class Editor {
     );
   }
 
-  #renderText(textDocument: TextDocument, selection?: IEditorSelection): void {
+  #renderText(
+    textDocument: TextDocument,
+    selection?: EditorSelection | EditorSelection[]
+  ): void {
     const totalLines = textDocument.lineCount;
     const languageId = textDocument.languageId;
 
@@ -666,8 +668,8 @@ export class Editor {
 
   #applyResolvedTextareaChange(
     edits: Parameters<TextDocument['applyEdits']>[0],
-    selectionBefore: IEditorSelection,
-    nextSelection: IEditorSelection
+    selectionBefore: EditorSelection | EditorSelection[],
+    nextSelection: EditorSelection | EditorSelection[]
   ) {
     const textDocument = this.#textDocument;
     if (textDocument === undefined) {
@@ -678,8 +680,10 @@ export class Editor {
     void this.#renderText(textDocument, nextSelection);
   }
 
-  #restoreSelection(selection: IEditorSelection) {
-    const selections = normalizeSelections(toSelectionArray(selection));
+  #restoreSelection(selection: EditorSelection | EditorSelection[]) {
+    const selections = normalizeSelections(
+      Array.isArray(selection) ? selection : toSelectionArray(selection)
+    );
     const primarySelection = getPrimarySelection(selections);
     if (primarySelection === undefined) {
       return;
@@ -703,7 +707,7 @@ export class Editor {
   }
 
   #renderHighlightLine(
-    selection: ISelection,
+    selection: EditorSelection,
     selectionEls: Map<string, HTMLElement>
   ) {
     const hlEl = createElement(
@@ -721,7 +725,7 @@ export class Editor {
   }
 
   #renderSelections(
-    selection: ISelection,
+    selection: EditorSelection,
     selectionEls: Map<string, HTMLElement>
   ) {
     const { start, end } = selection;
@@ -757,7 +761,10 @@ export class Editor {
     }
   }
 
-  #renderCursor(selection: ISelection, selectionEls: Map<string, HTMLElement>) {
+  #renderCursor(
+    selection: EditorSelection,
+    selectionEls: Map<string, HTMLElement>
+  ) {
     const { start, end, direction } = selection;
     const isBackward = direction === SelectionDirection.Backward;
     const lineText =
@@ -783,7 +790,7 @@ export class Editor {
     );
   }
 
-  #setActiveLine(selection: ISelection) {
+  #setActiveLine(selection: EditorSelection) {
     this.#activeLineEl?.classList.remove('ǎ');
     const activeLine =
       selection.direction === SelectionDirection.Backward
@@ -794,7 +801,7 @@ export class Editor {
     this.#activeLineEl = activeLineEl;
   }
 
-  #resetTextarea(selection: ISelection, selections: ISelection[]) {
+  #resetTextarea(selection: EditorSelection, selections: EditorSelection[]) {
     const textDocument = this.#textDocument;
     const textareaEl = this.#textareaEl;
     if (textDocument === undefined || textareaEl === undefined) {
@@ -1037,7 +1044,7 @@ export class Editor {
   }
 
   #applySelectionTextChange(
-    selections: ISelection[],
+    selections: EditorSelection[],
     change: EditorSelectionTextChange
   ) {
     const textDocument = this.#textDocument;

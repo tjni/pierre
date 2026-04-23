@@ -2,8 +2,7 @@ import { applyOffsetEdits } from './editHistory';
 import {
   comparePosition,
   createSelection,
-  type ISelection,
-  type ISelections,
+  type EditorSelection,
   normalizeSelections,
   SelectionDirection,
 } from './selection';
@@ -11,7 +10,7 @@ import { TextDocument, type TextEdit } from './textDocument';
 
 type SelectionEditMapping = {
   edits: TextEdit[];
-  nextSelections: ISelections;
+  nextSelections: EditorSelection[];
 };
 
 type SelectionTextChange = {
@@ -25,7 +24,7 @@ type SelectionTextChange = {
 
 export function mapSelectionTextChange(
   textDocument: TextDocument,
-  selections: readonly ISelection[],
+  selections: readonly EditorSelection[],
   change: SelectionTextChange
 ): SelectionEditMapping {
   const primarySelection = selections[selections.length - 1];
@@ -135,9 +134,9 @@ export function mapSelectionTextChange(
 
 export function mapSelectionRangeChange(
   textDocument: TextDocument,
-  selections: readonly ISelection[],
-  nextPrimarySelection: ISelection
-): ISelections {
+  selections: readonly EditorSelection[],
+  nextPrimarySelection: EditorSelection
+): EditorSelection[] {
   const primarySelection = selections[selections.length - 1];
   if (primarySelection === undefined) {
     return [];
@@ -180,7 +179,7 @@ export function mapSelectionRangeChange(
 
 export function mapSelectionTextReplace(
   textDocument: TextDocument,
-  selections: readonly ISelection[],
+  selections: readonly EditorSelection[],
   texts: readonly string[]
 ): SelectionEditMapping {
   if (selections.length !== texts.length) {
@@ -245,7 +244,7 @@ export function mapSelectionTextReplace(
 
 export function getOrderedSelectionText(
   textDocument: TextDocument,
-  selections: readonly ISelection[]
+  selections: readonly EditorSelection[]
 ): string[] {
   return [...selections]
     .sort((a, b) => {
@@ -278,7 +277,7 @@ function createTextDocumentAfterEdits(
 
 function getSelectionAnchorOffset(
   textDocument: TextDocument,
-  selection: ISelection
+  selection: EditorSelection
 ) {
   return selection.direction === SelectionDirection.Backward
     ? textDocument.offsetAt(selection.end)
@@ -287,7 +286,7 @@ function getSelectionAnchorOffset(
 
 function getSelectionFocusOffset(
   textDocument: TextDocument,
-  selection: ISelection
+  selection: EditorSelection
 ) {
   return selection.direction === SelectionDirection.Backward
     ? textDocument.offsetAt(selection.start)

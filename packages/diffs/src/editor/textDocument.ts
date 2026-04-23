@@ -3,7 +3,7 @@ import {
   EditHistory,
   type ResolvedEdit,
 } from './editHistory';
-import { cloneEditorSelection, type IEditorSelection } from './selection';
+import { cloneEditorSelection, type EditorSelection } from './selection';
 
 /**
  * Position in a text document expressed as zero-based line and character offset.
@@ -157,7 +157,10 @@ export class TextDocument {
     this.#setDocumentText(text);
   }
 
-  applyEdits(edits: TextEdit[], selectionBefore?: IEditorSelection): void {
+  applyEdits(
+    edits: TextEdit[],
+    selectionBefore?: EditorSelection | EditorSelection[]
+  ): void {
     if (edits.length === 0) {
       return;
     }
@@ -170,11 +173,13 @@ export class TextDocument {
     this.#setDocumentText(newText);
   }
 
-  setLastUndoSelectionAfter(selection: IEditorSelection): void {
+  setLastUndoSelectionAfter(
+    selection: EditorSelection | EditorSelection[]
+  ): void {
     this.#history.setLastUndoSelectionAfter(selection);
   }
 
-  undo(): IEditorSelection | undefined {
+  undo(): EditorSelection | EditorSelection[] | undefined {
     const entry = this.#history.popUndoToRedo();
     if (entry === undefined) {
       return undefined;
@@ -185,7 +190,7 @@ export class TextDocument {
       : undefined;
   }
 
-  redo(): IEditorSelection | undefined {
+  redo(): EditorSelection | EditorSelection[] | undefined {
     const entry = this.#history.popRedoToUndo();
     if (entry === undefined) {
       return undefined;

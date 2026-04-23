@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   createSelection,
-  type ISelection,
+  type EditorSelection,
   SelectionDirection,
   toWebSelectionDirection,
 } from '../src/editor/selection';
@@ -16,7 +16,7 @@ import { TextDocument } from '../src/editor/textDocument';
 type TextareaSnippetCase = {
   name: string;
   text: string;
-  selection: ISelection;
+  selection: EditorSelection;
   expected: {
     firstLine: number;
     lastLine: number;

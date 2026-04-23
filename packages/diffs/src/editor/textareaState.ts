@@ -1,14 +1,10 @@
 import { getLineIndentation } from './editorUtils';
-import {
-  fromWebSelectionDirection,
-  type ISelection,
-  type ISelections,
-} from './selection';
+import { type EditorSelection, fromWebSelectionDirection } from './selection';
 
 export type TextareaState = {
-  selections: ISelections;
-  selection: ISelection;
-  snippet: ITextareaSnippet;
+  selections: EditorSelection[];
+  selection: EditorSelection;
+  snippet: TextareaSnippet;
   value: string;
 };
 
@@ -17,7 +13,7 @@ type TextLineSource = {
   getLineText(line: number): string | undefined;
 };
 
-interface ITextareaSnippet {
+interface TextareaSnippet {
   firstLine: number;
   lastLine: number;
   text: string;
@@ -94,8 +90,8 @@ function detectIndentUnit(text: string): string {
 
 export function createTextareaSnippet(
   textLineSource: TextLineSource,
-  selection: ISelection
-): ITextareaSnippet {
+  selection: EditorSelection
+): TextareaSnippet {
   const firstLine = Math.max(0, selection.start.line - 1);
   const lastLine = Math.min(
     textLineSource.lineCount - 1,

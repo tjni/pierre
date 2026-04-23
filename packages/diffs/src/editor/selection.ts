@@ -6,13 +6,9 @@ export enum SelectionDirection {
   Forward = 1,
 }
 
-export type ISelection = Range & {
+export type EditorSelection = Range & {
   direction: SelectionDirection;
 };
-
-export type ISelections = ISelection[];
-
-export type IEditorSelection = ISelection | ISelections;
 
 export type EditorSelectionTextChange = {
   start: number;
@@ -29,7 +25,7 @@ export function createSelection(
   endLine: number,
   endCharacter: number,
   direction: SelectionDirection = SelectionDirection.None
-): ISelection {
+): EditorSelection {
   return {
     start: { line: startLine, character: startCharacter },
     end: { line: endLine, character: endCharacter },
@@ -37,13 +33,18 @@ export function createSelection(
   };
 }
 
+/**
+ * Converts a selection from a web selection to an editor selection.
+ * @param selection - The web selection to convert.
+ * @returns The converted editor selection.
+ */
 export function convertSelection({
   rangeCount,
   anchorNode,
   focusNode,
   anchorOffset,
   focusOffset,
-}: Selection): ISelection | null {
+}: Selection): EditorSelection | null {
   if (rangeCount === 0 || anchorNode === null || focusNode === null) {
     return null;
   }
@@ -68,14 +69,14 @@ export function convertSelection({
   };
 }
 
-export function isCollapsedSelection(selection: ISelection): boolean {
+export function isCollapsedSelection(selection: EditorSelection): boolean {
   return (
     selection.start.line === selection.end.line &&
     selection.start.character === selection.end.character
   );
 }
 
-export function cloneSelection(selection: ISelection): ISelection {
+export function cloneSelection(selection: EditorSelection): EditorSelection {
   return {
     start: { ...selection.start },
     end: { ...selection.end },
@@ -83,17 +84,17 @@ export function cloneSelection(selection: ISelection): ISelection {
   };
 }
 
-export function cloneEditorSelection(
-  selection: IEditorSelection
-): IEditorSelection {
+export function cloneEditorSelection<
+  T extends EditorSelection | EditorSelection[],
+>(selection: T): T {
   return Array.isArray(selection)
-    ? selection.map(cloneSelection)
-    : cloneSelection(selection);
+    ? (selection.map(cloneSelection) as T)
+    : (cloneSelection(selection) as T);
 }
 
 export function toSelectionArray(
-  selection: IEditorSelection | undefined
-): ISelections {
+  selection: EditorSelection | undefined
+): EditorSelection[] {
   if (selection === undefined) {
     return [];
   }
@@ -103,15 +104,15 @@ export function toSelectionArray(
 }
 
 export function getPrimarySelection(
-  selections: readonly ISelection[]
-): ISelection | undefined {
+  selections: readonly EditorSelection[]
+): EditorSelection | undefined {
   const selection = selections[selections.length - 1];
   return selection !== undefined ? cloneSelection(selection) : undefined;
 }
 
 export function normalizeSelections(
-  selections: readonly ISelection[]
-): ISelections {
+  selections: readonly EditorSelection[]
+): EditorSelection[] {
   if (selections.length === 0) {
     return [];
   }
@@ -133,7 +134,7 @@ export function normalizeSelections(
       }
       return a.index - b.index;
     });
-  const merged: Array<{ selection: ISelection; isPrimary: boolean }> = [];
+  const merged: Array<{ selection: EditorSelection; isPrimary: boolean }> = [];
   for (const entry of ordered) {
     const current = merged[merged.length - 1];
     if (

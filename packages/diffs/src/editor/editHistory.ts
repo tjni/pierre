@@ -1,4 +1,4 @@
-import { cloneEditorSelection, type IEditorSelection } from './selection';
+import { cloneEditorSelection, type EditorSelection } from './selection';
 
 export type ResolvedEdit = { start: number; end: number; text: string };
 
@@ -12,9 +12,9 @@ export type HistoryEntry = {
   /** Final text length after the entry is applied. */
   textLengthAfter: number;
   /** Selection before the transaction (restored on undo). */
-  selectionBefore: IEditorSelection;
+  selectionBefore: EditorSelection | EditorSelection[];
   /** Selection after the transaction (restored on redo). */
-  selectionAfter?: IEditorSelection;
+  selectionAfter?: EditorSelection | EditorSelection[];
   /** Timestamp in ms used to coalesce adjacent edits. */
   timestampMs: number;
 };
@@ -284,7 +284,7 @@ export class EditHistory {
   push(
     textBefore: string,
     resolvedEdits: ResolvedEdit[],
-    selectionBefore: IEditorSelection,
+    selectionBefore: EditorSelection | EditorSelection[],
     coalesceWithinMs?: number
   ): void {
     const timestampMs = Date.now();
@@ -330,7 +330,9 @@ export class EditHistory {
     this.#redo.length = 0;
   }
 
-  setLastUndoSelectionAfter(selection: IEditorSelection): void {
+  setLastUndoSelectionAfter(
+    selection: EditorSelection | EditorSelection[]
+  ): void {
     const lastEntry = this.#undo[this.#undo.length - 1];
     if (lastEntry !== undefined) {
       lastEntry.selectionAfter = cloneEditorSelection(selection);
