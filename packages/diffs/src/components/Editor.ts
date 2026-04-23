@@ -42,7 +42,7 @@ import {
   resolveTextareaTextChange,
   type TextareaState,
 } from '../editor/textareaState';
-import { TextDocument } from '../editor/textDocument';
+import { TextDocument, type TextEdit } from '../editor/textDocument';
 import { getVisualColumn } from '../editor/visualColumns';
 import { getSharedHighlighter } from '../highlighter/shared_highlighter';
 import type { BaseCodeOptions, DiffsHighlighter } from '../types';
@@ -844,7 +844,7 @@ export class Editor {
       }
       case 'indent':
       case 'outdent':
-        this.#changePrimaryLineIndent(command === 'outdent');
+        this.#changeSelectedLineIndent(command === 'outdent');
         break;
       case 'copy':
       case 'cut':
@@ -941,7 +941,90 @@ export class Editor {
     void this.#renderText(textDocument, nextSelection);
   }
 
-  #changePrimaryLineIndent(outdent: boolean) {
+  #changeSelectedLineIndent(outdent: boolean) {
+    const textDocument = this.#textDocument;
+    const selections = this.#selections;
+    const primarySelection = selections?.[selections.length - 1];
+    if (
+      textDocument === undefined ||
+      selections === undefined ||
+      primarySelection === undefined
+    ) {
+      return;
+    }
+    const hasExpandedSelection = selections.some(
+      (selection) => !isCollapsedSelection(selection)
+    );
+    if (!hasExpandedSelection) {
+      this.#changePrimaryCaretIndent(outdent);
+      return;
+    }
+    const targetLines = this.#getSelectedLines(selections);
+    if (targetLines.length === 0) {
+      return;
+    }
+    const edits: TextEdit[] = [];
+    const lineDeltas = new Map<number, { insert: number; delete: number }>();
+    for (const line of targetLines) {
+      const lineText = textDocument.getLineText(line) ?? '';
+      if (!outdent) {
+        const indentUnit = this.#resolveLineIndentUnit(line);
+        edits.push({
+          range: {
+            start: { line, character: 0 },
+            end: { line, character: 0 },
+          },
+          newText: indentUnit,
+        });
+        lineDeltas.set(line, { insert: indentUnit.length, delete: 0 });
+        continue;
+      }
+      const indentation = getLineIndentation(lineText);
+      if (indentation.length === 0) {
+        continue;
+      }
+      const indentUnit = this.#resolveLineIndentUnit(line);
+      const deleteLength = indentation.startsWith('\t')
+        ? 1
+        : Math.max(1, Math.min(indentUnit.length, indentation.length));
+      edits.push({
+        range: {
+          start: { line, character: 0 },
+          end: { line, character: deleteLength },
+        },
+        newText: '',
+      });
+      lineDeltas.set(line, { insert: 0, delete: deleteLength });
+    }
+    if (edits.length === 0) {
+      return;
+    }
+    const nextSelections = normalizeSelections(
+      selections.map((selection) => ({
+        start: this.#adjustPositionForLineIndent(
+          selection.start.line,
+          selection.start.character,
+          lineDeltas
+        ),
+        end: this.#adjustPositionForLineIndent(
+          selection.end.line,
+          selection.end.character,
+          lineDeltas
+        ),
+        direction: selection.direction,
+      }))
+    );
+    const nextSelection =
+      nextSelections.length === 1 ? nextSelections[0] : nextSelections;
+    textDocument.applyEdits(
+      edits,
+      selections.length === 1 ? primarySelection : selections
+    );
+    textDocument.setLastUndoSelectionAfter(nextSelection);
+    void this.#renderText(textDocument, nextSelection);
+  }
+
+  #changePrimaryCaretIndent(outdent: boolean) {
     const textDocument = this.#textDocument;
     const selections = this.#selections;
     const primarySelection = selections?.[selections.length - 1];
@@ -1007,6 +1090,46 @@ export class Editor {
       selectionEnd: deleteStart,
       direction: SelectionDirection.None,
     });
+  }
+
+  #getSelectedLines(selections: readonly EditorSelection[]): number[] {
+    const selectedLines = new Set<number>();
+    for (const selection of selections) {
+      let startLine = selection.start.line;
+      let endLine = selection.end.line;
+      if (
+        !isCollapsedSelection(selection) &&
+        selection.end.character === 0 &&
+        endLine > startLine
+      ) {
+        endLine--;
+      }
+      if (endLine < startLine) {
+        [startLine, endLine] = [endLine, startLine];
+      }
+      for (let line = startLine; line <= endLine; line++) {
+        selectedLines.add(line);
+      }
+    }
+    return [...selectedLines].sort((a, b) => a - b);
+  }
+
+  #adjustPositionForLineIndent(
+    line: number,
+    character: number,
+    lineDeltas: ReadonlyMap<number, { insert: number; delete: number }>
+  ): { line: number; character: number } {
+    const delta = lineDeltas.get(line);
+    if (delta === undefined) {
+      return { line, character };
+    }
+    return {
+      line,
+      character: Math.max(
+        0,
+        character + delta.insert - Math.min(character, delta.delete)
+      ),
+    };
   }
 
   #resolveLineIndentUnit(line: number): string {
