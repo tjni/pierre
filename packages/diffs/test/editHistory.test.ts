@@ -68,12 +68,10 @@ describe('EditHistory', () => {
     const selectionAfter = [caret(2), caret(3)];
 
     history.push('ab', [{ start: 1, end: 1, text: 'X' }], selectionBefore, -1);
-    history.setLastUndoSelectionAfter(selectionAfter);
+    history.setLastUndoSelectionsAfter(selectionAfter);
 
-    selectionBefore[0].start.character = 99;
-    selectionBefore[0].end.character = 99;
-    selectionAfter[0].start.character = 99;
-    selectionAfter[0].end.character = 99;
+    selectionBefore[0] = caret(99);
+    selectionAfter[0] = caret(99);
 
     expect(history.canUndo).toBe(true);
     expect(history.canRedo).toBe(false);
@@ -85,8 +83,8 @@ describe('EditHistory', () => {
       inverseEdits: [{ start: 1, end: 2, text: '' }],
       textLengthBefore: 2,
       textLengthAfter: 3,
-      selectionBefore: [caret(0), caret(1)],
-      selectionAfter: [caret(2), caret(3)],
+      selectionsBefore: [caret(0), caret(1)],
+      selectionsAfter: [caret(2), caret(3)],
       timestampMs: expect.any(Number),
     });
     expect(history.canUndo).toBe(false);
@@ -97,17 +95,16 @@ describe('EditHistory', () => {
     expect(history.canRedo).toBe(false);
   });
 
-  test('setLastUndoSelectionAfter stores a cloned redo selection', () => {
+  test('setLastUndoSelectionsAfter stores cloned redo selections', () => {
     const history = new EditHistory();
-    const selectionAfter = caret(2);
+    let selectionAfter = caret(2);
 
-    history.push('a', [{ start: 1, end: 1, text: 'b' }], caret(1), -1);
-    history.setLastUndoSelectionAfter(selectionAfter);
-    selectionAfter.start.character = 99;
-    selectionAfter.end.character = 99;
+    history.push('a', [{ start: 1, end: 1, text: 'b' }], [caret(1)], -1);
+    history.setLastUndoSelectionsAfter([selectionAfter]);
+    selectionAfter = caret(99);
 
     expect(history.popUndoToRedo()).toMatchObject({
-      selectionAfter: caret(2),
+      selectionsAfter: [caret(2)],
     });
   });
 
@@ -122,11 +119,11 @@ describe('EditHistory', () => {
     });
 
     try {
-      history.push('', [{ start: 0, end: 0, text: 'a' }], caret(0), 1000);
-      history.setLastUndoSelectionAfter(caret(1));
+      history.push('', [{ start: 0, end: 0, text: 'a' }], [caret(0)], 1000);
+      history.setLastUndoSelectionsAfter([caret(1)]);
       now += 400;
-      history.push('a', [{ start: 1, end: 1, text: 'b' }], caret(1), 1000);
-      history.setLastUndoSelectionAfter(caret(2));
+      history.push('a', [{ start: 1, end: 1, text: 'b' }], [caret(1)], 1000);
+      history.setLastUndoSelectionsAfter([caret(2)]);
 
       const entry = history.popUndoToRedo();
 
@@ -135,8 +132,8 @@ describe('EditHistory', () => {
         inverseEdits: [{ start: 0, end: 2, text: '' }],
         textLengthBefore: 0,
         textLengthAfter: 2,
-        selectionBefore: caret(0),
-        selectionAfter: caret(2),
+        selectionsBefore: [caret(0)],
+        selectionsAfter: [caret(2)],
         timestampMs: 1400,
       });
       expect(history.popUndoToRedo()).toBeUndefined();
@@ -151,15 +148,15 @@ describe('EditHistory', () => {
   test('push clears redo history when recording a new undo entry', () => {
     const history = new EditHistory();
 
-    history.push('', [{ start: 0, end: 0, text: 'a' }], caret(0), -1);
-    history.push('a', [{ start: 1, end: 1, text: 'b' }], caret(1), -1);
+    history.push('', [{ start: 0, end: 0, text: 'a' }], [caret(0)], -1);
+    history.push('a', [{ start: 1, end: 1, text: 'b' }], [caret(1)], -1);
 
     expect(history.popUndoToRedo()).toMatchObject({
       forwardEdits: [{ start: 1, end: 1, text: 'b' }],
     });
     expect(history.canRedo).toBe(true);
 
-    history.push('a', [{ start: 1, end: 1, text: 'c' }], caret(1), -1);
+    history.push('a', [{ start: 1, end: 1, text: 'c' }], [caret(1)], -1);
 
     expect(history.canRedo).toBe(false);
     expect(history.popUndoToRedo()).toMatchObject({
@@ -173,7 +170,7 @@ describe('EditHistory', () => {
   test('clear resets both undo and redo stacks', () => {
     const history = new EditHistory();
 
-    history.push('', [{ start: 0, end: 0, text: 'a' }], caret(0), -1);
+    history.push('', [{ start: 0, end: 0, text: 'a' }], [caret(0)], -1);
     history.popUndoToRedo();
     history.clear();
 

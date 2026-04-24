@@ -25,7 +25,7 @@ export interface Position {
    *
    * The above two properties are implementation specific.
    */
-  line: number;
+  readonly line: number;
   /**
    * Character offset on a line in a document (zero-based).
    *
@@ -35,7 +35,7 @@ export interface Position {
    * If the character value is greater than the line length it defaults back
    * to the line length. This property is implementation specific.
    */
-  character: number;
+  readonly character: number;
 }
 
 /**
@@ -159,7 +159,8 @@ export class TextDocument {
 
   applyEdits(
     edits: TextEdit[],
-    selectionBefore?: EditorSelection | EditorSelection[]
+    updateHistory = false,
+    selectionsBefore?: EditorSelection[]
   ): void {
     if (edits.length === 0) {
       return;
@@ -167,37 +168,35 @@ export class TextDocument {
     const resolvedEdits = this.#resolveEdits(edits);
     const textBefore = this.#text;
     const newText = applyOffsetEdits(textBefore, resolvedEdits);
-    if (selectionBefore !== undefined) {
-      this.#history.push(textBefore, resolvedEdits, selectionBefore, 500);
+    if (updateHistory && selectionsBefore !== undefined) {
+      this.#history.push(textBefore, resolvedEdits, selectionsBefore, 500);
     }
     this.#setDocumentText(newText);
   }
 
-  setLastUndoSelectionAfter(
-    selection: EditorSelection | EditorSelection[]
-  ): void {
-    this.#history.setLastUndoSelectionAfter(selection);
+  setLastUndoSelectionsAfter(selections: EditorSelection[]): void {
+    this.#history.setLastUndoSelectionsAfter(selections);
   }
 
-  undo(): EditorSelection | EditorSelection[] | undefined {
+  undo(): EditorSelection[] | undefined {
     const entry = this.#history.popUndoToRedo();
     if (entry === undefined) {
       return undefined;
     }
     this.#setDocumentText(applyOffsetEdits(this.#text, entry.inverseEdits));
-    return entry.selectionBefore !== undefined
-      ? cloneEditorSelection(entry.selectionBefore)
+    return entry.selectionsBefore !== undefined
+      ? entry.selectionsBefore.map(cloneEditorSelection)
       : undefined;
   }
 
-  redo(): EditorSelection | EditorSelection[] | undefined {
+  redo(): EditorSelection[] | undefined {
     const entry = this.#history.popRedoToUndo();
     if (entry === undefined) {
       return undefined;
     }
     this.#setDocumentText(applyOffsetEdits(this.#text, entry.forwardEdits));
-    return entry.selectionAfter !== undefined
-      ? cloneEditorSelection(entry.selectionAfter)
+    return entry.selectionsAfter !== undefined
+      ? entry.selectionsAfter.map(cloneEditorSelection)
       : undefined;
   }
 

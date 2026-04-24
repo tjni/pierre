@@ -140,7 +140,8 @@ describe('TextDocument', () => {
           newText: 'AA',
         },
       ],
-      caret(0, 0)
+      true,
+      [caret(0, 0)]
     );
     d.undo();
     expect(d.getText()).toBe('aa bb cc');
@@ -158,7 +159,8 @@ describe('TextDocument', () => {
           newText: 'two',
         },
       ],
-      caret(1, 0)
+      true,
+      [caret(1, 0)]
     );
     expect(d.getText()).toBe('line1\ntwo\nline3');
     d.undo();
@@ -184,7 +186,8 @@ describe('TextDocument', () => {
             newText: 'a',
           },
         ],
-        caret(0, 0)
+        true,
+        [caret(0, 0)]
       );
       now += 600;
       d.applyEdits(
@@ -197,7 +200,8 @@ describe('TextDocument', () => {
             newText: 'b',
           },
         ],
-        caret(0, 1)
+        true,
+        [caret(0, 1)]
       );
       d.undo();
       expect(d.getText()).toBe('a');
@@ -230,7 +234,8 @@ describe('TextDocument', () => {
             newText: 'a',
           },
         ],
-        caret(0, 0)
+        true,
+        [caret(0, 0)]
       );
       now += 400;
       d.applyEdits(
@@ -243,7 +248,8 @@ describe('TextDocument', () => {
             newText: 'b',
           },
         ],
-        caret(0, 1)
+        true,
+        [caret(0, 1)]
       );
       expect(d.getText()).toBe('ab');
       d.undo();
@@ -279,7 +285,8 @@ describe('TextDocument', () => {
             newText: 'ab',
           },
         ],
-        caret(0, 0)
+        true,
+        [caret(0, 0)]
       );
       now += 400;
       d.applyEdits(
@@ -292,7 +299,8 @@ describe('TextDocument', () => {
             newText: 'c',
           },
         ],
-        caret(0, 1)
+        true,
+        [caret(0, 1)]
       );
       expect(d.getText()).toBe('ac');
       d.undo();
@@ -326,7 +334,8 @@ describe('TextDocument', () => {
             newText: 'a',
           },
         ],
-        caret(0, 0)
+        true,
+        [caret(0, 0)]
       );
       now += 1200;
       d.applyEdits(
@@ -339,7 +348,8 @@ describe('TextDocument', () => {
             newText: 'b',
           },
         ],
-        caret(0, 1)
+        true,
+        [caret(0, 1)]
       );
       d.undo();
       expect(d.getText()).toBe('a');
@@ -409,7 +419,8 @@ describe('TextDocument', () => {
           newText: 'b',
         },
       ],
-      caret(0, 1)
+      true,
+      [caret(0, 1)]
     );
     expect(d.getText()).toBe('ab');
     expect(d.canUndo).toBe(true);
@@ -438,7 +449,8 @@ describe('TextDocument', () => {
           newText: 'b',
         },
       ],
-      caret(0, 1)
+      true,
+      [caret(0, 1)]
     );
     d.undo();
     d.applyEdits(
@@ -451,7 +463,8 @@ describe('TextDocument', () => {
           newText: 'c',
         },
       ],
-      caret(0, 1)
+      true,
+      [caret(0, 1)]
     );
     expect(d.getText()).toBe('ac');
     expect(d.canRedo).toBe(false);
@@ -469,7 +482,8 @@ describe('TextDocument', () => {
           newText: 'b',
         },
       ],
-      caret(0, 1)
+      true,
+      [caret(0, 1)]
     );
     expect(d.canUndo).toBe(true);
     d.setText('fresh');
@@ -502,12 +516,13 @@ describe('TextDocument', () => {
           newText: 'x',
         },
       ],
-      selectionBefore
+      true,
+      [selectionBefore]
     );
-    d.setLastUndoSelectionAfter(selectionAfter);
+    d.setLastUndoSelectionsAfter([selectionAfter]);
 
-    expect(d.undo()).toEqual(selectionBefore);
-    expect(d.redo()).toEqual(selectionAfter);
+    expect(d.undo()).toEqual([selectionBefore]);
+    expect(d.redo()).toEqual([selectionAfter]);
   });
 
   test('undo and redo preserve multiple selections', () => {
@@ -531,9 +546,10 @@ describe('TextDocument', () => {
           newText: '!',
         },
       ],
+      true,
       selectionBefore
     );
-    d.setLastUndoSelectionAfter(selectionAfter);
+    d.setLastUndoSelectionsAfter(selectionAfter);
 
     expect(d.undo()).toEqual(selectionBefore);
     expect(d.redo()).toEqual(selectionAfter);

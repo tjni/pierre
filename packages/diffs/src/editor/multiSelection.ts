@@ -22,6 +22,51 @@ type SelectionTextChange = {
   direction: SelectionDirection;
 };
 
+export function mapSelectionRangeChange(
+  textDocument: TextDocument,
+  selections: readonly EditorSelection[],
+  nextPrimarySelection: EditorSelection
+): EditorSelection[] {
+  const primarySelection = selections[selections.length - 1];
+  if (primarySelection === undefined) {
+    return [];
+  }
+  const primaryAnchorOffset = getSelectionAnchorOffset(
+    textDocument,
+    primarySelection
+  );
+  const primaryFocusOffset = getSelectionFocusOffset(
+    textDocument,
+    primarySelection
+  );
+  const nextPrimaryAnchorOffset = getSelectionAnchorOffset(
+    textDocument,
+    nextPrimarySelection
+  );
+  const nextPrimaryFocusOffset = getSelectionFocusOffset(
+    textDocument,
+    nextPrimarySelection
+  );
+  const anchorDelta = nextPrimaryAnchorOffset - primaryAnchorOffset;
+  const focusDelta = nextPrimaryFocusOffset - primaryFocusOffset;
+  const textLength = textDocument.getText().length;
+  return normalizeSelections(
+    selections.map((selection) =>
+      createSelectionFromAnchorAndFocusOffsets(
+        textDocument,
+        clampOffset(
+          getSelectionAnchorOffset(textDocument, selection) + anchorDelta,
+          textLength
+        ),
+        clampOffset(
+          getSelectionFocusOffset(textDocument, selection) + focusDelta,
+          textLength
+        )
+      )
+    )
+  );
+}
+
 export function mapSelectionTextChange(
   textDocument: TextDocument,
   selections: readonly EditorSelection[],
@@ -130,51 +175,6 @@ export function mapSelectionTextChange(
       })
     ),
   };
-}
-
-export function mapSelectionRangeChange(
-  textDocument: TextDocument,
-  selections: readonly EditorSelection[],
-  nextPrimarySelection: EditorSelection
-): EditorSelection[] {
-  const primarySelection = selections[selections.length - 1];
-  if (primarySelection === undefined) {
-    return [];
-  }
-  const primaryAnchorOffset = getSelectionAnchorOffset(
-    textDocument,
-    primarySelection
-  );
-  const primaryFocusOffset = getSelectionFocusOffset(
-    textDocument,
-    primarySelection
-  );
-  const nextPrimaryAnchorOffset = getSelectionAnchorOffset(
-    textDocument,
-    nextPrimarySelection
-  );
-  const nextPrimaryFocusOffset = getSelectionFocusOffset(
-    textDocument,
-    nextPrimarySelection
-  );
-  const anchorDelta = nextPrimaryAnchorOffset - primaryAnchorOffset;
-  const focusDelta = nextPrimaryFocusOffset - primaryFocusOffset;
-  const textLength = textDocument.getText().length;
-  return normalizeSelections(
-    selections.map((selection) =>
-      createSelectionFromAnchorAndFocusOffsets(
-        textDocument,
-        clampOffset(
-          getSelectionAnchorOffset(textDocument, selection) + anchorDelta,
-          textLength
-        ),
-        clampOffset(
-          getSelectionFocusOffset(textDocument, selection) + focusDelta,
-          textLength
-        )
-      )
-    )
-  );
 }
 
 export function mapSelectionTextReplace(

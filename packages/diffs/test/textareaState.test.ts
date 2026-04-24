@@ -114,18 +114,15 @@ function applyTextareaChange(
   });
   const start = textDocument.positionAt(snippetStartOffset + change.start);
   const end = textDocument.positionAt(snippetStartOffset + change.end);
-  textDocument.applyEdits(
-    [
-      {
-        range: {
-          start,
-          end,
-        },
-        newText: change.text,
+  textDocument.applyEdits([
+    {
+      range: {
+        start,
+        end,
       },
-    ],
-    selection
-  );
+      newText: change.text,
+    },
+  ]);
   return textDocument.getText();
 }
 
@@ -222,7 +219,7 @@ describe('matchesTextareaState', () => {
       matchesTextareaState(
         {
           selections: [selection],
-          selection,
+          primarySelection: selection,
           snippet,
           value: snippet.text,
         },
@@ -249,7 +246,7 @@ describe('matchesTextareaState', () => {
       matchesTextareaState(
         {
           selections: [selection],
-          selection,
+          primarySelection: selection,
           snippet,
           value: snippet.text,
         },

@@ -7,7 +7,7 @@ export function getVisualColumn(
   const normalizedTabSize = Math.max(1, Math.floor(tabSize));
   let column = 0;
   for (let i = 0; i < clampedCharacter; i++) {
-    if (text.charCodeAt(i) === 9) {
+    if (text.charCodeAt(i) === /* \t */ 9) {
       const remainder = column % normalizedTabSize;
       column +=
         remainder === 0 ? normalizedTabSize : normalizedTabSize - remainder;

@@ -10,7 +10,7 @@ import {
   coalesceMicrotask,
   createElement,
   extend,
-  getLineIndentation,
+  getLineIndentationUnit,
   measureMonoFontWidth,
 } from '../editor/editorUtils';
 import {
@@ -20,20 +20,15 @@ import {
   mapSelectionTextReplace,
 } from '../editor/multiSelection';
 import { normlizeEditorOptions } from '../editor/normlizeEditorOptions';
-import type {
-  EditorSelection,
-  EditorSelectionTextChange,
-} from '../editor/selection';
+import type { EditorSelection } from '../editor/selection';
 import {
-  cloneSelection,
+  cloneEditorSelection,
   convertSelection,
   createSelection,
   fromWebSelectionDirection,
   getPrimarySelection,
   isCollapsedSelection,
-  normalizeSelections,
   SelectionDirection,
-  toSelectionArray,
   toWebSelectionDirection,
 } from '../editor/selection';
 import {
@@ -125,6 +120,10 @@ export class Editor {
     return this.#textDocument;
   }
 
+  get #hasSelection(): boolean {
+    return this.#selections !== undefined && this.#selections.length > 0;
+  }
+
   setText(text: string, lang = 'plaintext'): void {
     this.setTextDocument(new TextDocument('inmemory://1', text, lang));
   }
@@ -133,9 +132,8 @@ export class Editor {
     this.#textDocument = textDocument;
     this.#textareaState = undefined;
     this.#reservedSelections = undefined;
-    const selection = createSelection(0, 0, 0, 0);
-    this.#selections = [selection];
-    void this.#renderText(textDocument, selection);
+    this.#selections = undefined;
+    void this.#renderText(textDocument);
   }
 
   setThemeType(themeType: 'dark' | 'light' | 'system'): void {
@@ -196,17 +194,17 @@ export class Editor {
         ) {
           const selection = convertSelection(selectionRaw);
           if (selection !== null) {
-            this.#restoreSelection(
-              this.#reservedSelections !== undefined
-                ? [...this.#reservedSelections, selection]
-                : selection
-            );
+            this.#restoreSelections([
+              ...(this.#reservedSelections ?? []),
+              selection,
+            ]);
           }
         }
       }),
       addEventListener(this.#editorEl, 'mousedown', (e) => {
         if (e.button === 0 && getPrimaryModifier(e)) {
-          this.#reservedSelections = this.#selections?.map(cloneSelection);
+          this.#reservedSelections =
+            this.#selections?.map(cloneEditorSelection);
         }
       }),
       addEventListener(document, 'mouseup', () => {
@@ -383,7 +381,7 @@ export class Editor {
 
   #renderText(
     textDocument: TextDocument,
-    selection?: EditorSelection | EditorSelection[]
+    selections?: EditorSelection[]
   ): void {
     const totalLines = textDocument.lineCount;
     const languageId = textDocument.languageId;
@@ -404,7 +402,7 @@ export class Editor {
           ) {
             return;
           }
-          this.#renderText(textDocument, selection ?? this.#selections);
+          this.#renderText(textDocument, selections);
         });
       }
     }
@@ -471,9 +469,9 @@ export class Editor {
     this.#textLineEls = lineEls;
     this.#activeLineEl = undefined;
 
-    this.#restoreSelection(
-      selection ?? this.#selections ?? createSelection(0, 0, 0, 0)
-    );
+    if (selections !== undefined) {
+      this.#restoreSelections(selections);
+    }
   }
 
   #createSelectionFromOffsets(
@@ -506,7 +504,7 @@ export class Editor {
     }
     const {
       selections: selectionsBefore,
-      selection: selectionBefore,
+      primarySelection: selectionBefore,
       snippet: textareaSnippet,
       value: originalValue,
     } = textareaState;
@@ -545,8 +543,6 @@ export class Editor {
           direction: fromWebSelectionDirection(selectionDirection),
         }
       );
-      const nextSelection =
-        nextSelections.length === 1 ? nextSelections[0] : nextSelections;
       const isBufferedTypingChange =
         pendingSnapshot === undefined &&
         selectionsBefore.length === 1 &&
@@ -566,8 +562,8 @@ export class Editor {
       }
       this.#applyResolvedTextareaChange(
         edits,
-        selectionsBefore.length === 1 ? selectionBefore : selectionsBefore,
-        nextSelection
+        selectionsBefore,
+        nextSelections
       );
       // if (newChangedText.trim() && nextSelections.length === 1 && isCollapsedSelection(nextSelections[0]!)) {
       //   this.#langs.get(textDocument.languageId)?.lspDriver?.doComplete(textDocument, nextSelections[0]!.end);
@@ -578,14 +574,12 @@ export class Editor {
         snippetStartOffset + selectionEnd,
         fromWebSelectionDirection(selectionDirection)
       );
-      this.#restoreSelection(
-        selectionsBefore.length > 1
-          ? mapSelectionRangeChange(
-              textDocument,
-              selectionsBefore,
-              nextPrimarySelection
-            )
-          : nextPrimarySelection
+      this.#restoreSelections(
+        mapSelectionRangeChange(
+          textDocument,
+          selectionsBefore,
+          nextPrimarySelection
+        )
       );
     }
   }
@@ -619,7 +613,6 @@ export class Editor {
     this.#clearTypingFlushTimeout();
     const {
       selections: selectionsBefore,
-      selection: selectionBefore,
       snippet: textareaSnippet,
       value: originalValue,
     } = textareaState;
@@ -656,34 +649,25 @@ export class Editor {
         direction: fromWebSelectionDirection(selectionDirection),
       }
     );
-    const nextSelection =
-      nextSelections.length === 1 ? nextSelections[0] : nextSelections;
     this.#pendingTextareaSnapshot = undefined;
-    this.#applyResolvedTextareaChange(
-      edits,
-      selectionsBefore.length === 1 ? selectionBefore : selectionsBefore,
-      nextSelection
-    );
+    this.#applyResolvedTextareaChange(edits, selectionsBefore, nextSelections);
   }
 
   #applyResolvedTextareaChange(
     edits: Parameters<TextDocument['applyEdits']>[0],
-    selectionBefore: EditorSelection | EditorSelection[],
-    nextSelection: EditorSelection | EditorSelection[]
+    selectionsBefore: EditorSelection[],
+    nextSelections: EditorSelection[]
   ) {
     const textDocument = this.#textDocument;
     if (textDocument === undefined) {
       return;
     }
-    textDocument.applyEdits(edits, selectionBefore);
-    textDocument.setLastUndoSelectionAfter(nextSelection);
-    void this.#renderText(textDocument, nextSelection);
+    textDocument.applyEdits(edits, true, selectionsBefore);
+    textDocument.setLastUndoSelectionsAfter(nextSelections);
+    void this.#renderText(textDocument, nextSelections);
   }
 
-  #restoreSelection(selection: EditorSelection | EditorSelection[]) {
-    const selections = normalizeSelections(
-      Array.isArray(selection) ? selection : toSelectionArray(selection)
-    );
+  #restoreSelections(selections: EditorSelection[]) {
     const primarySelection = getPrimarySelection(selections);
     if (primarySelection === undefined) {
       return;
@@ -696,14 +680,14 @@ export class Editor {
     }
     selections.forEach((selection) => {
       if (!isCollapsedSelection(selection)) {
-        this.#renderSelections(selection, selectionEls);
+        this.#renderSelectionRange(selection, selectionEls);
       }
       this.#renderCursor(selection, selectionEls);
     });
     this.#selectionEls?.forEach((el) => el.remove());
     this.#selectionEls?.clear();
     this.#selectionEls = selectionEls;
-    this.#resetTextarea(primarySelection, selections);
+    this.#updateTextarea(primarySelection, selections);
   }
 
   #renderHighlightLine(
@@ -724,7 +708,7 @@ export class Editor {
     selectionEls.set(`highlightLine-${selection.start.line}`, hlEl);
   }
 
-  #renderSelections(
+  #renderSelectionRange(
     selection: EditorSelection,
     selectionEls: Map<string, HTMLElement>
   ) {
@@ -801,16 +785,22 @@ export class Editor {
     this.#activeLineEl = activeLineEl;
   }
 
-  #resetTextarea(selection: EditorSelection, selections: EditorSelection[]) {
+  #updateTextarea(
+    primarySelection: EditorSelection,
+    selections: EditorSelection[]
+  ) {
     const textDocument = this.#textDocument;
     const textareaEl = this.#textareaEl;
     if (textDocument === undefined || textareaEl === undefined) {
       return;
     }
-    const textareaSnippet = createTextareaSnippet(textDocument, selection);
+    const textareaSnippet = createTextareaSnippet(
+      textDocument,
+      primarySelection
+    );
     this.#textareaState = {
       selections,
-      selection,
+      primarySelection,
       snippet: textareaSnippet,
       value: textareaSnippet.text,
     };
@@ -819,7 +809,7 @@ export class Editor {
     textareaEl.setSelectionRange(
       textareaSnippet.selectionStart,
       textareaSnippet.selectionEnd,
-      toWebSelectionDirection(selection.direction)
+      toWebSelectionDirection(primarySelection.direction)
     );
     textareaEl.style.left = this.#gutterWidth + 'px';
     textareaEl.style.width = `calc(100% - ${this.#gutterWidth}px)`;
@@ -830,33 +820,19 @@ export class Editor {
 
   async #runShortcutCommand(command: EditorShortcutCommand) {
     switch (command) {
-      case 'paste': {
-        let text: string;
-        try {
-          text = await navigator.clipboard.readText();
-        } catch {
-          return;
-        }
-        this.#replaceSelectionText(
-          this.#resolvePastedSelectionText(text) ?? text
-        );
+      case 'selectAll':
+        this.#restoreSelections([this.#getFullSelection()]);
         break;
-      }
-      case 'indent':
-      case 'outdent':
-        this.#changeSelectedLineIndent(command === 'outdent');
-        break;
+
       case 'copy':
       case 'cut':
-        if (
-          this.#selections !== undefined &&
-          this.#textDocument !== undefined
-        ) {
+        if (this.#hasSelection && this.#textDocument !== undefined) {
           try {
+            // todo: use navigator.clipboard.write() for multiple selections copy
             await navigator.clipboard.writeText(
               getOrderedSelectionText(
                 this.#textDocument,
-                this.#selections
+                this.#selections!
               ).join(this.#textDocument.EOF)
             );
           } catch {
@@ -867,45 +843,160 @@ export class Editor {
           }
         }
         break;
+
+      case 'paste': {
+        let text: string | string[];
+        try {
+          // todo: use navigator.clipboard.read() for multiple segments paste
+          text = await navigator.clipboard.readText();
+        } catch {
+          return;
+        }
+        this.#replaceSelectionText(text);
+        break;
+      }
+
+      case 'indent':
+      case 'outdent':
+        if (this.#hasSelection && this.#textDocument !== undefined) {
+          const edits: TextEdit[] = [];
+          const nextSelections: EditorSelection[] = [];
+          for (const selection of this.#selections!) {
+            const startLine = selection.start.line;
+            const lineText = this.#textDocument.getLineText(startLine);
+            if (lineText !== undefined) {
+              const outdent = command === 'outdent';
+              if (startLine !== selection.end.line || outdent) {
+                const ret = this.#resolveIndentEdits(selection, outdent);
+                edits.push(...ret[0]);
+                nextSelections.push(ret[1]);
+              } else {
+                const indentUnit = getLineIndentationUnit(
+                  lineText,
+                  this.#tabSize
+                );
+                this.#replaceSelectionText(indentUnit);
+              }
+            }
+          }
+          if (edits.length > 0) {
+            this.#textDocument.applyEdits(edits, true, this.#selections);
+            this.#textDocument.setLastUndoSelectionsAfter(nextSelections);
+            void this.#renderText(this.#textDocument, nextSelections);
+          }
+        }
+        break;
+
       case 'documentStart':
       case 'documentEnd':
-        this.#restoreSelection(
-          this.#getDocumentBoundarySelection(command === 'documentEnd')
-        );
+        this.#restoreSelections([
+          this.#getDocumentBoundarySelection(command === 'documentEnd'),
+        ]);
         break;
+
       case 'undo':
         if (this.#textDocument?.canUndo === true) {
           void this.#renderText(this.#textDocument, this.#textDocument.undo());
         }
         break;
+
       case 'redo':
         if (this.#textDocument?.canRedo === true) {
           void this.#renderText(this.#textDocument, this.#textDocument.redo());
         }
         break;
-      case 'selectAll':
-        this.#restoreSelection(this.#getSelectAllSelection());
-        break;
     }
   }
 
-  #getSelectAllSelection() {
+  // for select all command
+  #getFullSelection() {
     const textDocument = this.#textDocument;
     if (textDocument === undefined) {
       throw new Error('Editor has no text document');
     }
-    const lastLine = textDocument.lineCount;
-    const lastLineIndex = lastLine - 1;
-    const lastCharacter = textDocument.getLineText(lastLineIndex)?.length ?? 0;
+    const lastLine = textDocument.lineCount - 1;
+    const lastCharacter = textDocument.getLineText(lastLine)?.length ?? 0;
     return createSelection(
       0,
       0,
-      lastLineIndex,
+      lastLine,
       lastCharacter,
       SelectionDirection.Forward
     );
   }
 
+  // for documentStart/documentEnd commands
+  #getDocumentBoundarySelection(atEnd: boolean) {
+    const textDocument = this.#textDocument;
+    if (textDocument === undefined) {
+      throw new Error('Editor has no text document');
+    }
+    const line = atEnd ? textDocument.lineCount - 1 : 0;
+    const character = atEnd ? (textDocument.getLineText(line)?.length ?? 0) : 0;
+    return createSelection(line, character, line, character);
+  }
+
+  #resolveIndentEdits(
+    selection: EditorSelection,
+    outdent: boolean
+  ): [edits: TextEdit[], nextSelection: EditorSelection] {
+    const textDocument = this.#textDocument;
+    if (textDocument === undefined) {
+      return [[], selection];
+    }
+    const { start, end } = selection;
+    let endLine = end.line;
+    if (start.line < end.line && end.character === 0) {
+      endLine--;
+    }
+    const edits: TextEdit[] = [];
+    const newSelection: EditorSelection = { ...selection };
+    for (let line = start.line; line <= endLine; line++) {
+      const lineText = textDocument.getLineText(line);
+      if (lineText === undefined) {
+        continue;
+      }
+      const indentUnit = getLineIndentationUnit(lineText, this.#tabSize);
+      let deleteLength = 0;
+      let newText = indentUnit;
+      if (outdent) {
+        if (lineText.startsWith('\t')) {
+          deleteLength = 1;
+        } else if (lineText.startsWith(' ')) {
+          const leadingSpacesLength =
+            lineText.length - lineText.trimStart().length;
+          deleteLength = Math.min(indentUnit.length, leadingSpacesLength);
+        }
+        if (deleteLength === 0) {
+          continue;
+        }
+        newText = '';
+      }
+      edits.push({
+        range: {
+          start: { line, character: 0 },
+          end: { line, character: deleteLength },
+        },
+        newText,
+      });
+      const delte = newText.length - deleteLength;
+      if (line === start.line) {
+        newSelection.start = {
+          ...start,
+          character: Math.max(0, start.character + delte),
+        };
+      }
+      if (line === end.line) {
+        newSelection.end = {
+          ...end,
+          character: Math.max(0, end.character + delte),
+        };
+      }
+    }
+    return [edits, newSelection];
+  }
+
+  // replace the selection text
   #replaceSelectionText(text: string | string[]) {
     const selections = this.#selections;
     if (selections === undefined) {
@@ -931,288 +1022,18 @@ export class Editor {
             textDocument.offsetAt(selection.start) + normalizedText.length,
           direction: SelectionDirection.None,
         });
-    const nextSelection =
-      nextSelections.length === 1 ? nextSelections[0] : nextSelections;
-    textDocument.applyEdits(
-      edits,
-      selections.length === 1 ? selection : selections
-    );
-    textDocument.setLastUndoSelectionAfter(nextSelection);
-    void this.#renderText(textDocument, nextSelection);
+    textDocument.applyEdits(edits, true, selections);
+    textDocument.setLastUndoSelectionsAfter(nextSelections);
+    void this.#renderText(textDocument, nextSelections);
   }
 
-  #changeSelectedLineIndent(outdent: boolean) {
-    const textDocument = this.#textDocument;
-    const selections = this.#selections;
-    const primarySelection = selections?.[selections.length - 1];
-    if (
-      textDocument === undefined ||
-      selections === undefined ||
-      primarySelection === undefined
-    ) {
-      return;
-    }
-    const hasExpandedSelection = selections.some(
-      (selection) => !isCollapsedSelection(selection)
-    );
-    if (!hasExpandedSelection) {
-      this.#changePrimaryCaretIndent(outdent);
-      return;
-    }
-    const targetLines = this.#getSelectedLines(selections);
-    if (targetLines.length === 0) {
-      return;
-    }
-    const edits: TextEdit[] = [];
-    const lineDeltas = new Map<number, { insert: number; delete: number }>();
-    for (const line of targetLines) {
-      const lineText = textDocument.getLineText(line) ?? '';
-      if (!outdent) {
-        const indentUnit = this.#resolveLineIndentUnit(line);
-        edits.push({
-          range: {
-            start: { line, character: 0 },
-            end: { line, character: 0 },
-          },
-          newText: indentUnit,
-        });
-        lineDeltas.set(line, { insert: indentUnit.length, delete: 0 });
-        continue;
-      }
-      const indentation = getLineIndentation(lineText);
-      if (indentation.length === 0) {
-        continue;
-      }
-      const indentUnit = this.#resolveLineIndentUnit(line);
-      const deleteLength = indentation.startsWith('\t')
-        ? 1
-        : Math.max(1, Math.min(indentUnit.length, indentation.length));
-      edits.push({
-        range: {
-          start: { line, character: 0 },
-          end: { line, character: deleteLength },
-        },
-        newText: '',
-      });
-      lineDeltas.set(line, { insert: 0, delete: deleteLength });
-    }
-    if (edits.length === 0) {
-      return;
-    }
-    const nextSelections = normalizeSelections(
-      selections.map((selection) => ({
-        start: this.#adjustPositionForLineIndent(
-          selection.start.line,
-          selection.start.character,
-          lineDeltas
-        ),
-        end: this.#adjustPositionForLineIndent(
-          selection.end.line,
-          selection.end.character,
-          lineDeltas
-        ),
-        direction: selection.direction,
-      }))
-    );
-    const nextSelection =
-      nextSelections.length === 1 ? nextSelections[0] : nextSelections;
-    textDocument.applyEdits(
-      edits,
-      selections.length === 1 ? primarySelection : selections
-    );
-    textDocument.setLastUndoSelectionAfter(nextSelection);
-    void this.#renderText(textDocument, nextSelection);
-  }
-
-  #changePrimaryCaretIndent(outdent: boolean) {
-    const textDocument = this.#textDocument;
-    const selections = this.#selections;
-    const primarySelection = selections?.[selections.length - 1];
-    if (
-      textDocument === undefined ||
-      selections === undefined ||
-      primarySelection === undefined
-    ) {
-      return;
-    }
-    const line = primarySelection.start.line;
-    const lineText = textDocument.getLineText(line) ?? '';
-    const lineStartOffset = textDocument.offsetAt({ line, character: 0 });
-    const cursorOffset = textDocument.offsetAt(primarySelection.end);
-
-    if (!outdent) {
-      const indentUnit = this.#resolveLineIndentUnit(line);
-      const insertOffset = isCollapsedSelection(primarySelection)
-        ? cursorOffset
-        : lineStartOffset;
-      this.#applySelectionTextChange(selections, {
-        start: insertOffset,
-        end: insertOffset,
-        text: indentUnit,
-        selectionStart: insertOffset + indentUnit.length,
-        selectionEnd: insertOffset + indentUnit.length,
-        direction: SelectionDirection.None,
-      });
-      return;
-    }
-
-    const indentation = getLineIndentation(lineText);
-    if (indentation.length === 0) {
-      return;
-    }
-    const cursorColumn = Math.max(0, cursorOffset - lineStartOffset);
-    if (cursorColumn === 0) {
-      return;
-    }
-    const indentUnit = this.#resolveLineIndentUnit(line);
-    const deleteLength = indentation.startsWith('\t')
-      ? 1
-      : Math.max(
-          1,
-          Math.min(indentUnit.length, indentation.length, cursorColumn)
-        );
-    const deleteStart = cursorOffset - deleteLength;
-    const deleteSegment = lineText.slice(
-      Math.max(0, cursorColumn - deleteLength),
-      cursorColumn
-    );
-    const expectedChar = indentation.startsWith('\t') ? '\t' : ' ';
-    for (const char of deleteSegment) {
-      if (char !== expectedChar) {
-        return;
-      }
-    }
-    this.#applySelectionTextChange(selections, {
-      start: deleteStart,
-      end: cursorOffset,
-      text: '',
-      selectionStart: deleteStart,
-      selectionEnd: deleteStart,
-      direction: SelectionDirection.None,
-    });
-  }
-
-  #getSelectedLines(selections: readonly EditorSelection[]): number[] {
-    const selectedLines = new Set<number>();
-    for (const selection of selections) {
-      let startLine = selection.start.line;
-      let endLine = selection.end.line;
-      if (
-        !isCollapsedSelection(selection) &&
-        selection.end.character === 0 &&
-        endLine > startLine
-      ) {
-        endLine--;
-      }
-      if (endLine < startLine) {
-        [startLine, endLine] = [endLine, startLine];
-      }
-      for (let line = startLine; line <= endLine; line++) {
-        selectedLines.add(line);
-      }
-    }
-    return [...selectedLines].sort((a, b) => a - b);
-  }
-
-  #adjustPositionForLineIndent(
-    line: number,
-    character: number,
-    lineDeltas: ReadonlyMap<number, { insert: number; delete: number }>
-  ): { line: number; character: number } {
-    const delta = lineDeltas.get(line);
-    if (delta === undefined) {
-      return { line, character };
-    }
-    return {
-      line,
-      character: Math.max(
-        0,
-        character + delta.insert - Math.min(character, delta.delete)
-      ),
-    };
-  }
-
-  #resolveLineIndentUnit(line: number): string {
-    const textDocument = this.#textDocument;
-    if (textDocument === undefined) {
-      return ' '.repeat(this.#tabSize);
-    }
-    const resolved = this.#resolveIndentUnitFromText(
-      getLineIndentation(textDocument.getLineText(line) ?? '')
-    );
-    if (resolved !== undefined) {
-      return resolved;
-    }
-    for (let ln = line - 1; ln >= 0; ln--) {
-      const fromPrevious = this.#resolveIndentUnitFromText(
-        getLineIndentation(textDocument.getLineText(ln) ?? '')
-      );
-      if (fromPrevious !== undefined) {
-        return fromPrevious;
-      }
-    }
-    return ' '.repeat(this.#tabSize);
-  }
-
-  #resolveIndentUnitFromText(indentation: string): string | undefined {
-    if (indentation.startsWith('\t')) {
-      return '\t';
-    }
-    if (indentation.startsWith(' ')) {
-      return ' '.repeat(
-        Math.max(1, Math.min(this.#tabSize, indentation.length))
-      );
-    }
-    return undefined;
-  }
-
-  #applySelectionTextChange(
-    selections: EditorSelection[],
-    change: EditorSelectionTextChange
-  ) {
-    const textDocument = this.#textDocument;
-    const primarySelection = getPrimarySelection(selections);
-    if (textDocument === undefined || primarySelection === undefined) {
-      return;
-    }
-    const { edits, nextSelections } = mapSelectionTextChange(
-      textDocument,
-      selections,
-      change
-    );
-    const nextSelection =
-      nextSelections.length === 1 ? nextSelections[0] : nextSelections;
-    textDocument.applyEdits(
-      edits,
-      selections.length === 1 ? primarySelection : selections
-    );
-    textDocument.setLastUndoSelectionAfter(nextSelection);
-    void this.#renderText(textDocument, nextSelection);
-  }
-
-  #getDocumentBoundarySelection(atEnd: boolean) {
-    const textDocument = this.#textDocument;
-    if (textDocument === undefined) {
-      throw new Error('Editor has no text document');
-    }
-    const line = atEnd ? textDocument.lineCount - 1 : 0;
-    const character = atEnd ? (textDocument.getLineText(line)?.length ?? 0) : 0;
-    return createSelection(line, character, line, character);
-  }
-
-  #resolvePastedSelectionText(text: string) {
-    const selectionCount = this.#selections?.length ?? 0;
-    if (selectionCount === 0) {
-      return undefined;
-    }
-    const parts = text.split(/\r\n?|\n/g);
-    return parts.length === selectionCount ? parts : undefined;
-  }
-
+  // get line Y position
   #getLineY(line: number) {
     return line * this.#lineHeightPx + this.#paddingY;
   }
 
+  // get character X position
+  // todo: does it support emoji/non-ascii input?
   #getCharacterX(line: number, character: number, visualColumn: number) {
     const fallbackLeft = this.#gutterWidth + visualColumn * this.#monoFontWidth;
     const lineEl = this.#textLineEls?.get(line);
@@ -1276,24 +1097,24 @@ export class Editor {
     return pointRect.left - editorRect.left;
   }
 
+  // check if the active element has focus within editor
   #hasFocusWithinEditor() {
     const activeElement = document.activeElement;
+    if (activeElement === null) {
+      return false;
+    }
     return (
       activeElement === this.#editorEl ||
       activeElement === this.#textareaEl ||
-      (activeElement !== null &&
-        this.#editorEl?.contains(activeElement) === true)
+      this.#editorEl?.contains(activeElement) === true
     );
   }
 
+  // check if the web selection belongs to editor
   #selectionBelongsToEditor(selection: Selection) {
     return (
-      this.#nodeBelongsToEditor(selection.anchorNode) &&
-      this.#nodeBelongsToEditor(selection.focusNode)
+      this.#editorEl?.contains(selection.anchorNode) === true &&
+      this.#editorEl?.contains(selection.focusNode) === true
     );
-  }
-
-  #nodeBelongsToEditor(node: Node | null) {
-    return node !== null && this.#editorEl?.contains(node) === true;
   }
 }

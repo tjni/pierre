@@ -76,7 +76,9 @@ export function isCollapsedSelection(selection: EditorSelection): boolean {
   );
 }
 
-export function cloneSelection(selection: EditorSelection): EditorSelection {
+export function cloneEditorSelection(
+  selection: EditorSelection
+): EditorSelection {
   return {
     start: { ...selection.start },
     end: { ...selection.end },
@@ -84,30 +86,11 @@ export function cloneSelection(selection: EditorSelection): EditorSelection {
   };
 }
 
-export function cloneEditorSelection<
-  T extends EditorSelection | EditorSelection[],
->(selection: T): T {
-  return Array.isArray(selection)
-    ? (selection.map(cloneSelection) as T)
-    : (cloneSelection(selection) as T);
-}
-
-export function toSelectionArray(
-  selection: EditorSelection | undefined
-): EditorSelection[] {
-  if (selection === undefined) {
-    return [];
-  }
-  return Array.isArray(selection)
-    ? selection.map(cloneSelection)
-    : [cloneSelection(selection)];
-}
-
 export function getPrimarySelection(
   selections: readonly EditorSelection[]
 ): EditorSelection | undefined {
   const selection = selections[selections.length - 1];
-  return selection !== undefined ? cloneSelection(selection) : undefined;
+  return selection !== undefined ? cloneEditorSelection(selection) : undefined;
 }
 
 export function normalizeSelections(
@@ -119,7 +102,7 @@ export function normalizeSelections(
   const primarySelection = selections[selections.length - 1];
   const ordered = selections
     .map((selection, index) => ({
-      selection: cloneSelection(selection),
+      selection: cloneEditorSelection(selection),
       index,
       isPrimary: selection === primarySelection,
     }))

@@ -3,7 +3,7 @@ import { type EditorSelection, fromWebSelectionDirection } from './selection';
 
 export type TextareaState = {
   selections: EditorSelection[];
-  selection: EditorSelection;
+  primarySelection: EditorSelection;
   snippet: TextareaSnippet;
   value: string;
 };
@@ -138,7 +138,7 @@ export function matchesTextareaState(
     selectionStart === textareaState.snippet.selectionStart &&
     selectionEnd === textareaState.snippet.selectionEnd &&
     fromWebSelectionDirection(selectionDirection) ===
-      textareaState.selection.direction
+      textareaState.primarySelection.direction
   );
 }
 

@@ -93,6 +93,19 @@ export function getLineIndentation(lineText: string): string {
   return indentation;
 }
 
+export function getLineIndentationUnit(
+  lineText: string,
+  tabSize: number
+): string {
+  if (lineText.startsWith('\t')) {
+    return '\t';
+  }
+  if (lineText.startsWith(' ')) {
+    return ' '.repeat(Math.max(1, Math.min(tabSize, lineText.length)));
+  }
+  return ' '.repeat(tabSize);
+}
+
 export function extend<T extends object>(obj: T, attrs: Partial<T>): T {
   return Object.assign(obj, attrs);
 }
