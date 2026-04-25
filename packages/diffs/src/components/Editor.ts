@@ -6,24 +6,15 @@ import {
   resolveEditorCommandFromKeyboardEvent,
 } from '../editor/editorCommand';
 import {
-  type NormalizedEditorOptions,
-  normlizeEditorOptions,
-} from '../editor/editorOptions';
-import {
-  addEventListener,
-  coalesceMicrotask,
-  createElement,
-  extend,
-  getLineIndentationUnit,
-  getRootCssVariableValue,
-  measureMonoFontWidth,
-} from '../editor/editorUtils';
-import {
   mapSelectionMove,
   mapSelectionTextChange,
   mapSelectionTextReplace,
-} from '../editor/multiSelection';
-import type { EditorSelection } from '../editor/selection';
+} from '../editor/editorMultiSelections';
+import {
+  type NormalizedEditorOptions,
+  normlizeEditorOptions,
+} from '../editor/editorOptions';
+import type { EditorSelection } from '../editor/editorSelection';
 import {
   comparePosition,
   convertSelection,
@@ -33,13 +24,22 @@ import {
   resolveIndentEdits,
   SelectionDirection,
   toWebSelectionDirection,
-} from '../editor/selection';
+} from '../editor/editorSelection';
 import {
   createTextareaSnippet,
   matchesTextareaState,
   resolveTextareaTextChange,
   type TextareaState,
-} from '../editor/textareaState';
+} from '../editor/editorTextareaState';
+import {
+  addEventListener,
+  coalesceMicrotask,
+  createElement,
+  extend,
+  getLineIndentationUnit,
+  getRootCssVariableValue,
+  measureMonoFontWidth,
+} from '../editor/editorUtils';
 import { TextDocument, type TextEdit } from '../editor/textDocument';
 import {
   getHighlighterIfLoaded,

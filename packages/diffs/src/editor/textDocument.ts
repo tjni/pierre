@@ -3,7 +3,7 @@ import {
   EditHistory,
   type ResolvedEdit,
 } from './editHistory';
-import { type EditorSelection } from './selection';
+import { type EditorSelection } from './editorSelection';
 
 /**
  * Position in a text document expressed as zero-based line and character offset.

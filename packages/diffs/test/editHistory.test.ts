@@ -5,8 +5,8 @@ import {
   buildInverseOffsetEdits,
   EditHistory,
 } from '../src/editor/editHistory';
-import type { EditorSelection } from '../src/editor/selection';
-import { SelectionDirection } from '../src/editor/selection';
+import type { EditorSelection } from '../src/editor/editorSelection';
+import { SelectionDirection } from '../src/editor/editorSelection';
 
 function createSelection(
   startLine: number,

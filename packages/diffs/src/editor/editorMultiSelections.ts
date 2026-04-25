@@ -1,5 +1,5 @@
 import { applyOffsetEdits } from './editHistory';
-import { type EditorSelection, SelectionDirection } from './selection';
+import { type EditorSelection, SelectionDirection } from './editorSelection';
 import { type Position, TextDocument, type TextEdit } from './textDocument';
 
 type SelectionEditMapping = {

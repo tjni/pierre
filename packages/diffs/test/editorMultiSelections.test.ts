@@ -4,9 +4,9 @@ import {
   mapSelectionMove,
   mapSelectionTextChange,
   mapSelectionTextReplace,
-} from '../src/editor/multiSelection';
-import type { EditorSelection } from '../src/editor/selection';
-import { SelectionDirection } from '../src/editor/selection';
+} from '../src/editor/editorMultiSelections';
+import type { EditorSelection } from '../src/editor/editorSelection';
+import { SelectionDirection } from '../src/editor/editorSelection';
 import { TextDocument } from '../src/editor/textDocument';
 
 function createSelection(

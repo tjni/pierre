@@ -1,5 +1,8 @@
+import {
+  type EditorSelection,
+  fromWebSelectionDirection,
+} from './editorSelection';
 import { getLineIndentation } from './editorUtils';
-import { type EditorSelection, fromWebSelectionDirection } from './selection';
 
 export type TextareaState = {
   selections: EditorSelection[];

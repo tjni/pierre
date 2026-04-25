@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
-import { convertSelection, SelectionDirection } from '../src/editor/selection';
+import {
+  convertSelection,
+  SelectionDirection,
+} from '../src/editor/editorSelection';
 
 type MockNode = {
   nodeType: number;

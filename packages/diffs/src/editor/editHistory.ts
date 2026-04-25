@@ -1,4 +1,4 @@
-import { type EditorSelection } from './selection';
+import { type EditorSelection } from './editorSelection';
 
 export type ResolvedEdit = {
   start: number;

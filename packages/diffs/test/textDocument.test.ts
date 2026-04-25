@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { EditorSelection } from '../src/editor/selection';
-import { SelectionDirection } from '../src/editor/selection';
+import type { EditorSelection } from '../src/editor/editorSelection';
+import { SelectionDirection } from '../src/editor/editorSelection';
 import { TextDocument, type TextEdit } from '../src/editor/textDocument';
 
 function doc(text: string) {

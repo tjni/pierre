@@ -4,12 +4,12 @@ import {
   type EditorSelection,
   SelectionDirection,
   toWebSelectionDirection,
-} from '../src/editor/selection';
+} from '../src/editor/editorSelection';
 import {
   createTextareaSnippet,
   matchesTextareaState,
   resolveTextareaTextChange,
-} from '../src/editor/textareaState';
+} from '../src/editor/editorTextareaState';
 import { TextDocument } from '../src/editor/textDocument';
 
 type TextareaSnippetCase = {
