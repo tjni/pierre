@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import { createSelection, SelectionDirection } from '../src/editor/selection';
+import type { EditorSelection } from '../src/editor/selection';
+import { SelectionDirection } from '../src/editor/selection';
 import { TextDocument, type TextEdit } from '../src/editor/textDocument';
 
 function doc(text: string) {
@@ -8,13 +9,12 @@ function doc(text: string) {
 }
 
 function caret(line: number, character: number) {
-  return createSelection(
-    line,
-    character,
-    line,
-    character,
-    SelectionDirection.None
-  );
+  const position = { line, character };
+  return {
+    start: position,
+    end: position,
+    direction: SelectionDirection.None,
+  } satisfies EditorSelection;
 }
 
 describe('TextDocument', () => {

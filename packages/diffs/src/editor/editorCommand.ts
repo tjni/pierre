@@ -1,4 +1,4 @@
-export type EditorShortcutCommand =
+export type EditorCommand =
   | 'copy'
   | 'cut'
   | 'paste'
@@ -10,7 +10,7 @@ export type EditorShortcutCommand =
   | 'redo'
   | 'selectAll';
 
-const SHORTCUTS: Partial<Record<string, EditorShortcutCommand>> = {
+const SHORTCUTS: Partial<Record<string, EditorCommand>> = {
   a: 'selectAll',
   c: 'copy',
   v: 'paste',
@@ -27,9 +27,9 @@ export function getPrimaryModifier(event: MouseEvent | KeyboardEvent): boolean {
     : event.ctrlKey && !event.metaKey;
 }
 
-export function resolveEditorShortcutCommand(
+export function resolveEditorCommandFromKeyboardEvent(
   event: KeyboardEvent
-): EditorShortcutCommand | undefined {
+): EditorCommand | undefined {
   if (event.altKey) {
     return undefined;
   }

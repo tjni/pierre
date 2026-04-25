@@ -7,7 +7,22 @@ import {
   composeOffsetEdits,
   EditHistory,
 } from '../src/editor/editHistory';
-import { createSelection, SelectionDirection } from '../src/editor/selection';
+import type { EditorSelection } from '../src/editor/selection';
+import { SelectionDirection } from '../src/editor/selection';
+
+function createSelection(
+  startLine: number,
+  startCharacter: number,
+  endLine: number,
+  endCharacter: number,
+  direction: SelectionDirection = SelectionDirection.None
+): EditorSelection {
+  return {
+    start: { line: startLine, character: startCharacter },
+    end: { line: endLine, character: endCharacter },
+    direction,
+  };
+}
 
 function caret(character: number) {
   return createSelection(0, character, 0, character, SelectionDirection.None);

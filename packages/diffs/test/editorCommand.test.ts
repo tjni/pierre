@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  type EditorShortcutCommand,
-  resolveEditorShortcutCommand,
-} from '../src/editor/editorShortcuts';
+  type EditorCommand,
+  resolveEditorCommandFromKeyboardEvent,
+} from '../src/editor/editorCommand';
 
 type ShortcutKeyboardEvent = Pick<
   KeyboardEvent,
@@ -11,7 +11,7 @@ type ShortcutKeyboardEvent = Pick<
 >;
 type ShortcutCase = {
   event: Partial<ShortcutKeyboardEvent> & Pick<ShortcutKeyboardEvent, 'key'>;
-  expected: EditorShortcutCommand | undefined;
+  expected: EditorCommand | undefined;
 };
 
 function event({
@@ -50,7 +50,9 @@ function withPlatform(platform: string, run: () => void): void {
 function expectShortcuts(platform: string, cases: ShortcutCase[]): void {
   withPlatform(platform, () => {
     for (const { event: shortcutEvent, expected } of cases) {
-      expect(resolveEditorShortcutCommand(event(shortcutEvent))).toBe(expected);
+      expect(resolveEditorCommandFromKeyboardEvent(event(shortcutEvent))).toBe(
+        expected
+      );
     }
   });
 }

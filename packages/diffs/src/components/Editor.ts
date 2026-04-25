@@ -1,14 +1,14 @@
 import { EncodedTokenMetadata, type IGrammar, INITIAL } from 'shiki/textmate';
 
 import {
+  type EditorCommand,
+  getPrimaryModifier,
+  resolveEditorCommandFromKeyboardEvent,
+} from '../editor/editorCommand';
+import {
   type NormalizedEditorOptions,
   normlizeEditorOptions,
 } from '../editor/editorOptions';
-import {
-  type EditorShortcutCommand,
-  getPrimaryModifier,
-  resolveEditorShortcutCommand,
-} from '../editor/editorShortcuts';
 import {
   addEventListener,
   coalesceMicrotask,
@@ -20,14 +20,13 @@ import {
 } from '../editor/editorUtils';
 import {
   getOrderedSelectionText,
-  mapSelectionRangeChange,
+  mapSelectionMove,
   mapSelectionTextChange,
   mapSelectionTextReplace,
 } from '../editor/multiSelection';
 import type { EditorSelection } from '../editor/selection';
 import {
   convertSelection,
-  createSelection,
   fromWebSelectionDirection,
   getPrimarySelection,
   isCollapsedSelection,
@@ -43,7 +42,10 @@ import {
 } from '../editor/textareaState';
 import { TextDocument, type TextEdit } from '../editor/textDocument';
 import { getVisualColumns } from '../editor/visualColumns';
-import { getSharedHighlighter } from '../highlighter/shared_highlighter';
+import {
+  getHighlighterIfLoaded,
+  getSharedHighlighter,
+} from '../highlighter/shared_highlighter';
 import type {
   BaseCodeOptions,
   DiffsHighlighter,
@@ -134,6 +136,9 @@ export class Editor {
   setThemeType(themeType: 'dark' | 'light' | 'system'): void {
     this.#options.themeType = themeType;
     this.#updateStyle();
+    if (this.#textDocument !== undefined) {
+      this.#renderText(this.#textDocument, this.#selections);
+    }
   }
 
   render({ editorContainer }: { editorContainer: HTMLElement }): void {
@@ -141,7 +146,7 @@ export class Editor {
       this.cleanUp();
     }
     const { tabIndex = -1 } = this.#options;
-    const queueTextareaSync = coalesceMicrotask(() =>
+    const queueTextareaStateSync = coalesceMicrotask(() =>
       this.#syncTextareaState()
     );
     this.#editorEl = extend(
@@ -215,34 +220,28 @@ export class Editor {
           return;
         }
         if (this.#isTextareaElFocused !== true) {
-          const command = resolveEditorShortcutCommand(e);
+          const command = resolveEditorCommandFromKeyboardEvent(e);
           if (command !== undefined) {
             this.#flushPendingTextareaChanges();
             e.preventDefault();
-            void this.#runShortcutCommand(command);
+            console.log('keydown', command);
+            void this.#runCommand(command);
             return;
           }
         }
-        if (
-          this.#isTextareaElFocused !== true &&
-          this.#isEditorElFocused === true &&
-          e.key !== 'Shift' &&
-          e.key !== 'Control' &&
-          e.key !== 'Alt' &&
-          e.key !== 'Meta'
-        ) {
+        if (this.#isEditorElFocused === true) {
           this.#textareaEl?.focus();
         }
       }),
       addEventListener(this.#textareaEl, 'keydown', (e) => {
-        const command = resolveEditorShortcutCommand(e);
+        const command = resolveEditorCommandFromKeyboardEvent(e);
         if (command !== undefined) {
           this.#flushPendingTextareaChanges();
           e.preventDefault();
-          void this.#runShortcutCommand(command);
+          void this.#runCommand(command);
         }
       }),
-      addEventListener(this.#textareaEl, 'input', queueTextareaSync),
+      addEventListener(this.#textareaEl, 'input', queueTextareaStateSync),
       addEventListener(this.#textareaEl, 'selectionchange', () => {
         if (
           this.#textareaState !== undefined &&
@@ -251,16 +250,18 @@ export class Editor {
         ) {
           return;
         }
-        queueTextareaSync();
+        queueTextareaStateSync();
       }),
     ];
-    this.#highlighter = getSharedHighlighter(
-      getHighlighterOptions(undefined, this.#options)
-    ).then((highlighter) => {
-      this.#highlighter = highlighter;
-      this.#updateStyle();
-      return highlighter;
-    });
+    this.#highlighter =
+      getHighlighterIfLoaded() ??
+      getSharedHighlighter(
+        getHighlighterOptions(undefined, this.#options)
+      ).then((highlighter) => {
+        this.#highlighter = highlighter;
+        this.#updateStyle();
+        return highlighter;
+      });
     this.#updateStyle();
     if (this.#textDocument !== undefined) {
       this.#renderText(this.#textDocument, this.#selections);
@@ -336,8 +337,10 @@ export class Editor {
     const lineHighlightBackground = colors['editor.lineHighlightBackground'];
     const { lineHeight, fontSize, tabSize } = this.#options;
 
-    editorEl.style.color = foreground;
-    editorEl.style.backgroundColor = background;
+    extend(editorEl.style, {
+      color: foreground,
+      backgroundColor: background,
+    });
     styleEl.textContent =
       '@scope{' +
       '::selection{background-color:transparent}' +
@@ -470,23 +473,6 @@ export class Editor {
     }
   }
 
-  #createSelectionFromOffsets(
-    startOffset: number,
-    endOffset = startOffset,
-    direction = SelectionDirection.None
-  ) {
-    const textDocument = this.#textDocument!;
-    const start = textDocument.positionAt(startOffset);
-    const end = textDocument.positionAt(endOffset);
-    return createSelection(
-      start.line,
-      start.character,
-      end.line,
-      end.character,
-      direction
-    );
-  }
-
   #syncTextareaState() {
     const textDocument = this.#textDocument;
     const textareaEl = this.#textareaEl;
@@ -564,17 +550,12 @@ export class Editor {
       // if (newChangedText.trim() && nextSelections.length === 1 && isCollapsedSelection(nextSelections[0]!)) {
       //   this.#langs.get(textDocument.languageId)?.lspDriver?.doComplete(textDocument, nextSelections[0]!.end);
       // }
-    } else {
-      const nextPrimarySelection = this.#createSelectionFromOffsets(
-        snippetStartOffset + selectionStart,
-        snippetStartOffset + selectionEnd,
-        fromWebSelectionDirection(selectionDirection)
-      );
+    } else if (selectionStart === selectionEnd) {
       this.#restoreSelections(
-        mapSelectionRangeChange(
+        mapSelectionMove(
           textDocument,
           selectionsBefore,
-          nextPrimarySelection
+          textDocument.positionAt(snippetStartOffset + selectionStart)
         )
       );
     }
@@ -817,7 +798,7 @@ export class Editor {
       textareaSnippet.text.split('\n').length * this.#options.lineHeight + 'px';
   }
 
-  async #runShortcutCommand(command: EditorShortcutCommand) {
+  async #runCommand(command: EditorCommand) {
     switch (command) {
       case 'selectAll':
         this.#restoreSelections([this.#getFullSelection()]);
@@ -917,31 +898,34 @@ export class Editor {
   }
 
   // for select all command
-  #getFullSelection() {
+  #getFullSelection(): EditorSelection {
     const textDocument = this.#textDocument;
     if (textDocument === undefined) {
       throw new Error('Editor has no text document');
     }
     const lastLine = textDocument.lineCount - 1;
     const lastCharacter = textDocument.getLineText(lastLine)?.length ?? 0;
-    return createSelection(
-      0,
-      0,
-      lastLine,
-      lastCharacter,
-      SelectionDirection.Forward
-    );
+    return {
+      start: { line: 0, character: 0 },
+      end: { line: lastLine, character: lastCharacter },
+      direction: SelectionDirection.Forward,
+    };
   }
 
   // for documentStart/documentEnd commands
-  #getDocumentBoundarySelection(atEnd: boolean) {
+  #getDocumentBoundarySelection(atEnd: boolean): EditorSelection {
     const textDocument = this.#textDocument;
     if (textDocument === undefined) {
       throw new Error('Editor has no text document');
     }
     const line = atEnd ? textDocument.lineCount - 1 : 0;
     const character = atEnd ? (textDocument.getLineText(line)?.length ?? 0) : 0;
-    return createSelection(line, character, line, character);
+    const start = { line, character };
+    return {
+      start: start,
+      end: start,
+      direction: SelectionDirection.Forward,
+    };
   }
 
   // replace the selection text

@@ -1,12 +1,10 @@
 import { applyOffsetEdits } from './editHistory';
 import {
   comparePosition,
-  createSelection,
   type EditorSelection,
-  normalizeSelections,
   SelectionDirection,
 } from './selection';
-import { TextDocument, type TextEdit } from './textDocument';
+import { type Position, TextDocument, type TextEdit } from './textDocument';
 
 type SelectionEditMapping = {
   edits: TextEdit[];
@@ -22,49 +20,45 @@ type SelectionTextChange = {
   direction: SelectionDirection;
 };
 
-export function mapSelectionRangeChange(
+export function mapSelectionMove(
   textDocument: TextDocument,
   selections: readonly EditorSelection[],
-  nextPrimarySelection: EditorSelection
+  nextPosition: Position
 ): EditorSelection[] {
   const primarySelection = selections[selections.length - 1];
   if (primarySelection === undefined) {
     return [];
   }
-  const primaryAnchorOffset = getSelectionAnchorOffset(
-    textDocument,
-    primarySelection
-  );
-  const primaryFocusOffset = getSelectionFocusOffset(
-    textDocument,
-    primarySelection
-  );
-  const nextPrimaryAnchorOffset = getSelectionAnchorOffset(
-    textDocument,
-    nextPrimarySelection
-  );
-  const nextPrimaryFocusOffset = getSelectionFocusOffset(
-    textDocument,
-    nextPrimarySelection
-  );
-  const anchorDelta = nextPrimaryAnchorOffset - primaryAnchorOffset;
-  const focusDelta = nextPrimaryFocusOffset - primaryFocusOffset;
-  const textLength = textDocument.getText().length;
-  return normalizeSelections(
-    selections.map((selection) =>
-      createSelectionFromAnchorAndFocusOffsets(
-        textDocument,
-        clampOffset(
-          getSelectionAnchorOffset(textDocument, selection) + anchorDelta,
-          textLength
-        ),
-        clampOffset(
-          getSelectionFocusOffset(textDocument, selection) + focusDelta,
-          textLength
-        )
-      )
-    )
-  );
+  const deltaLine = nextPosition.line - primarySelection.start.line;
+  const deltaCharacter =
+    nextPosition.character - primarySelection.start.character;
+  const isMoveToLineStart =
+    deltaLine === 0 && nextPosition.character === 0 && deltaCharacter < -1;
+  const isMoveToLineEnd =
+    deltaLine === 0 &&
+    nextPosition.character ===
+      textDocument.getLineText(nextPosition.line)?.length &&
+    deltaCharacter > 1;
+  return selections.map((selection) => {
+    let newLine = selection.start.line + deltaLine;
+    let newCharacter = selection.start.character + deltaCharacter;
+    if (selection !== primarySelection) {
+      if (isMoveToLineStart) {
+        newCharacter = 0;
+      } else if (isMoveToLineEnd) {
+        newCharacter = textDocument.getLineText(newLine)?.length ?? 0;
+      }
+    }
+    const newPosition: Position = {
+      line: newLine,
+      character: newCharacter,
+    };
+    return {
+      start: newPosition,
+      end: newPosition,
+      direction: SelectionDirection.None,
+    };
+  });
 }
 
 export function mapSelectionTextChange(
@@ -102,7 +96,7 @@ export function mapSelectionTextChange(
       return a.index - b.index;
     });
   const edits: TextEdit[] = [];
-  const nextSelectionOffsets: Array<[number, number] | undefined> = Array.from({
+  const nextSelectionOffsets: Array<[number, number]> = Array.from({
     length: selections.length,
   });
   let offsetDelta = 0;
@@ -164,15 +158,8 @@ export function mapSelectionTextChange(
   );
   return {
     edits,
-    nextSelections: normalizeSelections(
-      nextSelectionOffsets.map((offsets) => {
-        const [start, end] = offsets!;
-        return createSelection(
-          ...toLineCharacter(nextDocument, start),
-          ...toLineCharacter(nextDocument, end),
-          change.direction
-        );
-      })
+    nextSelections: nextSelectionOffsets.map((offsets) =>
+      createSelectionFromAnchorAndFocusOffsets(nextDocument, ...offsets)
     ),
   };
 }
@@ -230,14 +217,8 @@ export function mapSelectionTextReplace(
   const nextDocument = createTextDocumentAfterEdits(textDocument, edits);
   return {
     edits,
-    nextSelections: normalizeSelections(
-      nextSelectionOffsets.map((offset) =>
-        createSelection(
-          ...toLineCharacter(nextDocument, offset),
-          ...toLineCharacter(nextDocument, offset),
-          SelectionDirection.None
-        )
-      )
+    nextSelections: nextSelectionOffsets.map((offset) =>
+      createSelectionFromAnchorAndFocusOffsets(nextDocument, offset, offset)
     ),
   };
 }
@@ -275,29 +256,11 @@ function createTextDocumentAfterEdits(
   );
 }
 
-function getSelectionAnchorOffset(
-  textDocument: TextDocument,
-  selection: EditorSelection
-) {
-  return selection.direction === SelectionDirection.Backward
-    ? textDocument.offsetAt(selection.end)
-    : textDocument.offsetAt(selection.start);
-}
-
-function getSelectionFocusOffset(
-  textDocument: TextDocument,
-  selection: EditorSelection
-) {
-  return selection.direction === SelectionDirection.Backward
-    ? textDocument.offsetAt(selection.start)
-    : textDocument.offsetAt(selection.end);
-}
-
 function createSelectionFromAnchorAndFocusOffsets(
   textDocument: TextDocument,
   anchorOffset: number,
   focusOffset: number
-) {
+): EditorSelection {
   const direction =
     anchorOffset === focusOffset
       ? SelectionDirection.None
@@ -306,21 +269,9 @@ function createSelectionFromAnchorAndFocusOffsets(
         : SelectionDirection.Backward;
   const start = Math.min(anchorOffset, focusOffset);
   const end = Math.max(anchorOffset, focusOffset);
-  return createSelection(
-    ...toLineCharacter(textDocument, start),
-    ...toLineCharacter(textDocument, end),
-    direction
-  );
-}
-
-function clampOffset(offset: number, textLength: number) {
-  return Math.max(0, Math.min(offset, textLength));
-}
-
-function toLineCharacter(
-  textDocument: TextDocument,
-  offset: number
-): [number, number] {
-  const position = textDocument.positionAt(offset);
-  return [position.line, position.character];
+  return {
+    start: textDocument.positionAt(start),
+    end: textDocument.positionAt(end),
+    direction,
+  };
 }

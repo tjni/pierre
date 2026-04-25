@@ -1,12 +1,27 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  mapSelectionRangeChange,
+  mapSelectionMove,
   mapSelectionTextChange,
   mapSelectionTextReplace,
 } from '../src/editor/multiSelection';
-import { createSelection, SelectionDirection } from '../src/editor/selection';
+import type { EditorSelection } from '../src/editor/selection';
+import { SelectionDirection } from '../src/editor/selection';
 import { TextDocument } from '../src/editor/textDocument';
+
+function createSelection(
+  startLine: number,
+  startCharacter: number,
+  endLine: number,
+  endCharacter: number,
+  direction: SelectionDirection = SelectionDirection.None
+): EditorSelection {
+  return {
+    start: { line: startLine, character: startCharacter },
+    end: { line: endLine, character: endCharacter },
+    direction,
+  };
+}
 
 describe('mapSelectionTextChange', () => {
   test('inserts the same text at multiple carets', () => {
@@ -121,11 +136,14 @@ describe('mapSelectionTextChange', () => {
     textDocument.applyEdits(edits);
 
     expect(textDocument.getText()).toBe('  ');
-    expect(nextSelections).toEqual([createSelection(0, 0, 0, 0)]);
+    expect(nextSelections).toEqual([
+      createSelection(0, 0, 0, 0),
+      createSelection(0, 0, 0, 0),
+    ]);
   });
 });
 
-describe('mapSelectionRangeChange', () => {
+describe('mapSelectionMove', () => {
   test('moves all carets when the primary caret moves', () => {
     const textDocument = new TextDocument('inmemory://1', 'ab\ncd\nef');
     const selections = [
@@ -135,11 +153,7 @@ describe('mapSelectionRangeChange', () => {
     ];
 
     expect(
-      mapSelectionRangeChange(
-        textDocument,
-        selections,
-        createSelection(2, 0, 2, 0)
-      )
+      mapSelectionMove(textDocument, selections, { line: 2, character: 0 })
     ).toEqual([
       createSelection(0, 0, 0, 0),
       createSelection(1, 0, 1, 0),
@@ -155,14 +169,10 @@ describe('mapSelectionRangeChange', () => {
     ];
 
     expect(
-      mapSelectionRangeChange(
-        textDocument,
-        selections,
-        createSelection(1, 1, 1, 3, SelectionDirection.Forward)
-      )
+      mapSelectionMove(textDocument, selections, { line: 1, character: 1 })
     ).toEqual([
-      createSelection(0, 1, 0, 3, SelectionDirection.Forward),
-      createSelection(1, 1, 1, 3, SelectionDirection.Forward),
+      createSelection(0, 1, 0, 1, SelectionDirection.None),
+      createSelection(1, 1, 1, 1, SelectionDirection.None),
     ]);
   });
 });

@@ -1,11 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import {
-  convertSelection,
-  createSelection,
-  normalizeSelections,
-  SelectionDirection,
-} from '../src/editor/selection';
+import { convertSelection, SelectionDirection } from '../src/editor/selection';
 
 type MockNode = {
   nodeType: number;
@@ -203,35 +198,5 @@ describe('convertSelection', () => {
       end: { line: 5, character: 0 },
       direction: SelectionDirection.None,
     });
-  });
-});
-
-describe('normalizeSelections', () => {
-  test('keeps the primary selection last while merging overlaps', () => {
-    expect(
-      normalizeSelections([
-        createSelection(0, 0, 0, 2, SelectionDirection.Forward),
-        createSelection(0, 4, 0, 5, SelectionDirection.None),
-        createSelection(0, 1, 0, 4, SelectionDirection.Backward),
-      ])
-    ).toEqual([createSelection(0, 0, 0, 5, SelectionDirection.Backward)]);
-  });
-
-  test('collapses duplicate carets into a single selection', () => {
-    expect(
-      normalizeSelections([
-        createSelection(0, 3, 0, 3),
-        createSelection(0, 3, 0, 3),
-      ])
-    ).toEqual([createSelection(0, 3, 0, 3)]);
-  });
-
-  test('sorts disjoint selections into document order with the primary selection last', () => {
-    expect(
-      normalizeSelections([
-        createSelection(1, 0, 1, 0),
-        createSelection(0, 2, 0, 2),
-      ])
-    ).toEqual([createSelection(1, 0, 1, 0), createSelection(0, 2, 0, 2)]);
   });
 });

@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  createSelection,
   type EditorSelection,
   SelectionDirection,
   toWebSelectionDirection,
@@ -25,6 +24,20 @@ type TextareaSnippetCase = {
     selectionEnd: number;
   };
 };
+
+function createSelection(
+  startLine: number,
+  startCharacter: number,
+  endLine: number,
+  endCharacter: number,
+  direction: SelectionDirection = SelectionDirection.None
+): EditorSelection {
+  return {
+    start: { line: startLine, character: startCharacter },
+    end: { line: endLine, character: endCharacter },
+    direction,
+  };
+}
 
 const textareaSnippetCases: TextareaSnippetCase[] = [
   {

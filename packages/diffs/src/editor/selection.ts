@@ -20,20 +20,6 @@ export type EditorSelectionTextChange = {
   direction: SelectionDirection;
 };
 
-export function createSelection(
-  startLine: number,
-  startCharacter: number,
-  endLine: number,
-  endCharacter: number,
-  direction: SelectionDirection = SelectionDirection.None
-): EditorSelection {
-  return {
-    start: { line: startLine, character: startCharacter },
-    end: { line: endLine, character: endCharacter },
-    direction,
-  };
-}
-
 /**
  * Converts a selection from a web selection to an editor selection.
  * @param selection - The web selection to convert.
@@ -143,61 +129,6 @@ export function getPrimarySelection(
 ): EditorSelection | undefined {
   const selection = selections[selections.length - 1];
   return selection !== undefined ? { ...selection } : undefined;
-}
-
-export function normalizeSelections(
-  selections: readonly EditorSelection[]
-): EditorSelection[] {
-  if (selections.length === 0) {
-    return [];
-  }
-  const primarySelection = selections[selections.length - 1];
-  const ordered = selections
-    .map((selection, index) => ({
-      selection: { ...selection },
-      index,
-      isPrimary: selection === primarySelection,
-    }))
-    .sort((a, b) => {
-      const startOrder = comparePosition(a.selection.start, b.selection.start);
-      if (startOrder !== 0) {
-        return startOrder;
-      }
-      const endOrder = comparePosition(a.selection.end, b.selection.end);
-      if (endOrder !== 0) {
-        return endOrder;
-      }
-      return a.index - b.index;
-    });
-  const merged: Array<{ selection: EditorSelection; isPrimary: boolean }> = [];
-  for (const entry of ordered) {
-    const current = merged[merged.length - 1];
-    if (
-      current === undefined ||
-      comparePosition(entry.selection.start, current.selection.end) > 0
-    ) {
-      merged.push({
-        selection: entry.selection,
-        isPrimary: entry.isPrimary,
-      });
-      continue;
-    }
-    if (comparePosition(entry.selection.end, current.selection.end) > 0) {
-      current.selection.end = { ...entry.selection.end };
-    }
-    current.isPrimary ||= entry.isPrimary;
-    if (entry.isPrimary) {
-      current.selection.direction = entry.selection.direction;
-    }
-  }
-  const primaryIndex = Math.max(
-    0,
-    merged.findIndex((entry) => entry.isPrimary)
-  );
-  const normalized = merged.map((entry) => entry.selection);
-  const [primary] = normalized.splice(primaryIndex, 1);
-  normalized.push(primary);
-  return normalized;
 }
 
 export function toWebSelectionDirection(
