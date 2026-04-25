@@ -166,7 +166,7 @@ export class TextDocument {
     if (edits.length === 0) {
       return;
     }
-    const resolvedEdits = this.#resolveEdits(edits);
+    const resolvedEdits = edits.map((edit) => this.#resolveEdit(edit));
     const textBefore = this.#text;
     const newText = applyOffsetEdits(textBefore, resolvedEdits);
     if (updateHistory && selectionsBefore !== undefined) {
@@ -174,8 +174,7 @@ export class TextDocument {
         textBefore,
         resolvedEdits,
         selectionsBefore,
-        selectionsAfter,
-        500
+        selectionsAfter
       );
     }
     this.#setDocumentText(newText);
@@ -201,10 +200,6 @@ export class TextDocument {
     return entry.selectionsAfter !== undefined
       ? entry.selectionsAfter.map((selection) => ({ ...selection }))
       : undefined;
-  }
-
-  #resolveEdits(edits: TextEdit[]): ResolvedEdit[] {
-    return edits.map((edit) => this.#resolveEdit(edit));
   }
 
   #resolveEdit(edit: TextEdit): ResolvedEdit {

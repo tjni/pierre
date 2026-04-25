@@ -1,9 +1,5 @@
 import { applyOffsetEdits } from './editHistory';
-import {
-  comparePosition,
-  type EditorSelection,
-  SelectionDirection,
-} from './selection';
+import { type EditorSelection, SelectionDirection } from './selection';
 import { type Position, TextDocument, type TextEdit } from './textDocument';
 
 type SelectionEditMapping = {
@@ -221,21 +217,6 @@ export function mapSelectionTextReplace(
       createSelectionFromAnchorAndFocusOffsets(nextDocument, offset, offset)
     ),
   };
-}
-
-export function getOrderedSelectionText(
-  textDocument: TextDocument,
-  selections: readonly EditorSelection[]
-): string[] {
-  return [...selections]
-    .sort((a, b) => {
-      const startOrder = comparePosition(a.start, b.start);
-      if (startOrder !== 0) {
-        return startOrder;
-      }
-      return comparePosition(a.end, b.end);
-    })
-    .map((selection) => textDocument.getText(selection));
 }
 
 function createTextDocumentAfterEdits(

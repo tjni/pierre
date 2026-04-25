@@ -19,13 +19,13 @@ import {
   measureMonoFontWidth,
 } from '../editor/editorUtils';
 import {
-  getOrderedSelectionText,
   mapSelectionMove,
   mapSelectionTextChange,
   mapSelectionTextReplace,
 } from '../editor/multiSelection';
 import type { EditorSelection } from '../editor/selection';
 import {
+  comparePosition,
   convertSelection,
   fromWebSelectionDirection,
   getPrimarySelection,
@@ -810,10 +810,7 @@ export class Editor {
           try {
             // todo: use navigator.clipboard.write() for multiple selections copy
             await navigator.clipboard.writeText(
-              getOrderedSelectionText(
-                this.#textDocument,
-                this.#selections!
-              ).join(this.#textDocument.EOF)
+              this.#getSelectionText(this.#selections!)
             );
           } catch {
             return;
@@ -926,6 +923,22 @@ export class Editor {
       end: start,
       direction: SelectionDirection.Forward,
     };
+  }
+
+  #getSelectionText(selections: readonly EditorSelection[]): string {
+    if (this.#textDocument === undefined) {
+      return '';
+    }
+    return [...selections]
+      .sort((a, b) => {
+        const startOrder = comparePosition(a.start, b.start);
+        if (startOrder !== 0) {
+          return startOrder;
+        }
+        return comparePosition(a.end, b.end);
+      })
+      .map((selection) => this.#textDocument!.getText(selection))
+      .join(this.#textDocument.EOF);
   }
 
   // replace the selection text
