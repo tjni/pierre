@@ -41,7 +41,6 @@ import {
   type TextareaState,
 } from '../editor/textareaState';
 import { TextDocument, type TextEdit } from '../editor/textDocument';
-import { getVisualColumns } from '../editor/visualColumns';
 import {
   getHighlighterIfLoaded,
   getSharedHighlighter,
@@ -694,17 +693,9 @@ export class Editor {
       const lineLength = lineText.length;
       const startCharacter = ln === start.line ? start.character : 0;
       const endCharacter = ln === end.line ? end.character : lineLength;
-      const startColumns = getVisualColumns(
-        lineText,
-        startCharacter,
-        this.#options.tabSize
-      );
-      const endColumns = getVisualColumns(
-        lineText,
-        endCharacter,
-        this.#options.tabSize
-      );
-      const startX = this.#getCharacterX(ln, startCharacter, startColumns);
+      const startColumn = this.#getVisualColumn(lineText, startCharacter);
+      const endColumns = this.#getVisualColumn(lineText, endCharacter);
+      const startX = this.#getCharacterX(ln, startCharacter, startColumn);
       const endX = this.#getCharacterX(ln, endCharacter, endColumns);
       const spacing =
         endCharacter === startCharacter || ln === end.line ? 0 : 4;
@@ -735,7 +726,7 @@ export class Editor {
       this.#textDocument?.getLineText(isBackward ? start.line : end.line) ?? '';
     const line = isBackward ? start.line : end.line;
     const character = isBackward ? start.character : end.character;
-    const column = getVisualColumns(lineText, character, this.#options.tabSize);
+    const column = this.#getVisualColumn(lineText, character);
     const left = this.#getCharacterX(line, character, column);
     const cursorEl = createElement(
       'div',
@@ -977,10 +968,9 @@ export class Editor {
   }
 
   // get character X position
-  // todo: does it support emoji/non-ascii input?
-  #getCharacterX(line: number, character: number, visualColumns: number) {
-    const fallbackLeft =
-      this.#gutterWidth + visualColumns * this.#monoCharWidth;
+  // todo: support emoji/non-ascii chars
+  #getCharacterX(line: number, character: number, visualColumn: number) {
+    const fallbackLeft = this.#gutterWidth + visualColumn * this.#monoCharWidth;
     const lineEl = this.#textLineEls?.get(line);
     const editorEl = this.#editorEl;
     if (lineEl === undefined || editorEl === undefined) {
@@ -1040,6 +1030,20 @@ export class Editor {
     const editorRect = editorEl.getBoundingClientRect();
     const pointRect = range.getBoundingClientRect();
     return pointRect.left - editorRect.left;
+  }
+
+  #getVisualColumn(text: string, character: number): number {
+    const tabSize = this.#options.tabSize;
+    let column = 0;
+    for (let i = 0; i < Math.min(character, text.length); i++) {
+      if (text.charCodeAt(i) === /* \t */ 9) {
+        const remainder = column % tabSize;
+        column += remainder === 0 ? tabSize : tabSize - remainder;
+        continue;
+      }
+      column++;
+    }
+    return column;
   }
 
   // check if the active element has focus within editor

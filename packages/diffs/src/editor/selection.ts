@@ -158,21 +158,72 @@ export function comparePosition(a: Position, b: Position): number {
   return a.character - b.character;
 }
 
-function getLineAttr(el: HTMLElement): number | undefined {
-  // oxlint-disable-next-line typescript/no-explicit-any
-  return (el as any).LINE as number | undefined;
-}
-
-function getCharacterAttr(el: HTMLElement): number | undefined {
-  // oxlint-disable-next-line typescript/no-explicit-any
-  return (el as any).CHAR as number | undefined;
+function boundaryToPosition(node: Node, offset: number): Position | null {
+  if (node.nodeType === 3) {
+    const parent = node.parentElement;
+    if (parent === null) {
+      return null;
+    }
+    if (parent.tagName === 'SPAN') {
+      const pre = parent.parentElement;
+      if (pre === null || pre.tagName !== 'PRE') {
+        return null;
+      }
+      const line = getLineProp(pre);
+      const base = getCharacterProp(parent);
+      if (line !== undefined && base !== undefined) {
+        return { line, character: base + offset };
+      }
+    }
+    const preChild = getDirectPreChild(node);
+    if (preChild !== null) {
+      return getPositionWithinPre(preChild.pre, preChild.childIndex);
+    }
+    return null;
+  }
+  if (node.nodeType === 1) {
+    const el = node as HTMLElement;
+    if (el.tagName === 'PRE') {
+      return getPositionWithinPre(el, offset);
+    }
+    if (el.tagName === 'BR') {
+      const pre = el.parentElement;
+      if (pre === null || pre.tagName !== 'PRE') {
+        return null;
+      }
+      const line = getLineProp(pre);
+      if (line !== undefined) {
+        return { line, character: 0 };
+      }
+    }
+    if (el.tagName === 'SPAN') {
+      const pre = el.parentElement;
+      if (pre === null || pre.tagName !== 'PRE') {
+        return null;
+      }
+      const line = getLineProp(pre);
+      const base = getCharacterProp(el);
+      if (line !== undefined && base !== undefined) {
+        let character = base;
+        for (let i = 0; i < offset; i++) {
+          character += el.childNodes[i]?.textContent?.length ?? 0;
+        }
+        return { line, character };
+      }
+    }
+    const preChild = getDirectPreChild(el);
+    if (preChild !== null) {
+      return getPositionWithinPre(preChild.pre, preChild.childIndex);
+    }
+  }
+  return null;
 }
 
 function getPositionWithinPre(
   pre: HTMLElement,
   offset: number
 ): Position | null {
-  const line = getLineAttr(pre);
+  const line = getLineProp(pre);
   if (line === undefined) {
     return null;
   }
@@ -181,7 +232,7 @@ function getPositionWithinPre(
     const c = pre.children[i];
     if (c?.tagName === 'SPAN') {
       const span = c as HTMLElement;
-      const o = getCharacterAttr(span);
+      const o = getCharacterProp(span);
       if (o === undefined) {
         continue;
       }
@@ -212,63 +263,12 @@ function getDirectPreChild(
   return null;
 }
 
-function boundaryToPosition(node: Node, offset: number): Position | null {
-  if (node.nodeType === 3) {
-    const parent = node.parentElement;
-    if (parent === null) {
-      return null;
-    }
-    if (parent.tagName === 'SPAN') {
-      const pre = parent.parentElement;
-      if (pre === null || pre.tagName !== 'PRE') {
-        return null;
-      }
-      const line = getLineAttr(pre);
-      const base = getCharacterAttr(parent);
-      if (line !== undefined && base !== undefined) {
-        return { line, character: base + offset };
-      }
-    }
-    const preChild = getDirectPreChild(node);
-    if (preChild !== null) {
-      return getPositionWithinPre(preChild.pre, preChild.childIndex);
-    }
-    return null;
-  }
-  if (node.nodeType === 1) {
-    const el = node as HTMLElement;
-    if (el.tagName === 'PRE') {
-      return getPositionWithinPre(el, offset);
-    }
-    if (el.tagName === 'BR') {
-      const pre = el.parentElement;
-      if (pre === null || pre.tagName !== 'PRE') {
-        return null;
-      }
-      const line = getLineAttr(pre);
-      if (line !== undefined) {
-        return { line, character: 0 };
-      }
-    }
-    if (el.tagName === 'SPAN') {
-      const pre = el.parentElement;
-      if (pre === null || pre.tagName !== 'PRE') {
-        return null;
-      }
-      const line = getLineAttr(pre);
-      const base = getCharacterAttr(el);
-      if (line !== undefined && base !== undefined) {
-        let character = base;
-        for (let i = 0; i < offset; i++) {
-          character += el.childNodes[i]?.textContent?.length ?? 0;
-        }
-        return { line, character };
-      }
-    }
-    const preChild = getDirectPreChild(el);
-    if (preChild !== null) {
-      return getPositionWithinPre(preChild.pre, preChild.childIndex);
-    }
-  }
-  return null;
+function getLineProp(el: HTMLElement): number | undefined {
+  // oxlint-disable-next-line typescript/no-explicit-any
+  return (el as any).LINE as number | undefined;
+}
+
+function getCharacterProp(el: HTMLElement): number | undefined {
+  // oxlint-disable-next-line typescript/no-explicit-any
+  return (el as any).CHAR as number | undefined;
 }
