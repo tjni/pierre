@@ -517,9 +517,9 @@ describe('TextDocument', () => {
         },
       ],
       true,
-      [selectionBefore]
+      [selectionBefore],
+      [selectionAfter]
     );
-    d.setLastUndoSelectionsAfter([selectionAfter]);
 
     expect(d.undo()).toEqual([selectionBefore]);
     expect(d.redo()).toEqual([selectionAfter]);
@@ -527,8 +527,8 @@ describe('TextDocument', () => {
 
   test('undo and redo preserve multiple selections', () => {
     const d = doc('a\nb');
-    const selectionBefore = [caret(0, 1), caret(1, 1)];
-    const selectionAfter = [caret(0, 2), caret(1, 2)];
+    const selectionsBefore = [caret(0, 1), caret(1, 1)];
+    const selectionsAfter = [caret(0, 2), caret(1, 2)];
     d.applyEdits(
       [
         {
@@ -547,11 +547,11 @@ describe('TextDocument', () => {
         },
       ],
       true,
-      selectionBefore
+      selectionsBefore,
+      selectionsAfter
     );
-    d.setLastUndoSelectionsAfter(selectionAfter);
 
-    expect(d.undo()).toEqual(selectionBefore);
-    expect(d.redo()).toEqual(selectionAfter);
+    expect(d.undo()).toEqual(selectionsBefore);
+    expect(d.redo()).toEqual(selectionsAfter);
   });
 });

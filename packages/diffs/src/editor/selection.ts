@@ -1,4 +1,5 @@
-import type { Position, Range } from './textDocument';
+import { getLineIndentationUnit } from './editorUtils';
+import type { Position, Range, TextDocument, TextEdit } from './textDocument';
 
 export enum SelectionDirection {
   Backward = -1,
@@ -69,6 +70,67 @@ export function convertSelection({
   };
 }
 
+export function resolveIndentEdits(
+  textDocument: TextDocument,
+  selection: EditorSelection,
+  tabSize: number,
+  outdent: boolean
+): [edits: TextEdit[], nextSelection: EditorSelection] {
+  if (textDocument === undefined) {
+    return [[], selection];
+  }
+  const { start, end } = selection;
+  let endLine = end.line;
+  if (start.line < end.line && end.character === 0) {
+    endLine--;
+  }
+  const edits: TextEdit[] = [];
+  const newSelection: EditorSelection = { ...selection };
+  for (let line = start.line; line <= endLine; line++) {
+    const lineText = textDocument.getLineText(line);
+    if (lineText === undefined) {
+      continue;
+    }
+    const indentUnit = getLineIndentationUnit(lineText, tabSize);
+    let deleteLength = 0;
+    let newText = indentUnit;
+    if (outdent) {
+      if (lineText.startsWith('\t')) {
+        deleteLength = 1;
+      } else if (lineText.startsWith(' ')) {
+        const leadingSpacesLength =
+          lineText.length - lineText.trimStart().length;
+        deleteLength = Math.min(indentUnit.length, leadingSpacesLength);
+      }
+      if (deleteLength === 0) {
+        continue;
+      }
+      newText = '';
+    }
+    edits.push({
+      range: {
+        start: { line, character: 0 },
+        end: { line, character: deleteLength },
+      },
+      newText,
+    });
+    const delte = newText.length - deleteLength;
+    if (line === start.line) {
+      newSelection.start = {
+        ...start,
+        character: Math.max(0, start.character + delte),
+      };
+    }
+    if (line === end.line) {
+      newSelection.end = {
+        ...end,
+        character: Math.max(0, end.character + delte),
+      };
+    }
+  }
+  return [edits, newSelection];
+}
+
 export function isCollapsedSelection(selection: EditorSelection): boolean {
   return (
     selection.start.line === selection.end.line &&
@@ -76,21 +138,11 @@ export function isCollapsedSelection(selection: EditorSelection): boolean {
   );
 }
 
-export function cloneEditorSelection(
-  selection: EditorSelection
-): EditorSelection {
-  return {
-    start: { ...selection.start },
-    end: { ...selection.end },
-    direction: selection.direction,
-  };
-}
-
 export function getPrimarySelection(
   selections: readonly EditorSelection[]
 ): EditorSelection | undefined {
   const selection = selections[selections.length - 1];
-  return selection !== undefined ? cloneEditorSelection(selection) : undefined;
+  return selection !== undefined ? { ...selection } : undefined;
 }
 
 export function normalizeSelections(
@@ -102,7 +154,7 @@ export function normalizeSelections(
   const primarySelection = selections[selections.length - 1];
   const ordered = selections
     .map((selection, index) => ({
-      selection: cloneEditorSelection(selection),
+      selection: { ...selection },
       index,
       isPrimary: selection === primarySelection,
     }))

@@ -809,8 +809,8 @@ if (renderEditorButton != null) {
     if (wrapper == null) return;
     cleanupInstances(wrapper);
 
-    const editor = new Editor({ theme: DEMO_THEME });
-    void editor.render({ editorContainer: wrapper });
+    const editor = new Editor({ theme: DEMO_THEME, themeType: getThemeType() });
+    editor.render({ editorContainer: wrapper });
     editor.setText(tsContent, 'tsx');
     editorInstances.push(editor);
   });

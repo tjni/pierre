@@ -1,5 +1,6 @@
 import { EncodedTokenMetadata, type IGrammar, INITIAL } from 'shiki/textmate';
 
+import { normlizeEditorOptions } from '../editor/editorOptions';
 import {
   type EditorShortcutCommand,
   getPrimaryModifier,
@@ -11,6 +12,7 @@ import {
   createElement,
   extend,
   getLineIndentationUnit,
+  getRootCssVariableValue,
   measureMonoFontWidth,
 } from '../editor/editorUtils';
 import {
@@ -19,15 +21,14 @@ import {
   mapSelectionTextChange,
   mapSelectionTextReplace,
 } from '../editor/multiSelection';
-import { normlizeEditorOptions } from '../editor/normlizeEditorOptions';
 import type { EditorSelection } from '../editor/selection';
 import {
-  cloneEditorSelection,
   convertSelection,
   createSelection,
   fromWebSelectionDirection,
   getPrimarySelection,
   isCollapsedSelection,
+  resolveIndentEdits,
   SelectionDirection,
   toWebSelectionDirection,
 } from '../editor/selection';
@@ -40,27 +41,31 @@ import {
 import { TextDocument, type TextEdit } from '../editor/textDocument';
 import { getVisualColumn } from '../editor/visualColumns';
 import { getSharedHighlighter } from '../highlighter/shared_highlighter';
-import type { BaseCodeOptions, DiffsHighlighter } from '../types';
+import type {
+  BaseCodeOptions,
+  DiffsHighlighter,
+  ThemeRegistrationResolved,
+} from '../types';
 import { getHighlighterOptions } from '../utils/getHighlighterOptions';
 
 export interface EditorOptions extends BaseCodeOptions {
-  tabIndex?: number;
   fontFamily?: string;
   fontSize?: number;
   lineHeight?: number;
   paddingY?: number;
+  tabIndex?: number;
+  tabSize?: number;
 }
 
 export class Editor {
-  #highlighter?: DiffsHighlighter;
-  #colorMap?: string[];
+  #highlighter?: DiffsHighlighter | Promise<DiffsHighlighter>;
   #textDocument?: TextDocument;
 
   // options
   #options: EditorOptions;
   #fontFamily: string;
   #fontSize: number;
-  #lineHeightPx: number;
+  #lineHeight: number;
   #paddingY: number;
   #tabSize: number;
   #monoFontWidth: number;
@@ -98,7 +103,7 @@ export class Editor {
     this.#options = options;
     this.#fontFamily = fontFamily;
     this.#fontSize = fontSize;
-    this.#lineHeightPx = Math.round(lineHeight);
+    this.#lineHeight = lineHeight;
     this.#paddingY = paddingY;
     this.#tabSize = tabSize;
     this.#monoFontWidth = measureMonoFontWidth(
@@ -138,15 +143,10 @@ export class Editor {
 
   setThemeType(themeType: 'dark' | 'light' | 'system'): void {
     this.#options.themeType = themeType;
-    this.#colorMap = undefined; // clear color map
     this.#updateStyle();
   }
 
-  async render({
-    editorContainer,
-  }: {
-    editorContainer: HTMLElement;
-  }): Promise<void> {
+  render({ editorContainer }: { editorContainer: HTMLElement }): void {
     if (this.#editorEl !== undefined) {
       this.cleanUp();
     }
@@ -203,8 +203,9 @@ export class Editor {
       }),
       addEventListener(this.#editorEl, 'mousedown', (e) => {
         if (e.button === 0 && getPrimaryModifier(e)) {
-          this.#reservedSelections =
-            this.#selections?.map(cloneEditorSelection);
+          this.#reservedSelections = this.#selections?.map((selection) => ({
+            ...selection,
+          }));
         }
       }),
       addEventListener(document, 'mouseup', () => {
@@ -267,12 +268,16 @@ export class Editor {
         queueTextareaSync();
       }),
     ];
-    this.#highlighter = await getSharedHighlighter(
+    this.#highlighter = getSharedHighlighter(
       getHighlighterOptions(undefined, this.#options)
-    );
+    ).then((highlighter) => {
+      this.#highlighter = highlighter;
+      this.#updateStyle();
+      return highlighter;
+    });
     this.#updateStyle();
     if (this.#textDocument !== undefined) {
-      void this.#renderText(this.#textDocument, this.#selections);
+      this.#renderText(this.#textDocument, this.#selections);
     }
     editorContainer.appendChild(this.#editorEl);
   }
@@ -300,48 +305,50 @@ export class Editor {
   #updateStyle() {
     const editorEl = this.#editorEl;
     const styleEl = this.#styleEl;
-    const highlighter = this.#highlighter;
-    if (
-      editorEl === undefined ||
-      styleEl === undefined ||
-      highlighter === undefined
-    ) {
+    const options = this.#options;
+    if (editorEl === undefined || styleEl === undefined) {
       return;
     }
 
-    let themeType = this.#options.themeType ?? 'system';
-    let themeName = this.#options.theme;
-    if (typeof themeName === 'string') {
-      themeName = themeName as string;
-    } else if (themeName !== undefined) {
+    let themeName: string | undefined;
+    let theme: ThemeRegistrationResolved | undefined;
+    let colorMap: string[] | undefined;
+    if (typeof options.theme === 'string') {
+      themeName = options.theme;
+    } else if (typeof options.theme === 'object' && options.theme !== null) {
+      let themeType = options.themeType ?? 'system';
       if (themeType === 'system') {
         themeType = window.matchMedia('(prefers-color-scheme: dark)').matches
           ? 'dark'
           : 'light';
       }
-      themeName = themeName[themeType];
-    } else {
-      themeName = highlighter.getLoadedThemes()[0];
+      themeName = options.theme[themeType];
+    }
+    if (
+      this.#highlighter !== undefined &&
+      !(this.#highlighter instanceof Promise)
+    ) {
+      themeName ??= this.#highlighter.getLoadedThemes()[0];
+      ({ theme, colorMap } = this.#highlighter.setTheme(themeName));
     }
 
-    let theme;
-    if (this.#colorMap === undefined) {
-      const ret = highlighter.setTheme(themeName);
-      theme = ret.theme;
-      this.#colorMap = ret.colorMap;
-    } else {
-      theme = highlighter.getTheme(themeName);
-    }
-
-    const fontSize = this.#fontSize;
-    const lineHeightPx = this.#lineHeightPx;
-    const colors = theme.colors ?? {};
-    const foreground = theme.fg;
-    const background = theme.bg;
-    const selectionBackground = colors['editor.selectionBackground'];
-    const lineHighlightBackground = colors['editor.lineHighlightBackground'];
+    const colors = theme?.colors ?? {};
+    const foreground =
+      theme?.fg ??
+      colors['editor.foreground'] ??
+      getRootCssVariableValue('--diffs-fg') ??
+      '';
+    const background =
+      theme?.bg ??
+      colors['editor.background'] ??
+      getRootCssVariableValue('--diffs-bg') ??
+      '';
+    const selectionBackground =
+      colors['editor.selectionBackground'] ?? 'rgba(128,128,128,0.05)';
     const lineNumberForeground =
       colors['editorLineNumber.foreground'] ?? colors.foreground;
+    const lineHighlightBackground = colors['editor.lineHighlightBackground'];
+    const lineHeight = this.#lineHeight;
 
     editorEl.style.color = foreground;
     editorEl.style.backgroundColor = background;
@@ -349,20 +356,20 @@ export class Editor {
       '@scope{' +
       '::selection{background-color:transparent}' +
       '@keyframes blinking{0%{opacity:0.9}50%{opacity:0}100%{opacity:0.9}}' +
-      `pre{position:relative;margin:0;font:inherit;font-size:${fontSize}px;line-height:${lineHeightPx}px;cursor:text;white-space:pre;tab-size:${this.#tabSize}}` +
-      `.ī{position:absolute;width:2px;height:${lineHeightPx}px;background-color:${foreground};pointer-events:none;animation:blinking 1.2s infinite;animation-delay:0.6s}` +
-      `.š{position:absolute;z-index:-10;height:${lineHeightPx}px;background-color:${selectionBackground};pointer-events:none}` +
-      (`.ħ{box-sizing:border-box;position:absolute;z-index:-10;width:100%;height:${lineHeightPx}px;` +
+      `pre{position:relative;margin:0;font:inherit;font-size:${this.#fontSize}px;line-height:${lineHeight}px;cursor:text;white-space:pre;tab-size:${this.#tabSize}}` +
+      `.ī{position:absolute;width:2px;height:${lineHeight}px;background-color:${foreground};pointer-events:none;animation:blinking 1.2s infinite;animation-delay:0.6s}` +
+      `.š{position:absolute;z-index:-10;height:${lineHeight}px;background-color:${selectionBackground};pointer-events:none}` +
+      (`.ħ{box-sizing:border-box;position:absolute;z-index:-10;width:100%;height:${lineHeight}px;` +
         (lineHighlightBackground !== undefined
           ? `background-color:${lineHighlightBackground}`
           : `border:2px solid ${selectionBackground}`) +
         ';pointer-events:none}') +
       ('.ť{position:absolute;z-index:-20;width:100%;padding:0;' +
-        `line-height:${lineHeightPx}px;` +
+        `line-height:${lineHeight}px;` +
         'font:inherit;background-color:transparent;color:transparent;opacity:0;border:none;outline:none;resize:none}') +
       `.ń{display:inline-block;text-align:right;width:var(--line-number-width);padding:0 ${this.#monoFontWidth}px;box-sizing:border-box;color:${lineNumberForeground};user-select:none;pointer-events:none;cursor:default}` +
       `.ǎ>.ń,.ǎ>.ď,.ǎ>.đ{color:${foreground}}` +
-      this.#colorMap
+      (colorMap ?? [])
         .map((color, i) => `.ċ${i.toString(36)}{color:${color}}`)
         .join('') +
       '}';
@@ -390,20 +397,24 @@ export class Editor {
     this.#setLineNumberDigits(lineNumberDigits);
 
     let grammar: IGrammar | undefined;
-    if (this.#highlighter !== undefined) {
-      if (this.#highlighter.getLoadedLanguages().includes(languageId)) {
-        grammar = this.#highlighter.getLanguage(languageId);
-      } else {
+    const highlighter = this.#highlighter;
+    if (highlighter !== undefined) {
+      const loadLanguage = async (highlighter: DiffsHighlighter) => {
         const requestId = ++this.#languageLoadRequestId;
-        void this.#highlighter.loadLanguage(languageId).then(() => {
-          if (
-            requestId !== this.#languageLoadRequestId ||
-            this.#textDocument !== textDocument
-          ) {
-            return;
-          }
+        await highlighter.loadLanguage(languageId);
+        if (
+          requestId === this.#languageLoadRequestId &&
+          this.#textDocument === textDocument
+        ) {
           this.#renderText(textDocument, selections);
-        });
+        }
+      };
+      if (highlighter instanceof Promise) {
+        void highlighter.then(loadLanguage);
+      } else if (highlighter.getLoadedLanguages().includes(languageId)) {
+        grammar = highlighter.getLanguage(languageId);
+      } else {
+        void loadLanguage(highlighter);
       }
     }
 
@@ -654,7 +665,7 @@ export class Editor {
   }
 
   #applyResolvedTextareaChange(
-    edits: Parameters<TextDocument['applyEdits']>[0],
+    edits: TextEdit[],
     selectionsBefore: EditorSelection[],
     nextSelections: EditorSelection[]
   ) {
@@ -663,7 +674,6 @@ export class Editor {
       return;
     }
     textDocument.applyEdits(edits, true, selectionsBefore);
-    textDocument.setLastUndoSelectionsAfter(nextSelections);
     void this.#renderText(textDocument, nextSelections);
   }
 
@@ -815,7 +825,7 @@ export class Editor {
     textareaEl.style.width = `calc(100% - ${this.#gutterWidth}px)`;
     textareaEl.style.top = this.#getLineY(textareaSnippet.firstLine) + 'px';
     textareaEl.style.height =
-      textareaSnippet.text.split('\n').length * this.#lineHeightPx + 'px';
+      textareaSnippet.text.split('\n').length * this.#lineHeight + 'px';
   }
 
   async #runShortcutCommand(command: EditorShortcutCommand) {
@@ -867,7 +877,12 @@ export class Editor {
             if (lineText !== undefined) {
               const outdent = command === 'outdent';
               if (startLine !== selection.end.line || outdent) {
-                const ret = this.#resolveIndentEdits(selection, outdent);
+                const ret = resolveIndentEdits(
+                  this.#textDocument,
+                  selection,
+                  this.#tabSize,
+                  outdent
+                );
                 edits.push(...ret[0]);
                 nextSelections.push(ret[1]);
               } else {
@@ -880,8 +895,12 @@ export class Editor {
             }
           }
           if (edits.length > 0) {
-            this.#textDocument.applyEdits(edits, true, this.#selections);
-            this.#textDocument.setLastUndoSelectionsAfter(nextSelections);
+            this.#textDocument.applyEdits(
+              edits,
+              true,
+              this.#selections,
+              nextSelections
+            );
             void this.#renderText(this.#textDocument, nextSelections);
           }
         }
@@ -936,66 +955,6 @@ export class Editor {
     return createSelection(line, character, line, character);
   }
 
-  #resolveIndentEdits(
-    selection: EditorSelection,
-    outdent: boolean
-  ): [edits: TextEdit[], nextSelection: EditorSelection] {
-    const textDocument = this.#textDocument;
-    if (textDocument === undefined) {
-      return [[], selection];
-    }
-    const { start, end } = selection;
-    let endLine = end.line;
-    if (start.line < end.line && end.character === 0) {
-      endLine--;
-    }
-    const edits: TextEdit[] = [];
-    const newSelection: EditorSelection = { ...selection };
-    for (let line = start.line; line <= endLine; line++) {
-      const lineText = textDocument.getLineText(line);
-      if (lineText === undefined) {
-        continue;
-      }
-      const indentUnit = getLineIndentationUnit(lineText, this.#tabSize);
-      let deleteLength = 0;
-      let newText = indentUnit;
-      if (outdent) {
-        if (lineText.startsWith('\t')) {
-          deleteLength = 1;
-        } else if (lineText.startsWith(' ')) {
-          const leadingSpacesLength =
-            lineText.length - lineText.trimStart().length;
-          deleteLength = Math.min(indentUnit.length, leadingSpacesLength);
-        }
-        if (deleteLength === 0) {
-          continue;
-        }
-        newText = '';
-      }
-      edits.push({
-        range: {
-          start: { line, character: 0 },
-          end: { line, character: deleteLength },
-        },
-        newText,
-      });
-      const delte = newText.length - deleteLength;
-      if (line === start.line) {
-        newSelection.start = {
-          ...start,
-          character: Math.max(0, start.character + delte),
-        };
-      }
-      if (line === end.line) {
-        newSelection.end = {
-          ...end,
-          character: Math.max(0, end.character + delte),
-        };
-      }
-    }
-    return [edits, newSelection];
-  }
-
   // replace the selection text
   #replaceSelectionText(text: string | string[]) {
     const selections = this.#selections;
@@ -1023,13 +982,12 @@ export class Editor {
           direction: SelectionDirection.None,
         });
     textDocument.applyEdits(edits, true, selections);
-    textDocument.setLastUndoSelectionsAfter(nextSelections);
     void this.#renderText(textDocument, nextSelections);
   }
 
   // get line Y position
   #getLineY(line: number) {
-    return line * this.#lineHeightPx + this.#paddingY;
+    return line * this.#lineHeight + this.#paddingY;
   }
 
   // get character X position

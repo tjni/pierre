@@ -3,7 +3,7 @@ import {
   EditHistory,
   type ResolvedEdit,
 } from './editHistory';
-import { cloneEditorSelection, type EditorSelection } from './selection';
+import { type EditorSelection } from './selection';
 
 /**
  * Position in a text document expressed as zero-based line and character offset.
@@ -160,7 +160,8 @@ export class TextDocument {
   applyEdits(
     edits: TextEdit[],
     updateHistory = false,
-    selectionsBefore?: EditorSelection[]
+    selectionsBefore?: EditorSelection[],
+    selectionsAfter?: EditorSelection[]
   ): void {
     if (edits.length === 0) {
       return;
@@ -169,13 +170,15 @@ export class TextDocument {
     const textBefore = this.#text;
     const newText = applyOffsetEdits(textBefore, resolvedEdits);
     if (updateHistory && selectionsBefore !== undefined) {
-      this.#history.push(textBefore, resolvedEdits, selectionsBefore, 500);
+      this.#history.push(
+        textBefore,
+        resolvedEdits,
+        selectionsBefore,
+        selectionsAfter,
+        500
+      );
     }
     this.#setDocumentText(newText);
-  }
-
-  setLastUndoSelectionsAfter(selections: EditorSelection[]): void {
-    this.#history.setLastUndoSelectionsAfter(selections);
   }
 
   undo(): EditorSelection[] | undefined {
@@ -185,7 +188,7 @@ export class TextDocument {
     }
     this.#setDocumentText(applyOffsetEdits(this.#text, entry.inverseEdits));
     return entry.selectionsBefore !== undefined
-      ? entry.selectionsBefore.map(cloneEditorSelection)
+      ? entry.selectionsBefore.map((selection) => ({ ...selection }))
       : undefined;
   }
 
@@ -196,7 +199,7 @@ export class TextDocument {
     }
     this.#setDocumentText(applyOffsetEdits(this.#text, entry.forwardEdits));
     return entry.selectionsAfter !== undefined
-      ? entry.selectionsAfter.map(cloneEditorSelection)
+      ? entry.selectionsAfter.map((selection) => ({ ...selection }))
       : undefined;
   }
 

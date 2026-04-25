@@ -1,32 +1,11 @@
+import type { EditorOptions } from '../components/Editor';
+import { getRootCssVariableValue, parseCssNumber } from './editorUtils';
+
 const DEFAULT_FONT_FAMILY =
   "'SF Mono', Monaco, Consolas, 'Ubuntu Mono', 'Liberation Mono', 'Courier New', monospace";
 const DEFAULT_FONT_SIZE = 14;
 const DEFAULT_LINE_HEIGHT = 20;
 const DEFAULT_PADDING_Y = 10;
-
-function getRootCssVariableValue(variableName: string): string | undefined {
-  if (typeof window === 'undefined') {
-    return undefined;
-  }
-  const value = window
-    .getComputedStyle(document.documentElement)
-    .getPropertyValue(variableName)
-    .trim();
-  return value.length > 0 ? value : undefined;
-}
-
-function parseCssNumber(value: string): number | undefined {
-  const parsed = Number.parseFloat(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-export interface EditorTypographyOptions {
-  fontFamily?: string;
-  fontSize?: number;
-  lineHeight?: number;
-  paddingY?: number;
-  tabSize?: number;
-}
 
 export interface NormalizedEditorOptions {
   fontFamily: string;
@@ -37,24 +16,25 @@ export interface NormalizedEditorOptions {
 }
 
 export function normlizeEditorOptions(
-  options: EditorTypographyOptions = {}
+  options: EditorOptions = {}
 ): NormalizedEditorOptions {
   const fontFamily =
     options.fontFamily ??
     getRootCssVariableValue('--diffs-font-family') ??
     getRootCssVariableValue('--diffs-font-fallback') ??
     DEFAULT_FONT_FAMILY;
-
-  const fontSize =
+  const fontSize = Math.max(
+    10,
     options.fontSize ??
-    parseCssNumber(getRootCssVariableValue('--diffs-font-size') ?? '') ??
-    DEFAULT_FONT_SIZE;
-
-  const lineHeight =
+      parseCssNumber(getRootCssVariableValue('--diffs-font-size') ?? '') ??
+      DEFAULT_FONT_SIZE
+  );
+  const lineHeight = Math.max(
+    12,
     options.lineHeight ??
-    parseCssNumber(getRootCssVariableValue('--diffs-line-height') ?? '') ??
-    DEFAULT_LINE_HEIGHT;
-
+      parseCssNumber(getRootCssVariableValue('--diffs-line-height') ?? '') ??
+      DEFAULT_LINE_HEIGHT
+  );
   const paddingY = Math.max(0, options.paddingY ?? DEFAULT_PADDING_Y);
   const tabSize = Math.max(
     1,

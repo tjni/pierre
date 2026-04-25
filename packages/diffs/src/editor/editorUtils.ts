@@ -49,6 +49,25 @@ export function addEventListener(
   };
 }
 
+export function getRootCssVariableValue(
+  variableName: string
+): string | undefined {
+  const value = getComputedStyle(document.documentElement)
+    .getPropertyValue(variableName)
+    .trim();
+  return value !== '' ? value : undefined;
+}
+
+export function parseCssNumber(value?: string): number | undefined {
+  if (value === undefined || value === '') {
+    return undefined;
+  }
+  const f = Number.parseFloat(
+    value.endsWith('px') ? value.slice(0, -2) : value
+  );
+  return Number.isFinite(f) ? f : undefined;
+}
+
 export function coalesceMicrotask(run: () => void): () => void {
   let queued = false;
   return () => {

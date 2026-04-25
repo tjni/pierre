@@ -1,4 +1,4 @@
-import { cloneEditorSelection, type EditorSelection } from './selection';
+import { type EditorSelection } from './selection';
 
 export type ResolvedEdit = { start: number; end: number; text: string };
 
@@ -285,6 +285,7 @@ export class EditHistory {
     textBefore: string,
     resolvedEdits: ResolvedEdit[],
     selectionsBefore: EditorSelection[],
+    selectionsAfter?: EditorSelection[],
     coalesceWithinMs?: number
   ): void {
     const timestampMs = Date.now();
@@ -324,17 +325,13 @@ export class EditHistory {
       inverseEdits: inverseEdits,
       textLengthBefore,
       textLengthAfter,
-      selectionsBefore: selectionsBefore?.map(cloneEditorSelection),
+      selectionsBefore: selectionsBefore?.map((selection) => ({
+        ...selection,
+      })),
+      selectionsAfter: selectionsAfter?.map((selection) => ({ ...selection })),
       timestampMs,
     });
     this.#redo.length = 0;
-  }
-
-  setLastUndoSelectionsAfter(selections: EditorSelection[]): void {
-    const lastEntry = this.#undo[this.#undo.length - 1];
-    if (lastEntry !== undefined) {
-      lastEntry.selectionsAfter = selections.map(cloneEditorSelection);
-    }
   }
 
   /** Moves the latest undo entry to the redo stack and returns it, or `undefined` if empty. */
