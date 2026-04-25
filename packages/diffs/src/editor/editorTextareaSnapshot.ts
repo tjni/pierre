@@ -1,7 +1,7 @@
 import { type EditorSelection, type EditorTextChange } from './editorSelection';
 import type { TextDocument } from './textDocument';
 
-export interface EditSnippet {
+export interface TextareaSnapshot {
   readonly startLine: number;
   readonly offset: number;
   readonly selectionStart: number;
@@ -10,10 +10,10 @@ export interface EditSnippet {
   readonly text: string;
 }
 
-export function createEditSnippet(
+export function createTextareaSnapshot(
   textDocument: TextDocument,
   primarySelection: EditorSelection
-): EditSnippet {
+): TextareaSnapshot {
   const startLine = Math.max(0, primarySelection.start.line - 1);
   const endLine = Math.min(
     textDocument.lineCount - 1,
@@ -53,10 +53,10 @@ export function createEditSnippet(
 }
 
 export function resolveTextChange(
-  editSnippet: EditSnippet,
+  textareaSnapshot: TextareaSnapshot,
   newView: string
 ): EditorTextChange {
-  const original = editSnippet.text;
+  const original = textareaSnapshot.text;
   const originalLength = original.length;
   const nextLength = newView.length;
 
@@ -82,8 +82,8 @@ export function resolveTextChange(
   const originalEnd = originalLength - suffix;
 
   return {
-    start: editSnippet.offset + originalStart,
-    end: editSnippet.offset + originalEnd,
+    start: textareaSnapshot.offset + originalStart,
+    end: textareaSnapshot.offset + originalEnd,
     text: newView.slice(prefix, nextLength - suffix),
   };
 }

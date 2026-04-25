@@ -5,9 +5,9 @@ import {
   SelectionDirection,
 } from '../src/editor/editorSelection';
 import {
-  createEditSnippet,
+  createTextareaSnapshot,
   resolveTextChange,
-} from '../src/editor/editSnippet';
+} from '../src/editor/editorTextareaSnapshot';
 import { TextDocument } from '../src/editor/textDocument';
 
 function createSelection(
@@ -27,7 +27,7 @@ function createSelection(
 describe('resolveTextChange', () => {
   test('replaces selected text with a shorter typed value', () => {
     const textDocument = new TextDocument('inmemory://1', 'abc');
-    const snippet = createEditSnippet(
+    const snippet = createTextareaSnapshot(
       textDocument,
       createSelection(0, 0, 0, 3, SelectionDirection.Forward)
     );
@@ -41,7 +41,7 @@ describe('resolveTextChange', () => {
 
   test('keeps pure deletion as an empty replacement', () => {
     const textDocument = new TextDocument('inmemory://1', 'abc');
-    const snippet = createEditSnippet(
+    const snippet = createTextareaSnapshot(
       textDocument,
       createSelection(0, 2, 0, 2)
     );

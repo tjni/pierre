@@ -30,6 +30,11 @@ import {
   toWebSelectionDirection,
 } from '../editor/editorSelection';
 import {
+  createTextareaSnapshot,
+  resolveTextChange,
+  type TextareaSnapshot,
+} from '../editor/editorTextareaSnapshot';
+import {
   addEventListener,
   createElement,
   extend,
@@ -37,11 +42,6 @@ import {
   getRootCssVariableValue,
   measureMonoFontWidth,
 } from '../editor/editorUtils';
-import {
-  createEditSnippet,
-  type EditSnippet,
-  resolveTextChange,
-} from '../editor/editSnippet';
 import { TextDocument, type TextEdit } from '../editor/textDocument';
 import {
   getHighlighterIfLoaded,
@@ -85,7 +85,7 @@ export class Editor {
   // state
   #isEditorElFocused?: boolean;
   #isTextareaElFocused?: boolean;
-  #editSnippet?: EditSnippet;
+  #textareaSnapshot?: TextareaSnapshot;
   #typingBuffer?: { text: string; line: number };
   #typingBufferFlushTimeout?: ReturnType<typeof setTimeout>;
   #selections?: EditorSelection[];
@@ -128,7 +128,7 @@ export class Editor {
 
   setTextDocument(textDocument: TextDocument): void {
     this.#textDocument = textDocument;
-    this.#editSnippet = undefined;
+    this.#textareaSnapshot = undefined;
     this.#reservedSelections = undefined;
     this.#selections = undefined;
     this.#renderText(textDocument);
@@ -216,8 +216,8 @@ export class Editor {
         if (this.#isTextareaElFocused !== true) {
           const command = resolveEditorCommandFromKeyboardEvent(e);
           if (command !== undefined) {
-            this.#flushPendingTextareaChanges();
             e.preventDefault();
+            this.#flushPendingTextareaChanges();
             void this.#runCommand(command);
             return;
           }
@@ -253,14 +253,14 @@ export class Editor {
         }
       }),
 
-      // addEventListener(textareaEl, "input", () => {
-      //   if (this.#ignoreSelectionChange) {
-      //     return;
-      //   }
-      //   console.log("\n~~~~~~~~~", Math.round(Date.now() / 1000));
-      //   console.log("textarea: input");
-      //   this.#syncTextareaState();
-      // }),
+      addEventListener(textareaEl, 'input', () => {
+        if (this.#ignoreSelectionChange) {
+          return;
+        }
+        console.log('\n~~~~~~~~~', Math.round(Date.now() / 1000));
+        console.log('textarea: input');
+        this.#syncTextareaState();
+      }),
 
       addEventListener(textareaEl, 'selectionchange', () => {
         if (this.#ignoreSelectionChange) {
@@ -301,7 +301,7 @@ export class Editor {
     this.#selectionEls = undefined;
     this.#styleEl = undefined;
     this.#textareaEl = undefined;
-    this.#editSnippet = undefined;
+    this.#textareaSnapshot = undefined;
     this.#textLineEls = undefined;
   }
 
@@ -511,27 +511,28 @@ export class Editor {
     console.log('syncTextareaState');
     const textDocument = this.#textDocument;
     const textareaEl = this.#textareaEl;
-    const editSnippet = this.#editSnippet;
+    const textareaSnapshot = this.#textareaSnapshot;
     if (
       textDocument === undefined ||
       textareaEl === undefined ||
-      editSnippet === undefined
+      textareaSnapshot === undefined
     ) {
       return;
     }
     const { selectionStart, selectionEnd, value } = textareaEl;
-    if (value !== editSnippet.text) {
+    if (value !== textareaSnapshot.text) {
       if (
-        value.split('\n').length !== editSnippet.lines ||
-        editSnippet.lines !== 3
+        value.split('\n').length !== textareaSnapshot.lines ||
+        textareaSnapshot.lines !== 3
       ) {
-        const change = resolveTextChange(editSnippet, value);
+        const change = resolveTextChange(textareaSnapshot, value);
         this.#applyTextChange(change);
       } else {
         const line = value.split('\n')[1];
-        this.#renderLine(line, editSnippet.offset + selectionStart);
-        this.#typingBuffer = { text: value, line: editSnippet.startLine };
+        this.#renderLine(line, textareaSnapshot.offset + selectionStart);
+        this.#typingBuffer = { text: value, line: textareaSnapshot.startLine };
         this.#typingBufferFlushTimeout = setTimeout(() => {
+          this.#typingBufferFlushTimeout = undefined;
           this.#flushPendingTextareaChanges();
         }, 500);
       }
@@ -543,21 +544,23 @@ export class Editor {
         mapSelectionMove(
           textDocument,
           this.#selections,
-          textDocument.positionAt(editSnippet.offset + selectionStart)
+          textDocument.positionAt(textareaSnapshot.offset + selectionStart)
         )
       );
     }
   }
 
   #flushPendingTextareaChanges() {
-    console.log('flushPendingTextareaChanges');
     if (this.#typingBufferFlushTimeout !== undefined) {
       window.clearTimeout(this.#typingBufferFlushTimeout);
       this.#typingBufferFlushTimeout = undefined;
     }
-    if (this.#editSnippet !== undefined && this.#typingBuffer !== undefined) {
+    if (
+      this.#textareaSnapshot !== undefined &&
+      this.#typingBuffer !== undefined
+    ) {
       const change = resolveTextChange(
-        this.#editSnippet,
+        this.#textareaSnapshot,
         this.#typingBuffer.text
       );
       this.#typingBuffer = undefined;
@@ -566,6 +569,7 @@ export class Editor {
   }
 
   #applyTextChange(change: EditorTextChange) {
+    console.log('applyTextChange', change);
     if (this.#textDocument !== undefined && this.#selections !== undefined) {
       const { edits, nextSelections: newSelections } = mapSelectionTextChange(
         this.#textDocument,
@@ -612,17 +616,20 @@ export class Editor {
     if (textDocument === undefined || textareaEl === undefined) {
       return;
     }
-    const editSnippet = createEditSnippet(textDocument, primarySelection);
-    this.#editSnippet = editSnippet;
+    const textareaSnapshot = createTextareaSnapshot(
+      textDocument,
+      primarySelection
+    );
+    this.#textareaSnapshot = textareaSnapshot;
     this.#ignoreSelectionChange = true;
     textareaEl.style.top =
       this.#getLineY(primarySelection.start.line - 1) + 'px';
     textareaEl.style.height =
-      editSnippet.lines * this.#options.lineHeight + 'px';
-    textareaEl.value = editSnippet.text;
+      textareaSnapshot.lines * this.#options.lineHeight + 'px';
+    textareaEl.value = textareaSnapshot.text;
     textareaEl.setSelectionRange(
-      editSnippet.selectionStart,
-      editSnippet.selectionEnd,
+      textareaSnapshot.selectionStart,
+      textareaSnapshot.selectionEnd,
       toWebSelectionDirection(primarySelection.direction)
     );
     setTimeout(() => {
