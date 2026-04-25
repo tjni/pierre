@@ -639,7 +639,7 @@ export class Editor {
     if (textDocument === undefined) {
       return;
     }
-    textDocument.applyEdits(edits, true, selectionsBefore);
+    textDocument.applyEdits(edits, true, selectionsBefore, nextSelections);
     this.#renderText(textDocument, nextSelections);
   }
 
