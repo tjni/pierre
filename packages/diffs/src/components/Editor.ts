@@ -1,6 +1,9 @@
 import { EncodedTokenMetadata, type IGrammar, INITIAL } from 'shiki/textmate';
 
-import { normlizeEditorOptions } from '../editor/editorOptions';
+import {
+  type NormalizedEditorOptions,
+  normlizeEditorOptions,
+} from '../editor/editorOptions';
 import {
   type EditorShortcutCommand,
   getPrimaryModifier,
@@ -39,7 +42,7 @@ import {
   type TextareaState,
 } from '../editor/textareaState';
 import { TextDocument, type TextEdit } from '../editor/textDocument';
-import { getVisualColumn } from '../editor/visualColumns';
+import { getVisualColumns } from '../editor/visualColumns';
 import { getSharedHighlighter } from '../highlighter/shared_highlighter';
 import type {
   BaseCodeOptions,
@@ -55,21 +58,16 @@ export interface EditorOptions extends BaseCodeOptions {
   paddingY?: number;
   tabIndex?: number;
   tabSize?: number;
+  minNumberColumnWidth?: number;
 }
 
 export class Editor {
+  #options: NormalizedEditorOptions;
   #highlighter?: DiffsHighlighter | Promise<DiffsHighlighter>;
   #textDocument?: TextDocument;
 
-  // options
-  #options: EditorOptions;
-  #fontFamily: string;
-  #fontSize: number;
-  #lineHeight: number;
-  #paddingY: number;
-  #tabSize: number;
-  #monoFontWidth: number;
-  #lineNumberWidth: number;
+  // computed width values
+  #monoCharWidth: number;
   #gutterWidth: number;
 
   // dom elements
@@ -98,19 +96,11 @@ export class Editor {
   #disposes?: (() => void)[];
 
   constructor(options: EditorOptions = {}) {
-    const { fontFamily, fontSize, lineHeight, paddingY, tabSize } =
-      normlizeEditorOptions(options);
-    this.#options = options;
-    this.#fontFamily = fontFamily;
-    this.#fontSize = fontSize;
-    this.#lineHeight = lineHeight;
-    this.#paddingY = paddingY;
-    this.#tabSize = tabSize;
-    this.#monoFontWidth = measureMonoFontWidth(
-      'normal ' + this.#fontSize + 'px ' + this.#fontFamily
+    this.#options = normlizeEditorOptions(options);
+    this.#monoCharWidth = measureMonoFontWidth(
+      'normal ' + this.#options.fontSize + 'px ' + this.#options.fontFamily
     );
-    this.#lineNumberWidth = this.#monoFontWidth;
-    this.#gutterWidth = this.#lineNumberWidth;
+    this.#gutterWidth = 0;
   }
 
   get options(): EditorOptions {
@@ -138,7 +128,7 @@ export class Editor {
     this.#textareaState = undefined;
     this.#reservedSelections = undefined;
     this.#selections = undefined;
-    void this.#renderText(textDocument);
+    this.#renderText(textDocument);
   }
 
   setThemeType(themeType: 'dark' | 'light' | 'system'): void {
@@ -151,7 +141,6 @@ export class Editor {
       this.cleanUp();
     }
     const { tabIndex = -1 } = this.#options;
-    const fontFamily = this.#fontFamily;
     const queueTextareaSync = coalesceMicrotask(() =>
       this.#syncTextareaState()
     );
@@ -160,19 +149,16 @@ export class Editor {
         style: {
           position: 'relative',
           boxSizing: 'border-box',
-          paddingTop: `${this.#paddingY}px`,
-          paddingBottom: `${this.#paddingY}px`,
-          fontFamily,
+          paddingTop: `${this.#options.paddingY}px`,
+          paddingBottom: `${this.#options.paddingY}px`,
+          fontFamily: this.#options.fontFamily,
+          fontFeatureSettings: 'var(--diffs-font-features)',
           isolation: 'isolate',
         },
       }),
       {
         tabIndex,
       }
-    );
-    this.#editorEl.style.setProperty(
-      '--line-number-width',
-      this.#lineNumberWidth + 'px'
     );
     this.#styleEl = createElement('style', undefined, this.#editorEl);
     this.#textareaEl = extend(
@@ -348,7 +334,7 @@ export class Editor {
     const lineNumberForeground =
       colors['editorLineNumber.foreground'] ?? colors.foreground;
     const lineHighlightBackground = colors['editor.lineHighlightBackground'];
-    const lineHeight = this.#lineHeight;
+    const { lineHeight, fontSize, tabSize } = this.#options;
 
     editorEl.style.color = foreground;
     editorEl.style.backgroundColor = background;
@@ -356,7 +342,7 @@ export class Editor {
       '@scope{' +
       '::selection{background-color:transparent}' +
       '@keyframes blinking{0%{opacity:0.9}50%{opacity:0}100%{opacity:0.9}}' +
-      `pre{position:relative;margin:0;font:inherit;font-size:${this.#fontSize}px;line-height:${lineHeight}px;cursor:text;white-space:pre;tab-size:${this.#tabSize}}` +
+      `pre{position:relative;margin:0;font:inherit;font-size:${fontSize}px;line-height:${lineHeight}px;cursor:text;white-space:pre;tab-size:${tabSize}}` +
       `.ī{position:absolute;width:2px;height:${lineHeight}px;background-color:${foreground};pointer-events:none;animation:blinking 1.2s infinite;animation-delay:0.6s}` +
       `.š{position:absolute;z-index:-10;height:${lineHeight}px;background-color:${selectionBackground};pointer-events:none}` +
       (`.ħ{box-sizing:border-box;position:absolute;z-index:-10;width:100%;height:${lineHeight}px;` +
@@ -367,23 +353,12 @@ export class Editor {
       ('.ť{position:absolute;z-index:-20;width:100%;padding:0;' +
         `line-height:${lineHeight}px;` +
         'font:inherit;background-color:transparent;color:transparent;opacity:0;border:none;outline:none;resize:none}') +
-      `.ń{display:inline-block;text-align:right;width:var(--line-number-width);padding:0 ${this.#monoFontWidth}px;box-sizing:border-box;color:${lineNumberForeground};user-select:none;pointer-events:none;cursor:default}` +
+      `.ń{display:inline-block;text-align:right;width:var(--diffs-editor-line-number-width);padding:0 ${this.#monoCharWidth}px;color:${lineNumberForeground};user-select:none;pointer-events:none;cursor:default}` +
       `.ǎ>.ń,.ǎ>.ď,.ǎ>.đ{color:${foreground}}` +
       (colorMap ?? [])
         .map((color, i) => `.ċ${i.toString(36)}{color:${color}}`)
         .join('') +
       '}';
-  }
-
-  #setLineNumberDigits(lineNumberDigits: number) {
-    this.#lineNumberWidth = Math.round(
-      (lineNumberDigits + 2) * this.#monoFontWidth
-    );
-    this.#gutterWidth = this.#lineNumberWidth;
-    this.#editorEl?.style.setProperty(
-      '--line-number-width',
-      this.#lineNumberWidth + 'px'
-    );
   }
 
   #renderText(
@@ -393,8 +368,18 @@ export class Editor {
     const totalLines = textDocument.lineCount;
     const languageId = textDocument.languageId;
 
-    const lineNumberDigits = Math.max(2, totalLines.toString().length);
-    this.#setLineNumberDigits(lineNumberDigits);
+    // update gutter width
+    const lineNumberDigits = totalLines.toString().length;
+    const lineNumberWidth = Math.round(
+      Math.max(this.#options.minNumberColumnWidth, lineNumberDigits) *
+        this.#monoCharWidth
+    );
+    const lineNumberPadding = 2 * this.#monoCharWidth;
+    this.#editorEl?.style.setProperty(
+      '--diffs-editor-line-number-width',
+      lineNumberWidth + 'px'
+    );
+    this.#gutterWidth = lineNumberWidth + lineNumberPadding;
 
     let grammar: IGrammar | undefined;
     const highlighter = this.#highlighter;
@@ -674,7 +659,7 @@ export class Editor {
       return;
     }
     textDocument.applyEdits(edits, true, selectionsBefore);
-    void this.#renderText(textDocument, nextSelections);
+    this.#renderText(textDocument, nextSelections);
   }
 
   #restoreSelections(selections: EditorSelection[]) {
@@ -728,14 +713,18 @@ export class Editor {
       const lineLength = lineText.length;
       const startCharacter = ln === start.line ? start.character : 0;
       const endCharacter = ln === end.line ? end.character : lineLength;
-      const startColumn = getVisualColumn(
+      const startColumns = getVisualColumns(
         lineText,
         startCharacter,
-        this.#tabSize
+        this.#options.tabSize
       );
-      const endColumn = getVisualColumn(lineText, endCharacter, this.#tabSize);
-      const startX = this.#getCharacterX(ln, startCharacter, startColumn);
-      const endX = this.#getCharacterX(ln, endCharacter, endColumn);
+      const endColumns = getVisualColumns(
+        lineText,
+        endCharacter,
+        this.#options.tabSize
+      );
+      const startX = this.#getCharacterX(ln, startCharacter, startColumns);
+      const endX = this.#getCharacterX(ln, endCharacter, endColumns);
       const spacing =
         endCharacter === startCharacter || ln === end.line ? 0 : 4;
       const style = {
@@ -765,7 +754,7 @@ export class Editor {
       this.#textDocument?.getLineText(isBackward ? start.line : end.line) ?? '';
     const line = isBackward ? start.line : end.line;
     const character = isBackward ? start.character : end.character;
-    const column = getVisualColumn(lineText, character, this.#tabSize);
+    const column = getVisualColumns(lineText, character, this.#options.tabSize);
     const left = this.#getCharacterX(line, character, column);
     const cursorEl = createElement(
       'div',
@@ -825,7 +814,7 @@ export class Editor {
     textareaEl.style.width = `calc(100% - ${this.#gutterWidth}px)`;
     textareaEl.style.top = this.#getLineY(textareaSnippet.firstLine) + 'px';
     textareaEl.style.height =
-      textareaSnippet.text.split('\n').length * this.#lineHeight + 'px';
+      textareaSnippet.text.split('\n').length * this.#options.lineHeight + 'px';
   }
 
   async #runShortcutCommand(command: EditorShortcutCommand) {
@@ -880,7 +869,7 @@ export class Editor {
                 const ret = resolveIndentEdits(
                   this.#textDocument,
                   selection,
-                  this.#tabSize,
+                  this.#options.tabSize,
                   outdent
                 );
                 edits.push(...ret[0]);
@@ -888,7 +877,7 @@ export class Editor {
               } else {
                 const indentUnit = getLineIndentationUnit(
                   lineText,
-                  this.#tabSize
+                  this.#options.tabSize
                 );
                 this.#replaceSelectionText(indentUnit);
               }
@@ -901,7 +890,7 @@ export class Editor {
               this.#selections,
               nextSelections
             );
-            void this.#renderText(this.#textDocument, nextSelections);
+            this.#renderText(this.#textDocument, nextSelections);
           }
         }
         break;
@@ -915,13 +904,13 @@ export class Editor {
 
       case 'undo':
         if (this.#textDocument?.canUndo === true) {
-          void this.#renderText(this.#textDocument, this.#textDocument.undo());
+          this.#renderText(this.#textDocument, this.#textDocument.undo());
         }
         break;
 
       case 'redo':
         if (this.#textDocument?.canRedo === true) {
-          void this.#renderText(this.#textDocument, this.#textDocument.redo());
+          this.#renderText(this.#textDocument, this.#textDocument.redo());
         }
         break;
     }
@@ -982,18 +971,19 @@ export class Editor {
           direction: SelectionDirection.None,
         });
     textDocument.applyEdits(edits, true, selections);
-    void this.#renderText(textDocument, nextSelections);
+    this.#renderText(textDocument, nextSelections);
   }
 
   // get line Y position
   #getLineY(line: number) {
-    return line * this.#lineHeight + this.#paddingY;
+    return line * this.#options.lineHeight + this.#options.paddingY;
   }
 
   // get character X position
   // todo: does it support emoji/non-ascii input?
-  #getCharacterX(line: number, character: number, visualColumn: number) {
-    const fallbackLeft = this.#gutterWidth + visualColumn * this.#monoFontWidth;
+  #getCharacterX(line: number, character: number, visualColumns: number) {
+    const fallbackLeft =
+      this.#gutterWidth + visualColumns * this.#monoCharWidth;
     const lineEl = this.#textLineEls?.get(line);
     const editorEl = this.#editorEl;
     if (lineEl === undefined || editorEl === undefined) {

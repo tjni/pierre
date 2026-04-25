@@ -1,4 +1,4 @@
-export function getVisualColumn(
+export function getVisualColumns(
   text: string,
   character: number,
   tabSize: number

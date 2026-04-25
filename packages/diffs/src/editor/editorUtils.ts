@@ -58,14 +58,25 @@ export function getRootCssVariableValue(
   return value !== '' ? value : undefined;
 }
 
-export function parseCssNumber(value?: string): number | undefined {
-  if (value === undefined || value === '') {
-    return undefined;
+export function parseCssValue(value: string): [value: number, unit: string] {
+  const parsedValue = Number.parseFloat(value);
+  if (!Number.isFinite(parsedValue)) {
+    return [0, ''];
   }
-  const f = Number.parseFloat(
-    value.endsWith('px') ? value.slice(0, -2) : value
-  );
-  return Number.isFinite(f) ? f : undefined;
+  let unitStartIndex = -1;
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (
+      code !== /*.*/ 46 &&
+      (code < /*0*/ 48 || code > /*9*/ 57) &&
+      i !== 0 &&
+      i !== value.length - 1
+    ) {
+      unitStartIndex = i;
+      break;
+    }
+  }
+  return [parsedValue, unitStartIndex > 0 ? value.slice(unitStartIndex) : ''];
 }
 
 export function coalesceMicrotask(run: () => void): () => void {

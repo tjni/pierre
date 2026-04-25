@@ -317,6 +317,9 @@ export class EditHistory {
         textLengthAfter
       );
       lastEntry.textLengthAfter = textLengthAfter;
+      lastEntry.selectionsAfter = selectionsAfter?.map((selection) => ({
+        ...selection,
+      }));
       lastEntry.timestampMs = timestampMs;
       return;
     }
