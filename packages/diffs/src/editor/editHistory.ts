@@ -1,16 +1,10 @@
-import { type EditorSelection } from './editorSelection';
-
-export type ResolvedEdit = {
-  start: number;
-  end: number;
-  text: string;
-};
+import { type EditorSelection, type EditorTextChange } from './editorSelection';
 
 export type HistoryEntry = {
   /** Forward offset edits from the entry's base text to its final text. */
-  forwardEdits: ResolvedEdit[];
+  forwardEdits: EditorTextChange[];
   /** Inverse offset edits from the entry's final text back to its base text. */
-  inverseEdits: ResolvedEdit[];
+  inverseEdits: EditorTextChange[];
   /** Base text length before the entry is applied. */
   textLengthBefore: number;
   /** Final text length after the entry is applied. */
@@ -40,7 +34,7 @@ export class EditHistory {
 
   push(
     textBefore: string,
-    resolvedEdits: ResolvedEdit[],
+    resolvedEdits: EditorTextChange[],
     selectionsBefore: EditorSelection[],
     selectionsAfter?: EditorSelection[]
   ): void {
@@ -66,6 +60,15 @@ export class EditHistory {
     this.#redo.length = 0;
   }
 
+  setLastUndoSelectionsAfter(selections: EditorSelection[]): void {
+    const lastEntry = this.#undo[this.#undo.length - 1];
+    if (lastEntry !== undefined) {
+      lastEntry.selectionsAfter = selections.map((selection) => ({
+        ...selection,
+      }));
+    }
+  }
+
   /** Moves the latest undo entry to the redo stack and returns it, or `undefined` if empty. */
   popUndoToRedo(): HistoryEntry | void {
     const entry = this.#undo.pop();
@@ -85,7 +88,10 @@ export class EditHistory {
   }
 }
 
-export function applyOffsetEdits(base: string, edits: ResolvedEdit[]): string {
+export function applyOffsetEdits(
+  base: string,
+  edits: EditorTextChange[]
+): string {
   const sortedEdits = [...edits].sort((a, b) => b.start - a.start);
   for (let i = 0; i < sortedEdits.length - 1; i++) {
     if (sortedEdits[i + 1].end > sortedEdits[i].start) {
@@ -101,9 +107,9 @@ export function applyOffsetEdits(base: string, edits: ResolvedEdit[]): string {
 
 export function buildInverseOffsetEdits(
   textBefore: string,
-  ascending: ResolvedEdit[]
-): ResolvedEdit[] {
-  const inverse: ResolvedEdit[] = [];
+  ascending: EditorTextChange[]
+): EditorTextChange[] {
+  const inverse: EditorTextChange[] = [];
   for (let i = 0; i < ascending.length; i++) {
     const edit = ascending[i];
     const replacedText = textBefore.slice(edit.start, edit.end);

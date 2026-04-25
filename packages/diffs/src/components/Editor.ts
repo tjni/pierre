@@ -1,8 +1,9 @@
 import { EncodedTokenMetadata, type IGrammar, INITIAL } from 'shiki/textmate';
 
+import { DEFAULT_THEMES } from '../constants';
 import {
   type EditorCommand,
-  getPrimaryModifier,
+  isPrimaryModifier,
   resolveEditorCommandFromKeyboardEvent,
 } from '../editor/editorCommand';
 import {
@@ -14,37 +15,39 @@ import {
   type NormalizedEditorOptions,
   normlizeEditorOptions,
 } from '../editor/editorOptions';
-import type { EditorSelection } from '../editor/editorSelection';
+import type {
+  EditorSelection,
+  EditorTextChange,
+} from '../editor/editorSelection';
 import {
   comparePosition,
   convertSelection,
-  fromWebSelectionDirection,
   getPrimarySelection,
   isCollapsedSelection,
   resolveIndentEdits,
   SelectionDirection,
+  selectionIntersects,
   toWebSelectionDirection,
 } from '../editor/editorSelection';
 import {
-  createTextareaSnippet,
-  matchesTextareaState,
-  resolveTextareaTextChange,
-  type TextareaState,
-} from '../editor/editorTextareaState';
-import {
   addEventListener,
-  coalesceMicrotask,
   createElement,
   extend,
   getLineIndentationUnit,
   getRootCssVariableValue,
   measureMonoFontWidth,
 } from '../editor/editorUtils';
+import {
+  createEditSnippet,
+  type EditSnippet,
+  resolveTextChange,
+} from '../editor/editSnippet';
 import { TextDocument, type TextEdit } from '../editor/textDocument';
 import {
   getHighlighterIfLoaded,
   getSharedHighlighter,
 } from '../highlighter/shared_highlighter';
+import { areThemesAttached } from '../highlighter/themes/areThemesAttached';
 import type {
   BaseCodeOptions,
   DiffsHighlighter,
@@ -82,17 +85,13 @@ export class Editor {
   // state
   #isEditorElFocused?: boolean;
   #isTextareaElFocused?: boolean;
-  #textareaState?: TextareaState;
-  #pendingTextareaSnapshot?: {
-    value: string;
-    selectionStart: number;
-    selectionEnd: number;
-    selectionDirection: HTMLTextAreaElement['selectionDirection'];
-  };
-  #typingFlushTimeout?: number;
+  #editSnippet?: EditSnippet;
+  #typingBuffer?: { text: string; line: number };
+  #typingBufferFlushTimeout?: ReturnType<typeof setTimeout>;
   #selections?: EditorSelection[];
   #reservedSelections?: EditorSelection[];
   #languageLoadRequestId = 0;
+  #ignoreSelectionChange = false;
 
   #disposes?: (() => void)[];
 
@@ -102,6 +101,9 @@ export class Editor {
       'normal ' + this.#options.fontSize + 'px ' + this.#options.fontFamily
     );
     this.#gutterWidth = 0;
+    this.#highlighter = areThemesAttached(options.theme ?? DEFAULT_THEMES)
+      ? getHighlighterIfLoaded()
+      : undefined;
   }
 
   get options(): EditorOptions {
@@ -126,7 +128,7 @@ export class Editor {
 
   setTextDocument(textDocument: TextDocument): void {
     this.#textDocument = textDocument;
-    this.#textareaState = undefined;
+    this.#editSnippet = undefined;
     this.#reservedSelections = undefined;
     this.#selections = undefined;
     this.#renderText(textDocument);
@@ -144,39 +146,33 @@ export class Editor {
     if (this.#editorEl !== undefined) {
       this.cleanUp();
     }
-    const { tabIndex = -1 } = this.#options;
-    const queueTextareaStateSync = coalesceMicrotask(() =>
-      this.#syncTextareaState()
-    );
-    this.#editorEl = extend(
-      createElement('div', {
-        style: {
-          position: 'relative',
-          boxSizing: 'border-box',
-          paddingTop: `${this.#options.paddingY}px`,
-          paddingBottom: `${this.#options.paddingY}px`,
-          fontFamily: this.#options.fontFamily,
-          fontFeatureSettings: 'var(--diffs-font-features)',
-          isolation: 'isolate',
-        },
-      }),
-      {
-        tabIndex,
-      }
-    );
-    this.#styleEl = createElement('style', undefined, this.#editorEl);
-    this.#textareaEl = extend(
-      createElement('textarea', { class: 'ť' }, this.#editorEl),
-      {
-        autocapitalize: 'off',
-        autocomplete: 'off',
-        autocorrect: false,
-        spellcheck: false,
-        wrap: 'off',
-      }
-    );
+    const editorEl = createElement('div', {
+      style: {
+        position: 'relative',
+        boxSizing: 'border-box',
+        paddingTop: `${this.#options.paddingY}px`,
+        paddingBottom: `${this.#options.paddingY}px`,
+        fontFamily: this.#options.fontFamily,
+        fontFeatureSettings: 'var(--diffs-font-features)',
+        isolation: 'isolate',
+      },
+    });
+    const textareaEl = createElement('textarea', { class: 'ť' }, editorEl);
+    this.#editorEl = extend(editorEl, { tabIndex: this.#options.tabIndex });
+    this.#styleEl = createElement('style', undefined, editorEl);
+    this.#textareaEl = extend(textareaEl, {
+      autocapitalize: 'off',
+      autocomplete: 'off',
+      autocorrect: false,
+      spellcheck: false,
+      wrap: 'off',
+    });
     this.#disposes = [
       addEventListener(document, 'selectionchange', () => {
+        if (this.#ignoreSelectionChange) {
+          return;
+        }
+
         const selectionRaw = document.getSelection();
         if (
           selectionRaw !== null &&
@@ -184,55 +180,71 @@ export class Editor {
         ) {
           const selection = convertSelection(selectionRaw);
           if (selection !== null) {
+            console.log('\n~~~~~~~~~', Math.round(Date.now() / 1000));
+            console.log('document: selectionchange', selection);
+            const reservedSelections = this.#reservedSelections;
+            if (reservedSelections === undefined) {
+              this.#restoreSelections([selection]);
+              return;
+            }
             this.#restoreSelections([
-              ...(this.#reservedSelections ?? []),
+              ...reservedSelections.filter(
+                (reservedSelection) =>
+                  !selectionIntersects(reservedSelection, selection)
+              ),
               selection,
             ]);
           }
         }
       }),
-      addEventListener(this.#editorEl, 'mousedown', (e) => {
-        if (e.button === 0 && getPrimaryModifier(e)) {
+
+      addEventListener(editorEl, 'mousedown', (e) => {
+        if (e.button === 0 && isPrimaryModifier(e)) {
           this.#reservedSelections = this.#selections?.map((selection) => ({
             ...selection,
           }));
+        } else {
+          this.#reservedSelections = undefined;
         }
       }),
-      addEventListener(document, 'mouseup', () => {
+
+      addEventListener(editorEl, 'mouseup', () => {
         this.#reservedSelections = undefined;
       }),
-      addEventListener(this.#editorEl, 'focus', () => {
-        this.#isEditorElFocused = true;
-      }),
-      addEventListener(this.#editorEl, 'blur', () => {
-        this.#isEditorElFocused = false;
-      }),
-      addEventListener(this.#textareaEl, 'focus', () => {
-        this.#isTextareaElFocused = true;
-      }),
-      addEventListener(this.#textareaEl, 'blur', () => {
-        this.#isTextareaElFocused = false;
-        this.#flushPendingTextareaChanges();
-      }),
-      addEventListener(document, 'keydown', (e) => {
-        if (!this.#hasFocusWithinEditor()) {
-          return;
-        }
+
+      addEventListener(editorEl, 'keydown', (e) => {
         if (this.#isTextareaElFocused !== true) {
           const command = resolveEditorCommandFromKeyboardEvent(e);
           if (command !== undefined) {
             this.#flushPendingTextareaChanges();
             e.preventDefault();
-            console.log('keydown', command);
             void this.#runCommand(command);
             return;
           }
         }
         if (this.#isEditorElFocused === true) {
-          this.#textareaEl?.focus();
+          textareaEl.focus();
         }
       }),
-      addEventListener(this.#textareaEl, 'keydown', (e) => {
+
+      addEventListener(editorEl, 'focus', () => {
+        this.#isEditorElFocused = true;
+      }),
+
+      addEventListener(editorEl, 'blur', () => {
+        this.#isEditorElFocused = false;
+      }),
+
+      addEventListener(textareaEl, 'focus', () => {
+        this.#isTextareaElFocused = true;
+      }),
+
+      addEventListener(textareaEl, 'blur', () => {
+        this.#isTextareaElFocused = false;
+        this.#flushPendingTextareaChanges();
+      }),
+
+      addEventListener(textareaEl, 'keydown', (e) => {
         const command = resolveEditorCommandFromKeyboardEvent(e);
         if (command !== undefined) {
           this.#flushPendingTextareaChanges();
@@ -240,52 +252,57 @@ export class Editor {
           void this.#runCommand(command);
         }
       }),
-      addEventListener(this.#textareaEl, 'input', queueTextareaStateSync),
-      addEventListener(this.#textareaEl, 'selectionchange', () => {
-        if (
-          this.#textareaState !== undefined &&
-          this.#textareaEl !== undefined &&
-          matchesTextareaState(this.#textareaState, this.#textareaEl)
-        ) {
+
+      // addEventListener(textareaEl, "input", () => {
+      //   if (this.#ignoreSelectionChange) {
+      //     return;
+      //   }
+      //   console.log("\n~~~~~~~~~", Math.round(Date.now() / 1000));
+      //   console.log("textarea: input");
+      //   this.#syncTextareaState();
+      // }),
+
+      addEventListener(textareaEl, 'selectionchange', () => {
+        if (this.#ignoreSelectionChange) {
           return;
         }
-        queueTextareaStateSync();
+        console.log('\n~~~~~~~~~', Math.round(Date.now() / 1000));
+        console.log('textarea: selectionchange');
+        this.#syncTextareaState();
       }),
     ];
-    this.#highlighter =
-      getHighlighterIfLoaded() ??
-      getSharedHighlighter(
-        getHighlighterOptions(undefined, this.#options)
-      ).then((highlighter) => {
-        this.#highlighter = highlighter;
-        this.#updateStyle();
-        return highlighter;
-      });
+    this.#highlighter ??= getSharedHighlighter(
+      getHighlighterOptions(undefined, this.#options)
+    ).then((highlighter) => {
+      this.#highlighter = highlighter;
+      this.#updateStyle();
+      return highlighter;
+    });
     this.#updateStyle();
     if (this.#textDocument !== undefined) {
       this.#renderText(this.#textDocument, this.#selections);
     }
-    editorContainer.appendChild(this.#editorEl);
+    editorContainer.appendChild(editorEl);
   }
 
   public cleanUp(): void {
-    this.#clearTypingFlushTimeout();
+    this.#flushPendingTextareaChanges();
     this.#textLineEls?.clear();
     this.#selectionEls?.clear();
     this.#disposes?.forEach((dispose) => dispose());
     this.#editorEl?.remove();
-    this.#editorEl = undefined;
-    this.#styleEl = undefined;
-    this.#textareaEl = undefined;
     this.#activeLineEl = undefined;
-    this.#textLineEls = undefined;
-    this.#selectionEls = undefined;
     this.#disposes = undefined;
+    this.#editorEl = undefined;
     this.#isEditorElFocused = false;
     this.#isTextareaElFocused = false;
-    this.#textareaState = undefined;
-    this.#pendingTextareaSnapshot = undefined;
     this.#reservedSelections = undefined;
+    this.#selections = undefined;
+    this.#selectionEls = undefined;
+    this.#styleEl = undefined;
+    this.#textareaEl = undefined;
+    this.#editSnippet = undefined;
+    this.#textLineEls = undefined;
   }
 
   #updateStyle() {
@@ -352,7 +369,7 @@ export class Editor {
           ? `background-color:${lineHighlightBackground}`
           : `border:2px solid ${selectionBackground}`) +
         ';pointer-events:none}') +
-      ('.ť{position:absolute;z-index:-20;width:100%;padding:0;' +
+      ('.ť{position:absolute;left:var(--diffs-editor-gutter-width);z-index:-20;width:calc(100% - var(--diffs-editor-gutter-width));padding:0;' +
         `line-height:${lineHeight}px;` +
         'font:inherit;background-color:transparent;color:transparent;opacity:0;border:none;outline:none;resize:none}') +
       `.ń{display:inline-block;text-align:right;width:var(--diffs-editor-line-number-width);padding:0 ${this.#monoCharWidth}px;color:${lineNumberForeground};user-select:none;pointer-events:none;cursor:default}` +
@@ -363,6 +380,25 @@ export class Editor {
       '}';
   }
 
+  // update gutter width
+  #updateGutterWidth(totalLines: number) {
+    const lineNumberDigits = totalLines.toString().length;
+    const lineNumberWidth = Math.round(
+      Math.max(this.#options.minNumberColumnWidth, lineNumberDigits) *
+        this.#monoCharWidth
+    );
+    const lineNumberPadding = 2 * this.#monoCharWidth;
+    this.#gutterWidth = lineNumberWidth + lineNumberPadding;
+    this.#editorEl?.style.setProperty(
+      '--diffs-editor-line-number-width',
+      lineNumberWidth + 'px'
+    );
+    this.#editorEl?.style.setProperty(
+      '--diffs-editor-gutter-width',
+      this.#gutterWidth + 'px'
+    );
+  }
+
   #renderText(
     textDocument: TextDocument,
     selections?: EditorSelection[]
@@ -370,18 +406,7 @@ export class Editor {
     const totalLines = textDocument.lineCount;
     const languageId = textDocument.languageId;
 
-    // update gutter width
-    const lineNumberDigits = totalLines.toString().length;
-    const lineNumberWidth = Math.round(
-      Math.max(this.#options.minNumberColumnWidth, lineNumberDigits) *
-        this.#monoCharWidth
-    );
-    const lineNumberPadding = 2 * this.#monoCharWidth;
-    this.#editorEl?.style.setProperty(
-      '--diffs-editor-line-number-width',
-      lineNumberWidth + 'px'
-    );
-    this.#gutterWidth = lineNumberWidth + lineNumberPadding;
+    this.#updateGutterWidth(totalLines);
 
     let grammar: IGrammar | undefined;
     const highlighter = this.#highlighter;
@@ -408,6 +433,7 @@ export class Editor {
     const lineEls = new Map<number, HTMLElement>();
     for (let line = 0, ruleStack = INITIAL; line < totalLines; line++) {
       const lineText = textDocument.getLineText(line) ?? '';
+      const lineLength = lineText.length;
       const preEl = createElement('pre', undefined, this.#editorEl);
       // oxlint-disable-next-line typescript/no-explicit-any
       (preEl as any).LINE = line;
@@ -417,7 +443,7 @@ export class Editor {
       lineNumberEl.textContent = (line + 1).toString();
 
       if (grammar === undefined) {
-        if (lineText.length === 0) {
+        if (lineLength === 0) {
           createElement('br', undefined, preEl);
           continue;
         }
@@ -429,8 +455,13 @@ export class Editor {
       }
 
       const result = grammar.tokenizeLine2(lineText, ruleStack);
+      if (result.stoppedEarly) {
+        console.warn(
+          `Time limit reached when tokenizing line: ${lineText.substring(0, 100)}`
+        );
+      }
+
       const tokens = result.tokens;
-      const lineLength = lineText.length;
       const tokensLength = tokens.length / 2;
       for (let j = 0; j < tokensLength; j++) {
         const offset = tokens[2 * j];
@@ -472,174 +503,83 @@ export class Editor {
     }
   }
 
+  #renderLine(line: string, offset: number) {
+    console.log({ line, offset });
+  }
+
   #syncTextareaState() {
+    console.log('syncTextareaState');
     const textDocument = this.#textDocument;
     const textareaEl = this.#textareaEl;
-    const textareaState = this.#textareaState;
+    const editSnippet = this.#editSnippet;
     if (
       textDocument === undefined ||
       textareaEl === undefined ||
-      textareaState === undefined
+      editSnippet === undefined
     ) {
       return;
     }
-    const {
-      selections: selectionsBefore,
-      primarySelection: selectionBefore,
-      snippet: textareaSnippet,
-      value: originalValue,
-    } = textareaState;
-    const pendingSnapshot = this.#pendingTextareaSnapshot;
-    const { selectionStart, selectionEnd, selectionDirection, value } =
-      pendingSnapshot ?? textareaEl;
-    const snippetStartOffset = textDocument.offsetAt({
-      line: textareaSnippet.firstLine,
-      character: 0,
-    });
-    if (value !== originalValue) {
-      const {
-        start: oldChangedStart,
-        end: oldChangedEnd,
-        text: newChangedText,
-        selectionStart: nextSelectionStart,
-        selectionEnd: nextSelectionEnd,
-      } = resolveTextareaTextChange({
-        documentValue: textDocument.getText(),
-        originalValue,
-        value,
-        originalSelectionStart: textareaSnippet.selectionStart,
-        originalSelectionEnd: textareaSnippet.selectionEnd,
-        selectionStart,
-        selectionEnd,
-      });
-      const { edits, nextSelections } = mapSelectionTextChange(
-        textDocument,
-        selectionsBefore,
-        {
-          start: snippetStartOffset + oldChangedStart,
-          end: snippetStartOffset + oldChangedEnd,
-          text: newChangedText,
-          selectionStart: snippetStartOffset + nextSelectionStart,
-          selectionEnd: snippetStartOffset + nextSelectionEnd,
-          direction: fromWebSelectionDirection(selectionDirection),
-        }
-      );
-      const isBufferedTypingChange =
-        pendingSnapshot === undefined &&
-        selectionsBefore.length === 1 &&
-        isCollapsedSelection(selectionBefore) &&
-        nextSelections.length === 1 &&
-        isCollapsedSelection(nextSelections[0]) &&
-        selectionStart === selectionEnd;
-      if (isBufferedTypingChange) {
-        this.#pendingTextareaSnapshot = {
-          value,
-          selectionStart,
-          selectionEnd,
-          selectionDirection,
-        };
-        this.#scheduleTypingFlush();
-        return;
+    const { selectionStart, selectionEnd, value } = textareaEl;
+    if (value !== editSnippet.text) {
+      if (
+        value.split('\n').length !== editSnippet.lines ||
+        editSnippet.lines !== 3
+      ) {
+        const change = resolveTextChange(editSnippet, value);
+        this.#applyTextChange(change);
+      } else {
+        const line = value.split('\n')[1];
+        this.#renderLine(line, editSnippet.offset + selectionStart);
+        this.#typingBuffer = { text: value, line: editSnippet.startLine };
+        this.#typingBufferFlushTimeout = setTimeout(() => {
+          this.#flushPendingTextareaChanges();
+        }, 500);
       }
-      this.#applyResolvedTextareaChange(
-        edits,
-        selectionsBefore,
-        nextSelections
-      );
-      // if (newChangedText.trim() && nextSelections.length === 1 && isCollapsedSelection(nextSelections[0]!)) {
-      //   this.#langs.get(textDocument.languageId)?.lspDriver?.doComplete(textDocument, nextSelections[0]!.end);
-      // }
-    } else if (selectionStart === selectionEnd) {
+    } else if (
+      selectionStart === selectionEnd &&
+      this.#selections !== undefined
+    ) {
       this.#restoreSelections(
         mapSelectionMove(
           textDocument,
-          selectionsBefore,
-          textDocument.positionAt(snippetStartOffset + selectionStart)
+          this.#selections,
+          textDocument.positionAt(editSnippet.offset + selectionStart)
         )
       );
     }
   }
 
-  #scheduleTypingFlush() {
-    this.#clearTypingFlushTimeout();
-    this.#typingFlushTimeout = window.setTimeout(() => {
-      this.#typingFlushTimeout = undefined;
-      this.#flushPendingTextareaChanges();
-    }, 300);
-  }
-
-  #clearTypingFlushTimeout() {
-    if (this.#typingFlushTimeout !== undefined) {
-      window.clearTimeout(this.#typingFlushTimeout);
-      this.#typingFlushTimeout = undefined;
-    }
-  }
-
   #flushPendingTextareaChanges() {
-    const textDocument = this.#textDocument;
-    const textareaState = this.#textareaState;
-    const pendingSnapshot = this.#pendingTextareaSnapshot;
-    if (
-      textDocument === undefined ||
-      textareaState === undefined ||
-      pendingSnapshot === undefined
-    ) {
-      return;
+    console.log('flushPendingTextareaChanges');
+    if (this.#typingBufferFlushTimeout !== undefined) {
+      window.clearTimeout(this.#typingBufferFlushTimeout);
+      this.#typingBufferFlushTimeout = undefined;
     }
-    this.#clearTypingFlushTimeout();
-    const {
-      selections: selectionsBefore,
-      snippet: textareaSnippet,
-      value: originalValue,
-    } = textareaState;
-    const { value, selectionStart, selectionEnd, selectionDirection } =
-      pendingSnapshot;
-    const snippetStartOffset = textDocument.offsetAt({
-      line: textareaSnippet.firstLine,
-      character: 0,
-    });
-    const {
-      start: oldChangedStart,
-      end: oldChangedEnd,
-      text: newChangedText,
-      selectionStart: nextSelectionStart,
-      selectionEnd: nextSelectionEnd,
-    } = resolveTextareaTextChange({
-      documentValue: textDocument.getText(),
-      originalValue,
-      value,
-      originalSelectionStart: textareaSnippet.selectionStart,
-      originalSelectionEnd: textareaSnippet.selectionEnd,
-      selectionStart,
-      selectionEnd,
-    });
-    const { edits, nextSelections } = mapSelectionTextChange(
-      textDocument,
-      selectionsBefore,
-      {
-        start: snippetStartOffset + oldChangedStart,
-        end: snippetStartOffset + oldChangedEnd,
-        text: newChangedText,
-        selectionStart: snippetStartOffset + nextSelectionStart,
-        selectionEnd: snippetStartOffset + nextSelectionEnd,
-        direction: fromWebSelectionDirection(selectionDirection),
-      }
-    );
-    this.#pendingTextareaSnapshot = undefined;
-    this.#applyResolvedTextareaChange(edits, selectionsBefore, nextSelections);
+    if (this.#editSnippet !== undefined && this.#typingBuffer !== undefined) {
+      const change = resolveTextChange(
+        this.#editSnippet,
+        this.#typingBuffer.text
+      );
+      this.#typingBuffer = undefined;
+      this.#applyTextChange(change);
+    }
   }
 
-  #applyResolvedTextareaChange(
-    edits: TextEdit[],
-    selectionsBefore: EditorSelection[],
-    nextSelections: EditorSelection[]
-  ) {
-    const textDocument = this.#textDocument;
-    if (textDocument === undefined) {
-      return;
+  #applyTextChange(change: EditorTextChange) {
+    if (this.#textDocument !== undefined && this.#selections !== undefined) {
+      const { edits, nextSelections: newSelections } = mapSelectionTextChange(
+        this.#textDocument,
+        this.#selections,
+        change
+      );
+      this.#textDocument.applyEdits(
+        edits,
+        true,
+        this.#selections,
+        newSelections
+      );
+      this.#renderText(this.#textDocument, newSelections);
     }
-    textDocument.applyEdits(edits, true, selectionsBefore, nextSelections);
-    this.#renderText(textDocument, nextSelections);
   }
 
   #restoreSelections(selections: EditorSelection[]) {
@@ -662,7 +602,33 @@ export class Editor {
     this.#selectionEls?.forEach((el) => el.remove());
     this.#selectionEls?.clear();
     this.#selectionEls = selectionEls;
-    this.#updateTextarea(primarySelection, selections);
+    this.#updateTextarea(primarySelection);
+  }
+
+  #updateTextarea(primarySelection: EditorSelection) {
+    console.log('updateTextarea');
+    const textDocument = this.#textDocument;
+    const textareaEl = this.#textareaEl;
+    if (textDocument === undefined || textareaEl === undefined) {
+      return;
+    }
+    const editSnippet = createEditSnippet(textDocument, primarySelection);
+    this.#editSnippet = editSnippet;
+    this.#ignoreSelectionChange = true;
+    textareaEl.style.top =
+      this.#getLineY(primarySelection.start.line - 1) + 'px';
+    textareaEl.style.height =
+      editSnippet.lines * this.#options.lineHeight + 'px';
+    textareaEl.value = editSnippet.text;
+    textareaEl.setSelectionRange(
+      editSnippet.selectionStart,
+      editSnippet.selectionEnd,
+      toWebSelectionDirection(primarySelection.direction)
+    );
+    setTimeout(() => {
+      console.log('^');
+      this.#ignoreSelectionChange = false;
+    }, 0);
   }
 
   #renderHighlightLine(
@@ -754,39 +720,6 @@ export class Editor {
     const activeLineEl = this.#textLineEls?.get(activeLine);
     activeLineEl?.classList.add('ǎ');
     this.#activeLineEl = activeLineEl;
-  }
-
-  #updateTextarea(
-    primarySelection: EditorSelection,
-    selections: EditorSelection[]
-  ) {
-    const textDocument = this.#textDocument;
-    const textareaEl = this.#textareaEl;
-    if (textDocument === undefined || textareaEl === undefined) {
-      return;
-    }
-    const textareaSnippet = createTextareaSnippet(
-      textDocument,
-      primarySelection
-    );
-    this.#textareaState = {
-      selections,
-      primarySelection,
-      snippet: textareaSnippet,
-      value: textareaSnippet.text,
-    };
-    this.#pendingTextareaSnapshot = undefined;
-    textareaEl.value = textareaSnippet.text;
-    textareaEl.setSelectionRange(
-      textareaSnippet.selectionStart,
-      textareaSnippet.selectionEnd,
-      toWebSelectionDirection(primarySelection.direction)
-    );
-    textareaEl.style.left = this.#gutterWidth + 'px';
-    textareaEl.style.width = `calc(100% - ${this.#gutterWidth}px)`;
-    textareaEl.style.top = this.#getLineY(textareaSnippet.firstLine) + 'px';
-    textareaEl.style.height =
-      textareaSnippet.text.split('\n').length * this.#options.lineHeight + 'px';
   }
 
   async #runCommand(command: EditorCommand) {
@@ -952,11 +885,6 @@ export class Editor {
           start: textDocument.offsetAt(selection.start),
           end: textDocument.offsetAt(selection.end),
           text: normalizedText,
-          selectionStart:
-            textDocument.offsetAt(selection.start) + normalizedText.length,
-          selectionEnd:
-            textDocument.offsetAt(selection.start) + normalizedText.length,
-          direction: SelectionDirection.None,
         });
     textDocument.applyEdits(edits, true, selections);
     this.#renderText(textDocument, nextSelections);
@@ -1046,24 +974,15 @@ export class Editor {
     return column;
   }
 
-  // check if the active element has focus within editor
-  #hasFocusWithinEditor() {
-    const activeElement = document.activeElement;
-    if (activeElement === null) {
-      return false;
-    }
-    return (
-      activeElement === this.#editorEl ||
-      activeElement === this.#textareaEl ||
-      this.#editorEl?.contains(activeElement) === true
-    );
-  }
-
   // check if the web selection belongs to editor
   #selectionBelongsToEditor(selection: Selection) {
+    const editorEl = this.#editorEl;
     return (
-      this.#editorEl?.contains(selection.anchorNode) === true &&
-      this.#editorEl?.contains(selection.focusNode) === true
+      editorEl !== undefined &&
+      editorEl.contains(selection.anchorNode) === true &&
+      editorEl !== selection.anchorNode &&
+      editorEl.contains(selection.focusNode) === true &&
+      editorEl !== selection.focusNode
     );
   }
 }

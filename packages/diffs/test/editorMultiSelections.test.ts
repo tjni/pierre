@@ -38,9 +38,6 @@ describe('mapSelectionTextChange', () => {
         start: 5,
         end: 5,
         text: '!',
-        selectionStart: 6,
-        selectionEnd: 6,
-        direction: SelectionDirection.None,
       }
     );
 
@@ -68,9 +65,6 @@ describe('mapSelectionTextChange', () => {
         start: 8,
         end: 11,
         text: 'x',
-        selectionStart: 9,
-        selectionEnd: 9,
-        direction: SelectionDirection.None,
       }
     );
 
@@ -98,9 +92,6 @@ describe('mapSelectionTextChange', () => {
         start: 6,
         end: 7,
         text: '',
-        selectionStart: 6,
-        selectionEnd: 6,
-        direction: SelectionDirection.None,
       }
     );
 
@@ -127,9 +118,6 @@ describe('mapSelectionTextChange', () => {
         start: 0,
         end: 2,
         text: '',
-        selectionStart: 0,
-        selectionEnd: 0,
-        direction: SelectionDirection.None,
       }
     );
 

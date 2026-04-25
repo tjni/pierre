@@ -1,19 +1,14 @@
 import { applyOffsetEdits } from './editHistory';
-import { type EditorSelection, SelectionDirection } from './editorSelection';
+import {
+  type EditorSelection,
+  type EditorTextChange,
+  SelectionDirection,
+} from './editorSelection';
 import { type Position, TextDocument, type TextEdit } from './textDocument';
 
 type SelectionEditMapping = {
   edits: TextEdit[];
   nextSelections: EditorSelection[];
-};
-
-type SelectionTextChange = {
-  start: number;
-  end: number;
-  text: string;
-  selectionStart: number;
-  selectionEnd: number;
-  direction: SelectionDirection;
 };
 
 export function mapSelectionMove(
@@ -60,7 +55,7 @@ export function mapSelectionMove(
 export function mapSelectionTextChange(
   textDocument: TextDocument,
   selections: readonly EditorSelection[],
-  change: SelectionTextChange
+  change: EditorTextChange
 ): SelectionEditMapping {
   const primarySelection = selections[selections.length - 1];
   if (primarySelection === undefined) {
@@ -70,8 +65,6 @@ export function mapSelectionTextChange(
   const primaryEndOffset = textDocument.offsetAt(primarySelection.end);
   const relativeStart = change.start - primaryStartOffset;
   const relativeEnd = change.end - primaryEndOffset;
-  const postSelectionStartOffset = change.selectionStart - change.start;
-  const postSelectionEndOffset = change.selectionEnd - change.start;
   const ordered = selections
     .map((selection, index) => ({
       selection,
@@ -115,8 +108,8 @@ export function mapSelectionTextChange(
       newText: change.text,
     });
     const nextOffsets: [number, number] = [
-      mergedGroup.start + offsetDelta + postSelectionStartOffset,
-      mergedGroup.start + offsetDelta + postSelectionEndOffset,
+      mergedGroup.start + offsetDelta + change.text.length,
+      mergedGroup.start + offsetDelta + change.text.length,
     ];
     for (const index of mergedGroup.indices) {
       nextSelectionOffsets[index] = nextOffsets;

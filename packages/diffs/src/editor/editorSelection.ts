@@ -11,13 +11,10 @@ export type EditorSelection = Range & {
   direction: SelectionDirection;
 };
 
-export type EditorSelectionTextChange = {
+export type EditorTextChange = {
   start: number;
   end: number;
   text: string;
-  selectionStart: number;
-  selectionEnd: number;
-  direction: SelectionDirection;
 };
 
 /**
@@ -121,6 +118,32 @@ export function isCollapsedSelection(selection: EditorSelection): boolean {
   return (
     selection.start.line === selection.end.line &&
     selection.start.character === selection.end.character
+  );
+}
+
+export function selectionIntersects(
+  a: EditorSelection,
+  b: EditorSelection
+): boolean {
+  const aCollapsed = isCollapsedSelection(a);
+  const bCollapsed = isCollapsedSelection(b);
+  if (aCollapsed && bCollapsed) {
+    return comparePosition(a.start, b.start) === 0;
+  }
+  if (aCollapsed) {
+    return (
+      comparePosition(b.start, a.start) <= 0 &&
+      comparePosition(a.start, b.end) <= 0
+    );
+  }
+  if (bCollapsed) {
+    return (
+      comparePosition(a.start, b.start) <= 0 &&
+      comparePosition(b.start, a.end) <= 0
+    );
+  }
+  return (
+    comparePosition(a.start, b.end) < 0 && comparePosition(b.start, a.end) < 0
   );
 }
 

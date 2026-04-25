@@ -21,7 +21,7 @@ function isMacLike(): boolean {
   return /macOS|MacIntel|iPhone|iPad|iPod/i.test(getPlatform());
 }
 
-export function getPrimaryModifier(event: MouseEvent | KeyboardEvent): boolean {
+export function isPrimaryModifier(event: MouseEvent | KeyboardEvent): boolean {
   return isMacLike()
     ? event.metaKey && !event.ctrlKey
     : event.ctrlKey && !event.metaKey;
@@ -35,7 +35,7 @@ export function resolveEditorCommandFromKeyboardEvent(
   }
 
   const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
-  const hasPrimaryModifier = getPrimaryModifier(event);
+  const hasPrimaryModifier = isPrimaryModifier(event);
   const isMac = isMacLike();
 
   if (!hasPrimaryModifier && key === 'Tab') {

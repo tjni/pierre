@@ -1,9 +1,5 @@
-import {
-  applyOffsetEdits,
-  EditHistory,
-  type ResolvedEdit,
-} from './editHistory';
-import { type EditorSelection } from './editorSelection';
+import { applyOffsetEdits, EditHistory } from './editHistory';
+import { type EditorSelection, type EditorTextChange } from './editorSelection';
 
 /**
  * Position in a text document expressed as zero-based line and character offset.
@@ -180,6 +176,10 @@ export class TextDocument {
     this.#setDocumentText(newText);
   }
 
+  setLastUndoSelectionsAfter(selections: EditorSelection[]): void {
+    this.#history.setLastUndoSelectionsAfter(selections);
+  }
+
   undo(): EditorSelection[] | undefined {
     const entry = this.#history.popUndoToRedo();
     if (entry === undefined) {
@@ -202,7 +202,7 @@ export class TextDocument {
       : undefined;
   }
 
-  #resolveEdit(edit: TextEdit): ResolvedEdit {
+  #resolveEdit(edit: TextEdit): EditorTextChange {
     let start = this.offsetAt(edit.range.start);
     let end = this.offsetAt(edit.range.end);
     if (start > end) {

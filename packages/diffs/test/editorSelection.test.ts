@@ -2,7 +2,9 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   convertSelection,
+  type EditorSelection,
   SelectionDirection,
+  selectionIntersects,
 } from '../src/editor/editorSelection';
 
 type MockNode = {
@@ -34,6 +36,19 @@ function selection(
     focusNode,
     focusOffset,
   } as Selection;
+}
+
+function editorSelection(
+  startLine: number,
+  startCharacter: number,
+  endLine: number,
+  endCharacter: number
+): EditorSelection {
+  return {
+    start: { line: startLine, character: startCharacter },
+    end: { line: endLine, character: endCharacter },
+    direction: SelectionDirection.Forward,
+  };
 }
 
 function pre(line: number, children: MockElement[] = []): MockElement {
@@ -201,5 +216,76 @@ describe('convertSelection', () => {
       end: { line: 5, character: 0 },
       direction: SelectionDirection.None,
     });
+  });
+});
+
+describe('selectionIntersects', () => {
+  test('detects overlapping ranges on the same line', () => {
+    expect(
+      selectionIntersects(
+        editorSelection(0, 2, 0, 6),
+        editorSelection(0, 4, 0, 8)
+      )
+    ).toBe(true);
+  });
+
+  test('detects overlapping ranges across lines', () => {
+    expect(
+      selectionIntersects(
+        editorSelection(0, 2, 2, 3),
+        editorSelection(1, 0, 3, 1)
+      )
+    ).toBe(true);
+  });
+
+  test('does not treat adjacent range boundaries as intersections', () => {
+    expect(
+      selectionIntersects(
+        editorSelection(0, 2, 0, 6),
+        editorSelection(0, 6, 0, 8)
+      )
+    ).toBe(false);
+  });
+
+  test('does not intersect separated ranges', () => {
+    expect(
+      selectionIntersects(
+        editorSelection(0, 2, 0, 4),
+        editorSelection(1, 0, 1, 2)
+      )
+    ).toBe(false);
+  });
+
+  test('treats a caret inside a range as an intersection', () => {
+    expect(
+      selectionIntersects(
+        editorSelection(0, 2, 0, 6),
+        editorSelection(0, 4, 0, 4)
+      )
+    ).toBe(true);
+  });
+
+  test('treats a caret on a range boundary as an intersection', () => {
+    expect(
+      selectionIntersects(
+        editorSelection(0, 2, 0, 6),
+        editorSelection(0, 6, 0, 6)
+      )
+    ).toBe(true);
+  });
+
+  test('matches collapsed selections only at the same position', () => {
+    expect(
+      selectionIntersects(
+        editorSelection(0, 2, 0, 2),
+        editorSelection(0, 2, 0, 2)
+      )
+    ).toBe(true);
+    expect(
+      selectionIntersects(
+        editorSelection(0, 2, 0, 2),
+        editorSelection(0, 3, 0, 3)
+      )
+    ).toBe(false);
   });
 });
