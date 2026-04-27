@@ -63,8 +63,6 @@ export class Editor<LAnnotation> {
   #selectionEndY = 0;
   #textareSelectionStart = 0;
   #shouldIgnoreSelectionChange = false;
-  #textareaBuffer?: { text: string; line: number };
-  #textareaBufferFlushTimeout?: ReturnType<typeof setTimeout>;
   #textareaSnapshot?: TextareaSnapshot;
   #selections?: EditorSelection[];
   #reservedSelections?: EditorSelection[];
@@ -109,8 +107,6 @@ export class Editor<LAnnotation> {
     this.#selectionEls = undefined;
 
     this.#shouldIgnoreSelectionChange = false;
-    this.#textareaBuffer = undefined;
-    this.#textareaBufferFlushTimeout = undefined;
     this.#textareaSnapshot = undefined;
     this.#selections = undefined;
     this.#reservedSelections = undefined;
@@ -256,7 +252,6 @@ export class Editor<LAnnotation> {
       addEventListener(this.#textareaEl, 'keydown', (e) => {
         const command = resolveEditorCommandFromKeyboardEvent(e);
         if (command !== undefined) {
-          this.#flushPendingTextareaChanges();
           e.preventDefault();
           void this.#runCommand(command);
         }
@@ -399,24 +394,6 @@ export class Editor<LAnnotation> {
     }
     const { selectionStart, selectionEnd, value } = textareaEl;
     if (value !== textareaSnapshot.text) {
-      // if (value.split('\n').length !== textareaSnapshot.lines) {
-      //   // new lines have been added, or the number of lines has changed.
-      //   // we need to apply the change to the text document, and rerender the file.
-
-      // } else {
-      //   // text has been changed in a single line
-      //   // rerender the line, and schedule a flush of the pending changes.
-      //   const lineText = value.split('\n')[1];
-      //   this.#rerenderLine(lineText, textareaSnapshot.startLine + 2);
-      //   this.#textareaBuffer = {
-      //     text: value,
-      //     line: textareaSnapshot.startLine,
-      //   };
-      //   this.#textareaBufferFlushTimeout = setTimeout(() => {
-      //     this.#textareaBufferFlushTimeout = undefined;
-      //     this.#flushPendingTextareaChanges();
-      //   }, 500);
-      // }
       const change = resolveTextChange(textareaSnapshot, value);
       this.#applyTextChange(change);
     } else if (
@@ -431,24 +408,6 @@ export class Editor<LAnnotation> {
           textDocument.positionAt(textareaSnapshot.offset + selectionStart)
         )
       );
-    }
-  }
-
-  #flushPendingTextareaChanges() {
-    if (this.#textareaBufferFlushTimeout !== undefined) {
-      window.clearTimeout(this.#textareaBufferFlushTimeout);
-      this.#textareaBufferFlushTimeout = undefined;
-    }
-    if (
-      this.#textareaSnapshot !== undefined &&
-      this.#textareaBuffer !== undefined
-    ) {
-      const change = resolveTextChange(
-        this.#textareaSnapshot,
-        this.#textareaBuffer.text
-      );
-      this.#textareaBuffer = undefined;
-      this.#applyTextChange(change);
     }
   }
 
