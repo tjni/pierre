@@ -289,7 +289,8 @@ export class File<LAnnotation = undefined> {
     // pre-render and we should kick off a render.
     if (this.pre == null && this.headerElement == null) {
       this.render({ ...props, preventEmit: true });
-    } // Otherwise orchestrate our setup.
+    }
+    // Otherwise orchestrate our setup.
     else {
       this.hydrationSetup({ file, lineAnnotations });
     }
@@ -1174,7 +1175,8 @@ export class File<LAnnotation = undefined> {
       this.appliedPreAttributes = undefined;
       this.code = undefined;
       shadowRoot.appendChild(this.pre);
-    } // If we have a new parent container for the pre element, lets go ahead and
+    }
+    // If we have a new parent container for the pre element, lets go ahead and
     // move it into the new container
     else if (this.pre.parentNode !== shadowRoot) {
       container.shadowRoot?.appendChild(this.pre);
