@@ -29,6 +29,9 @@ export const EDITOR_CSS = /* CSS */ `
     padding: 0;
     padding-inline: 1ch;
     transform: translateY(-1lh);
+    color: transparent;
+    color: transparent;
+    background-color: transparent;
     border: none;
     outline: none;
     resize: none;
