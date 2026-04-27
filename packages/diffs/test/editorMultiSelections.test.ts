@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  applySelectionTextChange,
+  applySelectionTextReplace,
   mapSelectionMove,
-  mapSelectionTextChange,
-  mapSelectionTextReplace,
 } from '../src/editor/editorMultiSelections';
 import type { EditorSelection } from '../src/editor/editorSelection';
 import { SelectionDirection } from '../src/editor/editorSelection';
@@ -31,17 +31,11 @@ describe('mapSelectionTextChange', () => {
       createSelection(1, 1, 1, 1),
       createSelection(2, 1, 2, 1),
     ];
-    const { edits, nextSelections } = mapSelectionTextChange(
-      textDocument,
-      selections,
-      {
-        start: 5,
-        end: 5,
-        text: '!',
-      }
-    );
-
-    textDocument.applyEdits(edits);
+    const nextSelections = applySelectionTextChange(textDocument, selections, {
+      start: 5,
+      end: 5,
+      text: '!',
+    });
 
     expect(textDocument.getText()).toBe('a!\nb!\nc!');
     expect(nextSelections).toEqual([
@@ -58,17 +52,11 @@ describe('mapSelectionTextChange', () => {
       createSelection(0, 4, 0, 7, SelectionDirection.Forward),
       createSelection(0, 8, 0, 11, SelectionDirection.Forward),
     ];
-    const { edits, nextSelections } = mapSelectionTextChange(
-      textDocument,
-      selections,
-      {
-        start: 8,
-        end: 11,
-        text: 'x',
-      }
-    );
-
-    textDocument.applyEdits(edits);
+    const nextSelections = applySelectionTextChange(textDocument, selections, {
+      start: 8,
+      end: 11,
+      text: 'x',
+    });
 
     expect(textDocument.getText()).toBe('x x x');
     expect(nextSelections).toEqual([
@@ -85,17 +73,11 @@ describe('mapSelectionTextChange', () => {
       createSelection(1, 1, 1, 1),
       createSelection(2, 1, 2, 1),
     ];
-    const { edits, nextSelections } = mapSelectionTextChange(
-      textDocument,
-      selections,
-      {
-        start: 6,
-        end: 7,
-        text: '',
-      }
-    );
-
-    textDocument.applyEdits(edits);
+    const nextSelections = applySelectionTextChange(textDocument, selections, {
+      start: 6,
+      end: 7,
+      text: '',
+    });
 
     expect(textDocument.getText()).toBe('x\nx\nx');
     expect(nextSelections).toEqual([
@@ -111,17 +93,11 @@ describe('mapSelectionTextChange', () => {
       createSelection(0, 1, 0, 1),
       createSelection(0, 2, 0, 2),
     ];
-    const { edits, nextSelections } = mapSelectionTextChange(
-      textDocument,
-      selections,
-      {
-        start: 0,
-        end: 2,
-        text: '',
-      }
-    );
-
-    textDocument.applyEdits(edits);
+    const nextSelections = applySelectionTextChange(textDocument, selections, {
+      start: 0,
+      end: 2,
+      text: '',
+    });
 
     expect(textDocument.getText()).toBe('  ');
     expect(nextSelections).toEqual([
@@ -173,13 +149,11 @@ describe('mapSelectionTextReplace', () => {
       createSelection(1, 1, 1, 1),
       createSelection(2, 1, 2, 1),
     ];
-    const { edits, nextSelections } = mapSelectionTextReplace(
-      textDocument,
-      selections,
-      ['a', 'b', 'c']
-    );
-
-    textDocument.applyEdits(edits);
+    const nextSelections = applySelectionTextReplace(textDocument, selections, [
+      'a',
+      'b',
+      'c',
+    ]);
 
     expect(textDocument.getText()).toBe('xa\nyb\nzc');
     expect(nextSelections).toEqual([

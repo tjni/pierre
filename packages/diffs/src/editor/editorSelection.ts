@@ -19,33 +19,20 @@ export type EditorTextChange = {
 
 /**
  * Converts a selection from a web selection to an editor selection.
- * @param selection - The web selection to convert.
- * @returns The converted editor selection.
  */
-export function convertSelection({
-  rangeCount,
-  anchorNode,
-  focusNode,
-  anchorOffset,
-  focusOffset,
-}: Selection): EditorSelection | null {
-  if (rangeCount === 0 || anchorNode === null || focusNode === null) {
+export function convertSelection(
+  composedRanges: StaticRange[],
+  direction: SelectionDirection = SelectionDirection.None
+): EditorSelection | null {
+  const range = composedRanges[composedRanges.length - 1];
+  if (range === undefined) {
     return null;
   }
-  const anchor = boundaryToPosition(anchorNode, anchorOffset);
-  const focus = boundaryToPosition(focusNode, focusOffset);
-  if (anchor === null || focus === null) {
+  const start = boundaryToPosition(range.startContainer, range.startOffset);
+  const end = boundaryToPosition(range.endContainer, range.endOffset);
+  if (start === null || end === null) {
     return null;
   }
-  const order = comparePosition(anchor, focus);
-  const direction =
-    order === 0
-      ? SelectionDirection.None
-      : order < 0
-        ? SelectionDirection.Forward
-        : SelectionDirection.Backward;
-  const start = direction === SelectionDirection.Forward ? anchor : focus;
-  const end = direction === SelectionDirection.Forward ? focus : anchor;
   return {
     start,
     end,
@@ -63,12 +50,12 @@ export function resolveIndentEdits(
     return [[], selection];
   }
   const { start, end } = selection;
+  const edits: TextEdit[] = [];
+  let newSelection: EditorSelection = { ...selection };
   let endLine = end.line;
   if (start.line < end.line && end.character === 0) {
     endLine--;
   }
-  const edits: TextEdit[] = [];
-  const newSelection: EditorSelection = { ...selection };
   for (let line = start.line; line <= endLine; line++) {
     const lineText = textDocument.getLineText(line);
     if (lineText === undefined) {
@@ -99,15 +86,21 @@ export function resolveIndentEdits(
     });
     const delte = newText.length - deleteLength;
     if (line === start.line) {
-      newSelection.start = {
-        ...start,
-        character: Math.max(0, start.character + delte),
+      newSelection = {
+        ...newSelection,
+        start: {
+          ...start,
+          character: Math.max(0, start.character + delte),
+        },
       };
     }
     if (line === end.line) {
-      newSelection.end = {
-        ...end,
-        character: Math.max(0, end.character + delte),
+      newSelection = {
+        ...newSelection,
+        end: {
+          ...end,
+          character: Math.max(0, end.character + delte),
+        },
       };
     }
   }
@@ -147,31 +140,12 @@ export function selectionIntersects(
   );
 }
 
+/** Get the primary(last) selection from the list of selections */
 export function getPrimarySelection(
   selections: readonly EditorSelection[]
 ): EditorSelection | undefined {
   const selection = selections[selections.length - 1];
   return selection !== undefined ? { ...selection } : undefined;
-}
-
-export function toWebSelectionDirection(
-  direction: SelectionDirection
-): 'none' | 'forward' | 'backward' {
-  return direction === SelectionDirection.None
-    ? 'none'
-    : direction === SelectionDirection.Forward
-      ? 'forward'
-      : 'backward';
-}
-
-export function fromWebSelectionDirection(
-  direction: 'none' | 'forward' | 'backward'
-): SelectionDirection {
-  return direction === 'none'
-    ? SelectionDirection.None
-    : direction === 'forward'
-      ? SelectionDirection.Forward
-      : SelectionDirection.Backward;
 }
 
 export function comparePosition(a: Position, b: Position): number {
@@ -187,13 +161,24 @@ function boundaryToPosition(node: Node, offset: number): Position | null {
     if (parent === null) {
       return null;
     }
+    if (parent.tagName === 'DIV') {
+      const childIndex = Array.prototype.indexOf.call(parent.childNodes, node);
+      const position = getPositionWithinPre(parent, childIndex);
+      return position === null
+        ? null
+        : {
+            ...position,
+            character:
+              position.character + getTextOffset(node.textContent, offset),
+          };
+    }
     if (parent.tagName === 'SPAN') {
       const pre = parent.parentElement;
-      if (pre === null || pre.tagName !== 'PRE') {
+      if (pre === null || pre.tagName !== 'DIV') {
         return null;
       }
-      const line = getLineProp(pre);
-      const base = getCharacterProp(parent);
+      const line = getLineIndex(pre);
+      const base = getCharacterIndex(parent);
       if (line !== undefined && base !== undefined) {
         return { line, character: base + offset };
       }
@@ -206,26 +191,26 @@ function boundaryToPosition(node: Node, offset: number): Position | null {
   }
   if (node.nodeType === 1) {
     const el = node as HTMLElement;
-    if (el.tagName === 'PRE') {
+    if (el.tagName === 'DIV') {
       return getPositionWithinPre(el, offset);
     }
     if (el.tagName === 'BR') {
       const pre = el.parentElement;
-      if (pre === null || pre.tagName !== 'PRE') {
+      if (pre === null || pre.tagName !== 'DIV') {
         return null;
       }
-      const line = getLineProp(pre);
+      const line = getLineIndex(pre);
       if (line !== undefined) {
         return { line, character: 0 };
       }
     }
     if (el.tagName === 'SPAN') {
       const pre = el.parentElement;
-      if (pre === null || pre.tagName !== 'PRE') {
+      if (pre === null || pre.tagName !== 'DIV') {
         return null;
       }
-      const line = getLineProp(pre);
-      const base = getCharacterProp(el);
+      const line = getLineIndex(pre);
+      const base = getCharacterIndex(el);
       if (line !== undefined && base !== undefined) {
         let character = base;
         for (let i = 0; i < offset; i++) {
@@ -246,16 +231,20 @@ function getPositionWithinPre(
   pre: HTMLElement,
   offset: number
 ): Position | null {
-  const line = getLineProp(pre);
+  const line = getLineIndex(pre);
   if (line === undefined) {
     return null;
   }
   let character = 0;
   for (let i = 0; i < offset; i++) {
-    const c = pre.children[i];
-    if (c?.tagName === 'SPAN') {
+    const c = pre.childNodes[i];
+    if (c?.nodeType === 3) {
+      character += getTextOffset(c.textContent, c.textContent?.length ?? 0);
+      continue;
+    }
+    if (c?.nodeType === 1 && (c as HTMLElement).tagName === 'SPAN') {
       const span = c as HTMLElement;
-      const o = getCharacterProp(span);
+      const o = getCharacterIndex(span);
       if (o === undefined) {
         continue;
       }
@@ -272,11 +261,11 @@ function getDirectPreChild(
   let current =
     node.nodeType === 1 ? (node as HTMLElement) : node.parentElement;
   while (current !== null && current.parentElement !== null) {
-    if (current.parentElement.tagName === 'PRE') {
+    if (current.parentElement.tagName === 'DIV') {
       return {
         pre: current.parentElement,
         childIndex: Array.prototype.indexOf.call(
-          current.parentElement.children,
+          current.parentElement.childNodes,
           current
         ),
       };
@@ -286,12 +275,24 @@ function getDirectPreChild(
   return null;
 }
 
-function getLineProp(el: HTMLElement): number | undefined {
-  // oxlint-disable-next-line typescript/no-explicit-any
-  return (el as any).LINE as number | undefined;
+function getLineIndex(el: HTMLElement): number | undefined {
+  const { lineIndex } = el.dataset;
+  return lineIndex !== undefined ? parseInt(lineIndex) : undefined;
 }
 
-function getCharacterProp(el: HTMLElement): number | undefined {
-  // oxlint-disable-next-line typescript/no-explicit-any
-  return (el as any).CHAR as number | undefined;
+function getCharacterIndex(el: HTMLElement): number | undefined {
+  const { char } = el.dataset;
+  return char !== undefined ? parseInt(char) : undefined;
+}
+
+function getTextOffset(
+  text: string | null | undefined,
+  offset: number
+): number {
+  const value = text ?? '';
+  const lineBreakIndex = value.search(/[\r\n]/);
+  return Math.min(
+    offset,
+    lineBreakIndex === -1 ? value.length : lineBreakIndex
+  );
 }

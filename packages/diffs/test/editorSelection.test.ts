@@ -21,21 +21,24 @@ type MockElement = MockNode & {
   parentElement?: MockElement | null;
   children: MockElement[];
   childNodes: MockNode[];
+  dataset: Record<string, string>;
 };
 
-function selection(
-  anchorNode: Node,
-  anchorOffset: number,
-  focusNode: Node,
-  focusOffset: number
-): Selection {
-  return {
-    rangeCount: 1,
-    anchorNode,
-    anchorOffset,
-    focusNode,
-    focusOffset,
-  } as Selection;
+function composedRange(
+  startContainer: Node,
+  startOffset: number,
+  endContainer = startContainer,
+  endOffset = startOffset
+): StaticRange[] {
+  return [
+    {
+      startContainer,
+      startOffset,
+      endContainer,
+      endOffset,
+      collapsed: startContainer === endContainer && startOffset === endOffset,
+    } as StaticRange,
+  ];
 }
 
 function editorSelection(
@@ -54,14 +57,36 @@ function editorSelection(
 function pre(line: number, children: MockElement[] = []): MockElement {
   const element: MockElement = {
     nodeType: 1,
-    tagName: 'PRE',
+    tagName: 'DIV',
     parentElement: null,
     children,
     childNodes: children,
     textContent: null,
+    dataset: { lineIndex: String(line) },
   };
-  Reflect.set(element, 'LINE', line);
   for (const child of children) {
+    child.parentElement = element;
+  }
+  return element;
+}
+
+function text(textContent: string): MockNode {
+  return {
+    nodeType: 3,
+    textContent,
+  };
+}
+
+function line(line: number, childNodes: MockNode[]): MockElement {
+  const element = pre(
+    line,
+    childNodes.filter((child): child is MockElement => child.nodeType === 1)
+  );
+  element.childNodes = childNodes;
+  element.textContent = childNodes
+    .map((child) => child.textContent ?? '')
+    .join('');
+  for (const child of childNodes) {
     child.parentElement = element;
   }
   return element;
@@ -75,6 +100,7 @@ function br(): MockElement {
     children: [],
     childNodes: [],
     textContent: '',
+    dataset: {},
   };
 }
 
@@ -90,10 +116,11 @@ function span(text: string, char?: number): MockElement {
     children: [],
     childNodes: [textNode],
     textContent: text,
+    dataset: {},
   };
   textNode.parentElement = element;
   if (char !== undefined) {
-    Reflect.set(element, 'CHAR', char);
+    element.dataset.char = String(char);
   }
   return element;
 }
@@ -110,6 +137,7 @@ function button(text: string): MockElement {
     children: [],
     childNodes: [textNode],
     textContent: text,
+    dataset: {},
   };
   textNode.parentElement = element;
   return element;
@@ -125,6 +153,7 @@ function element(tagName: string, children: MockNode[] = []): MockElement {
     ),
     childNodes: children,
     textContent: children.map((child) => child.textContent ?? '').join(''),
+    dataset: {},
   };
   for (const child of children) {
     child.parentElement = el;
@@ -135,61 +164,88 @@ function element(tagName: string, children: MockNode[] = []): MockElement {
 describe('convertSelection', () => {
   test('maps a caret on an empty rendered line to character zero', () => {
     const line = pre(1, [br()]);
-    expect(
-      convertSelection(
-        selection(line as unknown as Node, 0, line as unknown as Node, 0)
-      )
-    ).toEqual({
-      start: { line: 1, character: 0 },
-      end: { line: 1, character: 0 },
-      direction: SelectionDirection.None,
-    });
+    expect(convertSelection(composedRange(line as unknown as Node, 0))).toEqual(
+      {
+        start: { line: 1, character: 0 },
+        end: { line: 1, character: 0 },
+        direction: SelectionDirection.None,
+      }
+    );
   });
 
   test('treats a placeholder br boundary as the start of the line', () => {
     const line = pre(2, [br()]);
-    expect(
-      convertSelection(
-        selection(line as unknown as Node, 1, line as unknown as Node, 1)
-      )
-    ).toEqual({
-      start: { line: 2, character: 0 },
-      end: { line: 2, character: 0 },
-      direction: SelectionDirection.None,
-    });
+    expect(convertSelection(composedRange(line as unknown as Node, 1))).toEqual(
+      {
+        start: { line: 2, character: 0 },
+        end: { line: 2, character: 0 },
+        direction: SelectionDirection.None,
+      }
+    );
   });
 
   test('ignores the line number gutter span on an empty line', () => {
     const line = pre(3, [span('4'), br()]);
-    expect(
-      convertSelection(
-        selection(line as unknown as Node, 1, line as unknown as Node, 1)
-      )
-    ).toEqual({
-      start: { line: 3, character: 0 },
-      end: { line: 3, character: 0 },
-      direction: SelectionDirection.None,
-    });
-    expect(
-      convertSelection(
-        selection(line as unknown as Node, 2, line as unknown as Node, 2)
-      )
-    ).toEqual({
-      start: { line: 3, character: 0 },
-      end: { line: 3, character: 0 },
-      direction: SelectionDirection.None,
-    });
+    expect(convertSelection(composedRange(line as unknown as Node, 1))).toEqual(
+      {
+        start: { line: 3, character: 0 },
+        end: { line: 3, character: 0 },
+        direction: SelectionDirection.None,
+      }
+    );
+    expect(convertSelection(composedRange(line as unknown as Node, 2))).toEqual(
+      {
+        start: { line: 3, character: 0 },
+        end: { line: 3, character: 0 },
+        direction: SelectionDirection.None,
+      }
+    );
   });
 
   test('ignores the fold toggle button in the gutter', () => {
     const line = pre(4, [span('5'), button('>'), span('color', 0)]);
+    expect(convertSelection(composedRange(line as unknown as Node, 2))).toEqual(
+      {
+        start: { line: 4, character: 0 },
+        end: { line: 4, character: 0 },
+        direction: SelectionDirection.None,
+      }
+    );
+  });
+
+  test('maps a direct line text node to its character offset', () => {
+    const textNode = text('abcdef');
+    line(6, [textNode]);
     expect(
-      convertSelection(
-        selection(line as unknown as Node, 2, line as unknown as Node, 2)
-      )
+      convertSelection(composedRange(textNode as unknown as Node, 2))
     ).toEqual({
-      start: { line: 4, character: 0 },
-      end: { line: 4, character: 0 },
+      start: { line: 6, character: 2 },
+      end: { line: 6, character: 2 },
+      direction: SelectionDirection.None,
+    });
+  });
+
+  test('maps a span text node from its data-char base', () => {
+    const token = span('abcdef', 10);
+    const textNode = token.childNodes[0];
+    pre(7, [token]);
+    expect(
+      convertSelection(composedRange(textNode as unknown as Node, 3))
+    ).toEqual({
+      start: { line: 7, character: 13 },
+      end: { line: 7, character: 13 },
+      direction: SelectionDirection.None,
+    });
+  });
+
+  test('ignores newline placeholders in direct line text nodes', () => {
+    const textNode = text('\n');
+    line(8, [textNode]);
+    expect(
+      convertSelection(composedRange(textNode as unknown as Node, 1))
+    ).toEqual({
+      start: { line: 8, character: 0 },
+      end: { line: 8, character: 0 },
       direction: SelectionDirection.None,
     });
   });
@@ -199,23 +255,19 @@ describe('convertSelection', () => {
     const toggle = element('BUTTON', [icon]);
     pre(5, [span('6'), toggle, br()]);
     expect(
-      convertSelection(
-        selection(toggle as unknown as Node, 0, toggle as unknown as Node, 0)
-      )
+      convertSelection(composedRange(toggle as unknown as Node, 0))
     ).toEqual({
       start: { line: 5, character: 0 },
       end: { line: 5, character: 0 },
       direction: SelectionDirection.None,
     });
-    expect(
-      convertSelection(
-        selection(icon as unknown as Node, 0, icon as unknown as Node, 0)
-      )
-    ).toEqual({
-      start: { line: 5, character: 0 },
-      end: { line: 5, character: 0 },
-      direction: SelectionDirection.None,
-    });
+    expect(convertSelection(composedRange(icon as unknown as Node, 0))).toEqual(
+      {
+        start: { line: 5, character: 0 },
+        end: { line: 5, character: 0 },
+        direction: SelectionDirection.None,
+      }
+    );
   });
 });
 

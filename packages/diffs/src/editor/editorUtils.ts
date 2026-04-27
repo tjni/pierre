@@ -1,21 +1,38 @@
 export function createElement<K extends keyof HTMLElementTagNameMap>(
   tagName: K,
-  props?: {
+  props: {
     id?: string;
     class?: string;
-    style?: Record<string, string | undefined>;
-  },
-  parent?: Element
+    style?: Partial<CSSStyleDeclaration>;
+    dataset?: DOMStringMap | string[] | string;
+    textContent?: string;
+  } = {},
+  parent?: Element | ShadowRoot
 ): HTMLElementTagNameMap[K] {
   const el = document.createElement(tagName);
-  if (props?.class) {
-    el.className = props.class;
+  const { id, class: className, style, dataset, textContent } = props;
+  if (id) {
+    el.id = id;
   }
-  if (props?.style !== undefined) {
-    Object.assign(el.style, props.style);
+  if (className !== undefined) {
+    el.className = className;
   }
-  if (props?.id) {
-    el.id = props.id;
+  if (style !== undefined) {
+    Object.assign(el.style, style);
+  }
+  if (dataset !== undefined) {
+    if (typeof dataset === 'string') {
+      el.dataset[dataset] = '';
+    } else if (Array.isArray(dataset)) {
+      dataset.forEach((key) => {
+        el.dataset[key] = '';
+      });
+    } else {
+      Object.assign(el.dataset, dataset);
+    }
+  }
+  if (textContent !== undefined) {
+    el.textContent = textContent;
   }
   if (parent !== undefined) {
     parent.appendChild(el);
@@ -39,7 +56,7 @@ export function addEventListener<K extends keyof WindowEventMap>(
   listener: (this: Window, evt: WindowEventMap[K]) => void
 ): () => void;
 export function addEventListener(
-  el: HTMLElement | Document | Window,
+  el: HTMLElement | Document | ShadowRoot | Window,
   event: string,
   listener: EventListener
 ) {
@@ -49,65 +66,14 @@ export function addEventListener(
   };
 }
 
-export function getRootCssVariableValue(
-  variableName: string
-): string | undefined {
-  const value = getComputedStyle(document.documentElement)
-    .getPropertyValue(variableName)
-    .trim();
-  return value !== '' ? value : undefined;
-}
-
-export function parseCssValue(value: string): [value: number, unit: string] {
-  const parsedValue = Number.parseFloat(value);
-  if (!Number.isFinite(parsedValue)) {
-    return [0, ''];
+export function isCodeLineTarget(target?: EventTarget): target is HTMLElement {
+  if (target === undefined || !(target instanceof HTMLElement)) {
+    return false;
   }
-  let unitStartIndex = -1;
-  for (let i = 0; i < value.length; i++) {
-    const code = value.charCodeAt(i);
-    if (
-      code !== /*.*/ 46 &&
-      (code < /*0*/ 48 || code > /*9*/ 57) &&
-      i !== 0 &&
-      i !== value.length - 1
-    ) {
-      unitStartIndex = i;
-      break;
-    }
-  }
-  return [parsedValue, unitStartIndex > 0 ? value.slice(unitStartIndex) : ''];
-}
-
-export function coalesceMicrotask(run: () => void): () => void {
-  let queued = false;
-  return () => {
-    if (queued) {
-      return;
-    }
-    queued = true;
-    queueMicrotask(() => {
-      queued = false;
-      run();
-    });
-  };
-}
-
-export function measureMonoFontWidth(font: string): number {
-  const canvas = createElement('canvas');
-  const context = canvas.getContext('2d');
-  if (context === null) {
-    throw new Error('measureMonoFontWidth: Failed to get canvas context');
-  }
-  context.font = font;
-  const width = context.measureText('0').width;
-  for (let i = 1; i < 16; i++) {
-    const w = context.measureText(i.toString(16)).width;
-    if (w !== width) {
-      throw new Error(`The font "${font}" isn't a monospace font`);
-    }
-  }
-  return width;
+  return (
+    (target.tagName === 'DIV' && target.dataset.line !== undefined) ||
+    (target.tagName === 'SPAN' && target.dataset.char !== undefined)
+  );
 }
 
 export function getLineIndentation(lineText: string): string {
@@ -129,9 +95,6 @@ export function getLineIndentationUnit(
 ): string {
   if (lineText.startsWith('\t')) {
     return '\t';
-  }
-  if (lineText.startsWith(' ')) {
-    return ' '.repeat(Math.max(1, Math.min(tabSize, lineText.length)));
   }
   return ' '.repeat(tabSize);
 }

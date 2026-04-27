@@ -172,6 +172,28 @@ export class File<LAnnotation = undefined> {
     this.workerManager?.subscribeToThemeChanges(this);
   }
 
+  private __onEditableHandler:
+    | ((file: FileContents, fileContainer: HTMLElement) => void)
+    | undefined;
+  public __onEditable(
+    callback: (fileContents: FileContents, fileContainer: HTMLElement) => void
+  ): void {
+    if (this.fileContainer !== undefined && this.file !== undefined) {
+      callback(this.file, this.fileContainer);
+    }
+    this.__onEditableHandler = callback;
+  }
+  public __rerender(file: FileContents): void {
+    this.file = file;
+    const fileResult = this.fileRenderer.renderFile(file, this.renderRange);
+    if (fileResult == null || this.pre == null) {
+      return;
+    }
+    console.log('__rerender', fileResult);
+    this.applyFullRender(fileResult, this.pre);
+    this.__onEditableHandler?.(file, this.fileContainer!);
+  }
+
   private handleHighlightRender = (): void => {
     this.rerender();
   };
@@ -463,6 +485,7 @@ export class File<LAnnotation = undefined> {
       if (!preventEmit) {
         this.emitPostRender();
       }
+      this.__onEditableHandler?.(file, fileContainer);
       return true;
     }
 
@@ -513,6 +536,7 @@ export class File<LAnnotation = undefined> {
     if (!preventEmit) {
       this.emitPostRender();
     }
+    this.__onEditableHandler?.(file, fileContainer);
     return true;
   }
 

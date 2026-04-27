@@ -77,7 +77,6 @@ const diffInstances: (
   | VirtualizedFileDiff<LineCommentMetadata>
 )[] = [];
 const fileInstances: File<LineCommentMetadata>[] = [];
-const editorInstances: Editor[] = [];
 const streamingInstances: FileStream[] = [];
 const conflictInstances: UnresolvedFile<LineCommentMetadata>[] = [];
 
@@ -91,7 +90,6 @@ function cleanupInstances(container: HTMLElement) {
   for (const instances of [
     diffInstances,
     fileInstances,
-    editorInstances,
     streamingInstances,
     conflictInstances,
   ]) {
@@ -629,7 +627,6 @@ function toggleTheme() {
 
   for (const instances of [
     diffInstances,
-    editorInstances,
     fileInstances,
     streamingInstances,
     conflictInstances,
@@ -804,15 +801,138 @@ if (renderFileButton != null) {
 const renderEditorButton = document.getElementById('render-editor');
 if (renderEditorButton != null) {
   // oxlint-disable-next-line @typescript-oxlint/no-misused-promises
-  renderEditorButton.addEventListener('click', () => {
+  renderEditorButton.addEventListener('click', async () => {
+    const file = await fileExample;
     const wrapper = document.getElementById('wrapper');
     if (wrapper == null) return;
     cleanupInstances(wrapper);
 
-    const editor = new Editor({ theme: DEMO_THEME, themeType: getThemeType() });
-    editor.render({ editorContainer: wrapper });
-    editor.setText(tsContent, 'tsx');
-    editorInstances.push(editor);
+    virtualizer?.setup(globalThis.document);
+    const wrap = getWrapped();
+    const fileContainer = document.createElement(DIFFS_TAG_NAME);
+    wrapper.appendChild(fileContainer);
+    let instance:
+      | File<LineCommentMetadata>
+      | VirtualizedFile<LineCommentMetadata>;
+    const options: FileOptions<LineCommentMetadata> = {
+      overflow: wrap ? 'wrap' : 'scroll',
+      theme: DEMO_THEME,
+      themeType: getThemeType(),
+      renderAnnotation,
+      renderCustomMetadata() {
+        return createCollapsedToggle(
+          instance?.options.collapsed ?? false,
+          (checked) => {
+            instance?.setOptions({
+              ...instance.options,
+              collapsed: checked,
+            });
+            if (!VIRTUALIZE) {
+              void instance.rerender();
+            }
+          }
+        );
+      },
+
+      // Line selection stuff
+      enableLineSelection: true,
+      // onLineClick(props) {
+      //   console.log('onLineClick', props);
+      // },
+      // onLineNumberClick(props) {
+      //   console.info('onLineNumberClick', props);
+      // },
+      // onLineSelected(props) {
+      //   console.log('onLineSelected', props);
+      // },
+      // onLineSelectionStart(props) {
+      //   console.log('onLineSelectionStart', props);
+      // },
+      // onLineSelectionChange(props) {
+      //   console.log('onLineSelectionChange', props);
+      // },
+      // onLineSelectionEnd(props) {
+      //   console.log('onLineSelectionEnd', props);
+      // },
+      // Super noisy, but for debuggin
+      // onLineEnter(props) {
+      //   console.log('onLineEnter', props);
+      // },
+      // onLineLeave(props) {
+      //   console.log('onLineLeave', props);
+      // },
+
+      // Hover Decoration Snippets
+      enableGutterUtility: true,
+      // onGutterUtilityClick(event) {
+      //   console.log('onGutterUtilityClick', event);
+      // },
+      // renderGutterUtility(getHoveredLine) {
+      //   const el = document.createElement('div');
+      //   el.style.width = '20px';
+      //   el.style.height = '20px';
+      //   el.style.backgroundColor = 'blue';
+      //   el.style.borderRadius = '2px';
+      //   el.style.marginRight = '-10px';
+      //   el.style.textAlign = 'center';
+      //   el.style.color = 'white';
+      //   el.innerText = '+';
+      //   el.addEventListener('click', (event) => {
+      //     event.stopPropagation();
+      //     console.log('ZZZZ - clicked', getHoveredLine());
+      //   });
+      //   el.addEventListener('mousedown', (event) => {
+      //     event.stopPropagation();
+      //   });
+      //   return el;
+      // },
+
+      // Token Testing Helpers
+      // onTokenEnter(props) {
+      //   console.log(
+      //     'enter',
+      //     props.tokenText,
+      //     props.lineNumber,
+      //     props.lineCharStart
+      //   );
+      //   props.tokenElement.style.backgroundColor = 'light-dark(black, white)';
+      //   props.tokenElement.style.color = 'light-dark(white, black)';
+      //   props.tokenElement.style.borderRadius = '2px';
+      // },
+      // onTokenLeave(props) {
+      //   console.log(
+      //     'leave',
+      //     props.tokenText,
+      //     props.lineNumber,
+      //     props.lineCharStart
+      //   );
+      //   props.tokenElement.style.backgroundColor = '';
+      //   props.tokenElement.style.color = '';
+      //   props.tokenElement.style.borderRadius = '';
+      // },
+    };
+
+    instance = (() => {
+      if (virtualizer != null) {
+        return new VirtualizedFile<LineCommentMetadata>(
+          options,
+          virtualizer,
+          undefined,
+          poolManager
+        );
+      } else {
+        return new File<LineCommentMetadata>(options, poolManager);
+      }
+    })();
+    instance.render({
+      file,
+      lineAnnotations: FAKE_LINE_ANNOTATIONS,
+      fileContainer,
+    });
+    fileInstances.push(instance);
+
+    const editor = new Editor();
+    editor.edit(instance);
   });
 }
 

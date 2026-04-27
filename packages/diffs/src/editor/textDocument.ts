@@ -51,11 +51,11 @@ export interface Range {
   /**
    * The range's start position.
    */
-  start: Position;
+  readonly start: Position;
   /**
    * The range's end position.
    */
-  end: Position;
+  readonly end: Position;
 }
 
 /**
@@ -66,12 +66,12 @@ export interface TextEdit {
    * The range of the text document to be manipulated. To insert
    * text into a document create a range where start === end.
    */
-  range: Range;
+  readonly range: Range;
   /**
    * The string to be inserted. For delete operations use an
    * empty string.
    */
-  newText: string;
+  readonly newText: string;
 }
 
 type LineOffsets = number[] & {

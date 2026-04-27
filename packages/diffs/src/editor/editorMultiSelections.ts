@@ -1,15 +1,9 @@
-import { applyOffsetEdits } from './editHistory';
 import {
   type EditorSelection,
   type EditorTextChange,
   SelectionDirection,
 } from './editorSelection';
 import { type Position, TextDocument, type TextEdit } from './textDocument';
-
-type SelectionEditMapping = {
-  edits: TextEdit[];
-  nextSelections: EditorSelection[];
-};
 
 export function mapSelectionMove(
   textDocument: TextDocument,
@@ -52,14 +46,14 @@ export function mapSelectionMove(
   });
 }
 
-export function mapSelectionTextChange(
+export function applySelectionTextChange(
   textDocument: TextDocument,
-  selections: readonly EditorSelection[],
+  selections: EditorSelection[],
   change: EditorTextChange
-): SelectionEditMapping {
+): EditorSelection[] {
   const primarySelection = selections[selections.length - 1];
   if (primarySelection === undefined) {
-    return { edits: [], nextSelections: [] };
+    return [];
   }
   const primaryStartOffset = textDocument.offsetAt(primarySelection.start);
   const primaryEndOffset = textDocument.offsetAt(primarySelection.end);
@@ -133,31 +127,19 @@ export function mapSelectionTextChange(
     };
   }
   finalizeMergedGroup();
-  const nextDocument = new TextDocument(
-    textDocument.uri,
-    applyOffsetEdits(
-      textDocument.getText(),
-      edits.map((edit) => ({
-        start: textDocument.offsetAt(edit.range.start),
-        end: textDocument.offsetAt(edit.range.end),
-        text: edit.newText,
-      }))
-    ),
-    textDocument.languageId
+  textDocument.applyEdits(edits, true, selections);
+  const nextSelections = nextSelectionOffsets.map((offsets) =>
+    createSelectionFromAnchorAndFocusOffsets(textDocument, ...offsets)
   );
-  return {
-    edits,
-    nextSelections: nextSelectionOffsets.map((offsets) =>
-      createSelectionFromAnchorAndFocusOffsets(nextDocument, ...offsets)
-    ),
-  };
+  textDocument.setLastUndoSelectionsAfter(nextSelections);
+  return nextSelections;
 }
 
-export function mapSelectionTextReplace(
+export function applySelectionTextReplace(
   textDocument: TextDocument,
-  selections: readonly EditorSelection[],
+  selections: EditorSelection[],
   texts: readonly string[]
-): SelectionEditMapping {
+): EditorSelection[] {
   if (selections.length !== texts.length) {
     throw new Error(
       'Selection text replacements must match the selection count'
@@ -203,31 +185,12 @@ export function mapSelectionTextReplace(
       entry.start + offsetDelta + entry.text.length;
     offsetDelta += entry.text.length - (entry.end - entry.start);
   }
-  const nextDocument = createTextDocumentAfterEdits(textDocument, edits);
-  return {
-    edits,
-    nextSelections: nextSelectionOffsets.map((offset) =>
-      createSelectionFromAnchorAndFocusOffsets(nextDocument, offset, offset)
-    ),
-  };
-}
-
-function createTextDocumentAfterEdits(
-  textDocument: TextDocument,
-  edits: readonly TextEdit[]
-) {
-  return new TextDocument(
-    textDocument.uri,
-    applyOffsetEdits(
-      textDocument.getText(),
-      edits.map((edit) => ({
-        start: textDocument.offsetAt(edit.range.start),
-        end: textDocument.offsetAt(edit.range.end),
-        text: edit.newText,
-      }))
-    ),
-    textDocument.languageId
+  textDocument.applyEdits(edits, true, selections);
+  const nextSelections = nextSelectionOffsets.map((offset) =>
+    createSelectionFromAnchorAndFocusOffsets(textDocument, offset, offset)
   );
+  textDocument.setLastUndoSelectionsAfter(nextSelections);
+  return nextSelections;
 }
 
 function createSelectionFromAnchorAndFocusOffsets(

@@ -1209,7 +1209,7 @@ export class InteractionManager<TMode extends InteractionManagerMode> {
     for (const code of codeElements) {
       const [gutter, content] = code.children;
       const len = content.children.length;
-      if (len !== gutter.children.length) {
+      if (len < gutter.children.length) {
         throw new Error(
           'InteractionManager.renderSelection: gutter and content children dont match, something is wrong'
         );
