@@ -1,3 +1,4 @@
+import { areThemesAttached, DEFAULT_THEMES, getHighlighterIfLoaded } from '..';
 import type { File } from '../components/File';
 import {
   type EditorCommand,
@@ -35,11 +36,15 @@ import {
   isCodeLineTarget,
 } from '../editor/editorUtils';
 import { TextDocument, type TextEdit } from '../editor/textDocument';
-import type { FileContents } from '../types';
+import type { FileRenderer } from '../renderers/FileRenderer';
+import type { FileContents, RenderRange } from '../types';
+import { renderFileWithHighlighter } from '../utils/renderFileWithHighlighter';
 import { EDITOR_CSS } from './constants';
 
-export class Editor<T> {
-  #file?: File<T>;
+export class Editor<LAnnotation> {
+  #file?: File<LAnnotation>;
+  #fileRenderer?: FileRenderer<LAnnotation>;
+  #renderRange?: RenderRange;
   #fileContents?: FileContents;
   #textDocument?: TextDocument;
   #onChange?: (file: FileContents) => void;
@@ -70,10 +75,20 @@ export class Editor<T> {
     return this.#textDocument?.getText();
   }
 
-  edit(file: File<T>, onChange?: (file: FileContents) => void): () => void {
-    file.__onEditable((fileContents, fileContainer) => {
-      this.#onEditable(fileContents, fileContainer);
-    });
+  edit(
+    file: File<LAnnotation>,
+    onChange?: (file: FileContents) => void
+  ): () => void {
+    file.__addEditorHook(
+      (fileRenderer, fileContainer, fileContents, renderRange) => {
+        this.#initialize(
+          fileRenderer,
+          fileContainer,
+          fileContents,
+          renderRange
+        );
+      }
+    );
     this.#file = file;
     this.#onChange = onChange;
     return this.cleanUp.bind(this);
@@ -101,13 +116,28 @@ export class Editor<T> {
     this.#reservedSelections = undefined;
   }
 
-  #onEditable(fileContents: FileContents, fileContainer: HTMLElement): void {
-    this.#fileContents ??= fileContents;
-    this.#textDocument ??= new TextDocument(
-      fileContents.name,
-      fileContents.contents,
-      fileContents.lang
-    );
+  #initialize(
+    fileRenderer: FileRenderer<LAnnotation>,
+    fileContainer: HTMLElement,
+    fileContents: FileContents,
+    renderRange: RenderRange | undefined
+  ): void {
+    console.log('[editor] initialize, renderRange:', renderRange);
+
+    this.#fileRenderer ??= fileRenderer;
+
+    if (
+      this.#fileContents === undefined ||
+      this.#fileContents.contents !== fileContents.contents
+    ) {
+      this.#fileContents = fileContents;
+      this.#textDocument = new TextDocument(
+        fileContents.name,
+        fileContents.contents,
+        fileContents.lang
+      );
+    }
+    this.#renderRange = renderRange;
 
     const shadowRoot =
       fileContainer.shadowRoot ?? fileContainer.attachShadow({ mode: 'open' });
@@ -143,13 +173,10 @@ export class Editor<T> {
           this.#textareaSnapshot !== undefined
         ) {
           const { selectionStart } = this.#textareaEl;
-          console.log(selectionStart, this.#textareSelectionStart);
           if (
             this.#textareSelectionStart !== selectionStart &&
             this.#textareaSnapshot.text === this.#textareaEl.value
           ) {
-            console.log('\n~~~~~~~~~', Math.round(Date.now() / 1000));
-            console.log('textarea: selectionchange');
             this.#textareSelectionStart = selectionStart;
             this.#syncTextareaState();
             return;
@@ -172,11 +199,9 @@ export class Editor<T> {
           this.#computeMouseSelectionDirection()
         );
         if (selection !== null) {
-          console.log('\n~~~~~~~~~', Math.round(Date.now() / 1000));
-          console.log('document: selectionchange', selection);
           const reservedSelections = this.#reservedSelections;
           if (reservedSelections !== undefined) {
-            this.#restoreSelections([
+            this.#setSelections([
               ...reservedSelections.filter(
                 (reservedSelection) =>
                   !selectionIntersects(reservedSelection, selection)
@@ -184,7 +209,7 @@ export class Editor<T> {
               selection,
             ]);
           } else {
-            this.#restoreSelections([selection]);
+            this.#setSelections([selection]);
           }
         }
       }),
@@ -238,17 +263,14 @@ export class Editor<T> {
       }),
 
       addEventListener(this.#textareaEl, 'input', () => {
-        console.log('input');
         if (this.#shouldIgnoreSelectionChange) {
           return;
         }
-        console.log('\n~~~~~~~~~', Math.round(Date.now() / 1000));
-        console.log('textarea: input');
         this.#syncTextareaState();
       }),
     ];
     if (this.#selections !== undefined) {
-      this.#restoreSelections(this.#selections);
+      this.#setSelections(this.#selections);
       this.#textareaEl.focus();
     }
   }
@@ -275,23 +297,96 @@ export class Editor<T> {
     if (this.#fileContents === undefined || this.#file === undefined) {
       return;
     }
-    const newFile: FileContents = {
-      ...this.#fileContents,
-      contents: textDocument.getText(),
-    };
-    this.#file.__rerender(newFile);
-    this.#onChange?.(newFile);
-    if (nextSelections !== undefined) {
-      this.#restoreSelections(nextSelections);
+
+    this.#fileContents.contents = textDocument.getText();
+    this.#onChange?.({ ...this.#fileContents });
+
+    const highlighter = areThemesAttached(
+      this.#file.options.theme ?? DEFAULT_THEMES
+    )
+      ? getHighlighterIfLoaded()
+      : undefined;
+    if (highlighter !== undefined) {
+      let t = performance.now();
+      const { theme = DEFAULT_THEMES, tokenizeMaxLineLength = 1000 } =
+        this.#file.options;
+      const { startingLine = 0, totalLines = textDocument.lineCount } =
+        this.#renderRange ?? {};
+      const text = textDocument.getText({
+        start: { line: startingLine, character: 0 },
+        end: { line: startingLine + totalLines, character: 0 },
+      });
+      const result = renderFileWithHighlighter(
+        { ...this.#fileContents, contents: text },
+        highlighter,
+        {
+          theme,
+          tokenizeMaxLineLength,
+          useTokenTransformer: true, // get `data-char` on token span
+        }
+      );
+      console.log(
+        '[editor] renderFileWithHighlighter time:',
+        performance.now() - t
+      );
+
+      const lineElMap = new Map<number, HTMLDivElement>();
+      for (const child of this.#contentEl?.children ?? []) {
+        const divEl = child as HTMLDivElement;
+        if (divEl.dataset.lineIndex === undefined) {
+          continue;
+        }
+        lineElMap.set(Number(divEl.dataset.lineIndex), divEl);
+      }
+
+      for (const line of result.code) {
+        if (line.type === 'element') {
+          const lineIndex = line.properties['data-line-index'];
+          if (typeof lineIndex === 'number') {
+            const oldLineEl = lineElMap.get(lineIndex);
+            if (oldLineEl !== undefined) {
+              const newLineEl = createElement(
+                line.tagName as keyof HTMLElementTagNameMap,
+                {
+                  dataset: {
+                    line: String(lineIndex + 1),
+                    lineIndex: String(lineIndex),
+                    lineType: String(line.properties['data-line-type']),
+                  },
+                }
+              );
+              for (const span of line.children) {
+                if (span.type === 'element') {
+                  const token = span.children[0];
+                  createElement(
+                    span.tagName as keyof HTMLElementTagNameMap,
+                    {
+                      dataset: {
+                        char: String(span.properties['data-char']),
+                      },
+                      style: {
+                        cssText: span.properties['style'] as string | undefined,
+                      },
+                      textContent:
+                        token.type === 'text' ? token.value : undefined,
+                    },
+                    newLineEl
+                  );
+                }
+              }
+              oldLineEl.replaceWith(newLineEl);
+            }
+          }
+        }
+      }
+
+      if (nextSelections !== undefined) {
+        this.#setSelections(nextSelections);
+      }
     }
   }
 
-  #renderLine(line: string, offset: number) {
-    console.log({ line, offset });
-  }
-
   #syncTextareaState() {
-    console.log('syncTextareaState');
     const textDocument = this.#textDocument;
     const textareaEl = this.#textareaEl;
     const textareaSnapshot = this.#textareaSnapshot;
@@ -304,29 +399,32 @@ export class Editor<T> {
     }
     const { selectionStart, selectionEnd, value } = textareaEl;
     if (value !== textareaSnapshot.text) {
-      if (
-        value.split('\n').length !== textareaSnapshot.lines ||
-        textareaSnapshot.lines !== 3
-      ) {
-        const change = resolveTextChange(textareaSnapshot, value);
-        this.#applyTextChange(change);
-      } else {
-        const line = value.split('\n')[1];
-        this.#renderLine(line, textareaSnapshot.offset + selectionStart);
-        this.#textareaBuffer = {
-          text: value,
-          line: textareaSnapshot.startLine,
-        };
-        this.#textareaBufferFlushTimeout = setTimeout(() => {
-          this.#textareaBufferFlushTimeout = undefined;
-          this.#flushPendingTextareaChanges();
-        }, 500);
-      }
+      // if (value.split('\n').length !== textareaSnapshot.lines) {
+      //   // new lines have been added, or the number of lines has changed.
+      //   // we need to apply the change to the text document, and rerender the file.
+
+      // } else {
+      //   // text has been changed in a single line
+      //   // rerender the line, and schedule a flush of the pending changes.
+      //   const lineText = value.split('\n')[1];
+      //   this.#rerenderLine(lineText, textareaSnapshot.startLine + 2);
+      //   this.#textareaBuffer = {
+      //     text: value,
+      //     line: textareaSnapshot.startLine,
+      //   };
+      //   this.#textareaBufferFlushTimeout = setTimeout(() => {
+      //     this.#textareaBufferFlushTimeout = undefined;
+      //     this.#flushPendingTextareaChanges();
+      //   }, 500);
+      // }
+      const change = resolveTextChange(textareaSnapshot, value);
+      this.#applyTextChange(change);
     } else if (
       selectionStart === selectionEnd &&
       this.#selections !== undefined
     ) {
-      this.#restoreSelections(
+      // caret in the textarea has been moved, but no text change has been made.
+      this.#setSelections(
         mapSelectionMove(
           textDocument,
           this.#selections,
@@ -355,7 +453,6 @@ export class Editor<T> {
   }
 
   #applyTextChange(change: EditorTextChange) {
-    console.log('applyTextChange', change);
     if (this.#textDocument !== undefined && this.#selections !== undefined) {
       const newSelections = applySelectionTextChange(
         this.#textDocument,
@@ -366,7 +463,7 @@ export class Editor<T> {
     }
   }
 
-  #restoreSelections(selections: EditorSelection[]) {
+  #setSelections(selections: EditorSelection[]) {
     const primarySelection = getPrimarySelection(selections);
     if (primarySelection === undefined) {
       return;
@@ -391,7 +488,6 @@ export class Editor<T> {
   }
 
   #updateTextarea(primarySelection: EditorSelection) {
-    console.log('updateTextarea');
     const textDocument = this.#textDocument;
     const textareaEl = this.#textareaEl;
     if (textDocument === undefined || textareaEl === undefined) {
@@ -412,7 +508,6 @@ export class Editor<T> {
       textareaSnapshot.selectionEnd
     );
     setTimeout(() => {
-      console.log('^');
       this.#shouldIgnoreSelectionChange = false;
     }, 0);
   }
@@ -503,7 +598,7 @@ export class Editor<T> {
   async #runCommand(command: EditorCommand) {
     switch (command) {
       case 'selectAll':
-        this.#restoreSelections([this.#getFullSelection()]);
+        this.#setSelections([this.#getFullSelection()]);
         break;
 
       case 'copy':
@@ -581,20 +676,22 @@ export class Editor<T> {
 
       case 'documentStart':
       case 'documentEnd':
-        this.#restoreSelections([
+        this.#setSelections([
           this.#getDocumentBoundarySelection(command === 'documentEnd'),
         ]);
         break;
 
       case 'undo':
         if (this.#textDocument?.canUndo === true) {
-          this.#rerender(this.#textDocument, this.#textDocument.undo());
+          const undoSelections = this.#textDocument.undo();
+          this.#rerender(this.#textDocument, undoSelections);
         }
         break;
 
       case 'redo':
         if (this.#textDocument?.canRedo === true) {
-          this.#rerender(this.#textDocument, this.#textDocument.redo());
+          const redoSelections = this.#textDocument.redo();
+          this.#rerender(this.#textDocument, redoSelections);
         }
         break;
     }

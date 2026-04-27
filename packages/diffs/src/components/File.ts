@@ -24,6 +24,7 @@ import { SVGSpriteSheet } from '../sprite';
 import type {
   AppliedThemeStyleCache,
   BaseCodeOptions,
+  EditorHook,
   FileContents,
   LineAnnotation,
   PrePropertiesConfig,
@@ -172,26 +173,13 @@ export class File<LAnnotation = undefined> {
     this.workerManager?.subscribeToThemeChanges(this);
   }
 
-  private __onEditableHandler:
-    | ((file: FileContents, fileContainer: HTMLElement) => void)
-    | undefined;
-  public __onEditable(
-    callback: (fileContents: FileContents, fileContainer: HTMLElement) => void
-  ): void {
-    if (this.fileContainer !== undefined && this.file !== undefined) {
-      callback(this.file, this.fileContainer);
+  private __editorHook: EditorHook<LAnnotation> | undefined;
+
+  public __addEditorHook(hook: EditorHook<LAnnotation>): void {
+    if (this.fileContainer != null && this.file != null) {
+      hook(this.fileRenderer, this.fileContainer, this.file, this.renderRange);
     }
-    this.__onEditableHandler = callback;
-  }
-  public __rerender(file: FileContents): void {
-    this.file = file;
-    const fileResult = this.fileRenderer.renderFile(file, this.renderRange);
-    if (fileResult == null || this.pre == null) {
-      return;
-    }
-    console.log('__rerender', fileResult);
-    this.applyFullRender(fileResult, this.pre);
-    this.__onEditableHandler?.(file, this.fileContainer!);
+    this.__editorHook = hook;
   }
 
   private handleHighlightRender = (): void => {
@@ -301,8 +289,7 @@ export class File<LAnnotation = undefined> {
     // pre-render and we should kick off a render.
     if (this.pre == null && this.headerElement == null) {
       this.render({ ...props, preventEmit: true });
-    }
-    // Otherwise orchestrate our setup.
+    } // Otherwise orchestrate our setup.
     else {
       this.hydrationSetup({ file, lineAnnotations });
     }
@@ -485,7 +472,12 @@ export class File<LAnnotation = undefined> {
       if (!preventEmit) {
         this.emitPostRender();
       }
-      this.__onEditableHandler?.(file, fileContainer);
+      this.__editorHook?.(
+        this.fileRenderer,
+        fileContainer,
+        file,
+        this.renderRange
+      );
       return true;
     }
 
@@ -536,7 +528,12 @@ export class File<LAnnotation = undefined> {
     if (!preventEmit) {
       this.emitPostRender();
     }
-    this.__onEditableHandler?.(file, fileContainer);
+    this.__editorHook?.(
+      this.fileRenderer,
+      fileContainer,
+      file,
+      this.renderRange
+    );
     return true;
   }
 
@@ -1177,8 +1174,7 @@ export class File<LAnnotation = undefined> {
       this.appliedPreAttributes = undefined;
       this.code = undefined;
       shadowRoot.appendChild(this.pre);
-    }
-    // If we have a new parent container for the pre element, lets go ahead and
+    } // If we have a new parent container for the pre element, lets go ahead and
     // move it into the new container
     else if (this.pre.parentNode !== shadowRoot) {
       container.shadowRoot?.appendChild(this.pre);

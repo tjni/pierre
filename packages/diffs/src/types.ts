@@ -12,6 +12,8 @@ import type {
   ThemeRegistrationResolved,
 } from 'shiki';
 
+import type { FileRenderer } from './renderers/FileRenderer';
+
 export type { CreatePatchOptionsNonabortable };
 
 /**
@@ -643,6 +645,15 @@ export interface RenderDiffOptions {
 export interface RenderFileResult {
   result: ThemedFileResult;
   options: RenderFileOptions;
+}
+
+export interface EditorHook<LAnnotation> {
+  (
+    fileRenderer: FileRenderer<LAnnotation>,
+    fileContainer: HTMLElement,
+    file: FileContents,
+    renderRange: RenderRange | undefined
+  ): void;
 }
 
 export interface RenderDiffResult {
