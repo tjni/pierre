@@ -473,7 +473,7 @@ export class Editor<LAnnotation> {
 
   #renderLineHighlight(
     selection: EditorSelection,
-    cacheMap: Map<string, HTMLElement>
+    markMap: Map<string, HTMLElement>
   ) {
     const hlEl = createElement(
       'div',
@@ -490,54 +490,78 @@ export class Editor<LAnnotation> {
       end: selection.end.line + 1,
     });
     // hlEl.scrollIntoView({ block: "nearest" });
-    cacheMap.set(`lineHighlight-${selection.start.line}`, hlEl);
+    markMap.set(`lineHighlight-${selection.start.line}`, hlEl);
   }
 
   #renderSelectionRange(
     selection: EditorSelection,
     ch: number,
-    cacheMap: Map<string, HTMLElement>
+    markMap: Map<string, HTMLElement>
   ) {
+    const selectionEls = this.#selectionEls;
     const { start, end } = selection;
+
     for (let ln = start.line; ln <= end.line; ln++) {
       const lineText = this.#textDocument?.getLineText(ln);
       if (lineText === undefined) {
         // ignore out of bounds line
         continue;
       }
+
       const lineLength = lineText.length;
       const startChar = ln === start.line ? start.character : 0;
       const endChar = ln === end.line ? end.character : lineLength;
-      let left = 0;
-      let width = 0;
-      if (startChar === endChar && startChar === 0) {
-        left = ch;
-      } else {
-        const startX = this.#getCharacterX(ln, startChar);
-        const endX =
-          endChar === startChar ? startX : this.#getCharacterX(ln, endChar);
-        left = startX;
-        width = endX - startX;
-      }
       const spacing = ln === end.line ? 0 : ch;
-      const style = {
-        top: this.#getLineY(ln) + 'px',
-        left: left + 'px',
-        width: width + spacing + 'px',
-      };
-      const selectionEl = createElement(
-        'div',
-        { dataset: 'selectionRange', style },
-        this.#contentEl
-      );
-      cacheMap.set(`selection-${ln}-${startChar}-${endChar}`, selectionEl);
+      const cacheKey = `selection-${ln}-${startChar}-${endChar}`;
+
+      let left = 0;
+      let width = spacing;
+      let rangeEl: HTMLElement | undefined;
+
+      if (selectionEls?.has(cacheKey) === true) {
+        console.log('use cached selection range', cacheKey);
+        rangeEl = selectionEls.get(cacheKey)!;
+        selectionEls.delete(cacheKey);
+      } else {
+        if (startChar === endChar && startChar === 0) {
+          left = ch;
+        } else {
+          const startX = this.#getCharacterX(ln, startChar);
+          const endX =
+            endChar === startChar ? startX : this.#getCharacterX(ln, endChar);
+          left = startX;
+          width = endX - startX;
+        }
+
+        for (const [key, el] of selectionEls?.entries() ?? []) {
+          if (key.startsWith(`selection-${ln}-`)) {
+            rangeEl = el;
+            selectionEls?.delete(key);
+            el.style.left = left + 'px';
+            el.style.width = width + 'px';
+            break;
+          }
+        }
+
+        rangeEl ??= createElement('div', {
+            dataset: 'selectionRange',
+            style: {
+              top: this.#getLineY(ln) + 'px',
+              left: left + 'px',
+              width: width + 'px',
+            },
+          });
+      }
+
+      this.#contentEl?.append(rangeEl);
+      markMap.set(cacheKey, rangeEl);
     }
   }
 
   #renderCaret(
     selection: EditorSelection,
     ch: number,
-    cacheMap: Map<string, HTMLElement>
+    markMap: Map<string, HTMLElement>
   ) {
     const { start, end, direction } = selection;
     const isBackward = direction === SelectionDirection.Backward;
@@ -555,7 +579,7 @@ export class Editor<LAnnotation> {
       },
       this.#contentEl
     );
-    cacheMap.set('caret-' + line + '-' + character + '-' + direction, caretEl);
+    markMap.set('caret-' + line + '-' + character + '-' + direction, caretEl);
   }
 
   async #runCommand(command: EditorCommand) {
