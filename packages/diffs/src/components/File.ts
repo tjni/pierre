@@ -177,7 +177,7 @@ export class File<LAnnotation = undefined> {
 
   public __addEditorHook(hook: EditorHook): void {
     if (this.fileContainer != null && this.file != null) {
-      hook(this.fileContainer, this.file);
+      hook(this.fileContainer, this.file, this.renderRange);
     }
     this.__editorHook = hook;
   }
@@ -473,7 +473,7 @@ export class File<LAnnotation = undefined> {
       if (!preventEmit) {
         this.emitPostRender();
       }
-      this.__editorHook?.(fileContainer, file);
+      this.__editorHook?.(fileContainer, file, renderRange);
       return true;
     }
 
@@ -524,7 +524,7 @@ export class File<LAnnotation = undefined> {
     if (!preventEmit) {
       this.emitPostRender();
     }
-    this.__editorHook?.(fileContainer, file);
+    this.__editorHook?.(fileContainer, file, renderRange);
     return true;
   }
 

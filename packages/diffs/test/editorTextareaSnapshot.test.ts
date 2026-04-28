@@ -6,8 +6,8 @@ import {
 } from '../src/editor/editorSelection';
 import {
   createTextareaSnapshot,
-  resolveTextChange,
-} from '../src/editor/editorTextareaSnapshot';
+  resolveTextareaChange,
+} from '../src/editor/editorTextarea';
 import { TextDocument } from '../src/editor/textDocument';
 
 function createSelection(
@@ -32,7 +32,7 @@ describe('resolveTextChange', () => {
       createSelection(0, 0, 0, 3, SelectionDirection.Forward)
     );
 
-    expect(resolveTextChange(snippet, '1')).toEqual({
+    expect(resolveTextareaChange(snippet, '1')).toEqual({
       start: 0,
       end: 3,
       text: '1',
@@ -46,9 +46,37 @@ describe('resolveTextChange', () => {
       createSelection(0, 2, 0, 2)
     );
 
-    expect(resolveTextChange(snippet, 'ac')).toEqual({
+    expect(resolveTextareaChange(snippet, 'ac')).toEqual({
       start: 1,
       end: 2,
+      text: '',
+    });
+  });
+
+  test('uses the caret to resolve Enter before an existing line break', () => {
+    const textDocument = new TextDocument('inmemory://1', 'foo\nbar');
+    const snippet = createTextareaSnapshot(
+      textDocument,
+      createSelection(0, 3, 0, 3)
+    );
+
+    expect(resolveTextareaChange(snippet, 'foo\n\nbar', 4, 4)).toEqual({
+      start: 3,
+      end: 3,
+      text: '\n',
+    });
+  });
+
+  test('uses the caret to resolve Backspace at an empty line start', () => {
+    const textDocument = new TextDocument('inmemory://1', 'foo\n\nbar');
+    const snippet = createTextareaSnapshot(
+      textDocument,
+      createSelection(1, 0, 1, 0)
+    );
+
+    expect(resolveTextareaChange(snippet, 'foo\nbar', 3, 3)).toEqual({
+      start: 3,
+      end: 4,
       text: '',
     });
   });

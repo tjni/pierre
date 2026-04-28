@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  applySelectionTextChange,
-  applySelectionTextReplace,
+  applyTextChangeToSelections,
+  applyTextReplaceToSelections,
   mapSelectionMove,
   mapSelectionRangeMove,
 } from '../src/editor/editorMultiSelections';
@@ -32,11 +32,15 @@ describe('mapSelectionTextChange', () => {
       createSelection(1, 1, 1, 1),
       createSelection(2, 1, 2, 1),
     ];
-    const nextSelections = applySelectionTextChange(textDocument, selections, {
-      start: 5,
-      end: 5,
-      text: '!',
-    });
+    const nextSelections = applyTextChangeToSelections(
+      textDocument,
+      selections,
+      {
+        start: 5,
+        end: 5,
+        text: '!',
+      }
+    );
 
     expect(textDocument.getText()).toBe('a!\nb!\nc!');
     expect(nextSelections).toEqual([
@@ -53,11 +57,15 @@ describe('mapSelectionTextChange', () => {
       createSelection(0, 4, 0, 7, SelectionDirection.Forward),
       createSelection(0, 8, 0, 11, SelectionDirection.Forward),
     ];
-    const nextSelections = applySelectionTextChange(textDocument, selections, {
-      start: 8,
-      end: 11,
-      text: 'x',
-    });
+    const nextSelections = applyTextChangeToSelections(
+      textDocument,
+      selections,
+      {
+        start: 8,
+        end: 11,
+        text: 'x',
+      }
+    );
 
     expect(textDocument.getText()).toBe('x x x');
     expect(nextSelections).toEqual([
@@ -74,11 +82,15 @@ describe('mapSelectionTextChange', () => {
       createSelection(1, 1, 1, 1),
       createSelection(2, 1, 2, 1),
     ];
-    const nextSelections = applySelectionTextChange(textDocument, selections, {
-      start: 6,
-      end: 7,
-      text: '',
-    });
+    const nextSelections = applyTextChangeToSelections(
+      textDocument,
+      selections,
+      {
+        start: 6,
+        end: 7,
+        text: '',
+      }
+    );
 
     expect(textDocument.getText()).toBe('x\nx\nx');
     expect(nextSelections).toEqual([
@@ -94,17 +106,55 @@ describe('mapSelectionTextChange', () => {
       createSelection(0, 1, 0, 1),
       createSelection(0, 2, 0, 2),
     ];
-    const nextSelections = applySelectionTextChange(textDocument, selections, {
-      start: 0,
-      end: 2,
-      text: '',
-    });
+    const nextSelections = applyTextChangeToSelections(
+      textDocument,
+      selections,
+      {
+        start: 0,
+        end: 2,
+        text: '',
+      }
+    );
 
     expect(textDocument.getText()).toBe('  ');
     expect(nextSelections).toEqual([
       createSelection(0, 0, 0, 0),
       createSelection(0, 0, 0, 0),
     ]);
+  });
+
+  test('places the caret on the inserted blank line after Enter', () => {
+    const textDocument = new TextDocument('inmemory://1', 'foo\nbar');
+    const selections = [createSelection(0, 3, 0, 3)];
+    const nextSelections = applyTextChangeToSelections(
+      textDocument,
+      selections,
+      {
+        start: 3,
+        end: 3,
+        text: '\n',
+      }
+    );
+
+    expect(textDocument.getText()).toBe('foo\n\nbar');
+    expect(nextSelections).toEqual([createSelection(1, 0, 1, 0)]);
+  });
+
+  test('moves the caret to the previous line end after deleting a line break', () => {
+    const textDocument = new TextDocument('inmemory://1', 'foo\n\nbar');
+    const selections = [createSelection(1, 0, 1, 0)];
+    const nextSelections = applyTextChangeToSelections(
+      textDocument,
+      selections,
+      {
+        start: 3,
+        end: 4,
+        text: '',
+      }
+    );
+
+    expect(textDocument.getText()).toBe('foo\nbar');
+    expect(nextSelections).toEqual([createSelection(0, 3, 0, 3)]);
   });
 });
 
@@ -192,11 +242,11 @@ describe('mapSelectionTextReplace', () => {
       createSelection(1, 1, 1, 1),
       createSelection(2, 1, 2, 1),
     ];
-    const nextSelections = applySelectionTextReplace(textDocument, selections, [
-      'a',
-      'b',
-      'c',
-    ]);
+    const nextSelections = applyTextReplaceToSelections(
+      textDocument,
+      selections,
+      ['a', 'b', 'c']
+    );
 
     expect(textDocument.getText()).toBe('xa\nyb\nzc');
     expect(nextSelections).toEqual([

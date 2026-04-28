@@ -1,5 +1,6 @@
-import { applyOffsetEdits, EditHistory } from './editHistory';
-import { type EditorSelection, type EditorTextChange } from './editorSelection';
+import { splitFileContents } from '../utils/splitFileContents';
+import { EditHistory } from './editHistory';
+import { type EditorSelection } from './editorSelection';
 
 /**
  * Position in a text document expressed as zero-based line and character offset.
@@ -74,19 +75,46 @@ export interface TextEdit {
   readonly newText: string;
 }
 
-type LineOffsets = number[] & {
-  hasCRLF?: boolean;
+/** Different with `TextEdit`, the range has been resolved to offsets. */
+export type ResolvedTextEdit = {
+  /** The start offset of the text change. */
+  readonly start: number;
+  /** The end offset of the text change. */
+  readonly end: number;
+  /**
+   * The string to be inserted. For delete operations use an
+   * empty string.
+   */
+  readonly text: string;
 };
+
+/**
+ * A line buffer is a line of text with its offset.
+ */
+class LineBuffer {
+  constructor(
+    public readonly offset: number,
+    public readonly text: string
+  ) {}
+}
 
 /**
  * A vscode-languageserver-textdocument compatible text document.
  */
 export class TextDocument {
+  static trimEOL(text: string): string {
+    let end = text.length;
+    while (end > 0 && isEOL(text.charCodeAt(end - 1))) {
+      end--;
+    }
+    return text.slice(0, end);
+  }
+
   #uri: string;
-  #text: string;
   #languageId: string;
   #version: number;
-  #lineOffsets: LineOffsets;
+  #lines: LineBuffer[] = [];
+  #hasCRLF = false;
   #history = new EditHistory();
 
   constructor(
@@ -96,10 +124,9 @@ export class TextDocument {
     version = 0
   ) {
     this.#uri = new URL(uri, 'file://').toString();
-    this.#text = text;
-    this.#lineOffsets = computeLineOffsets(text);
     this.#languageId = languageId;
     this.#version = version;
+    this.#setLineBuffers(text, false);
   }
 
   get uri(): string {
@@ -115,7 +142,11 @@ export class TextDocument {
   }
 
   get lineCount(): number {
-    return this.#lineOffsets.length;
+    return this.#lines.length;
+  }
+
+  get lines(): string[] {
+    return this.#lines.map((line) => line.text);
   }
 
   get canUndo(): boolean {
@@ -127,30 +158,24 @@ export class TextDocument {
   }
 
   get EOF(): string {
-    return this.#lineOffsets.hasCRLF === true ? '\r\n' : '\n';
+    return this.#hasCRLF ? '\r\n' : '\n';
   }
 
   getText(range?: Range): string {
     if (range !== undefined) {
       const start = this.offsetAt(range.start);
       const end = this.offsetAt(range.end);
-      return this.#text.slice(start, end);
+      return this.#sliceText(start, end);
     }
-    return this.#text;
+    return this.#lines.map((line) => line.text).join('');
   }
 
-  getLineText(line: number): string | undefined {
-    if (line < 0 || line >= this.#lineOffsets.length) {
-      return undefined;
+  getLineText(line: number, trimEOL = true): string {
+    if (line < 0 || line >= this.#lines.length) {
+      throw new Error(`Line index out of range: ${line}`);
     }
-    const start = this.#lineOffsets[line];
-    const end = this.#lineOffsets[line + 1] ?? this.#text.length;
-    return this.#text.slice(start, this.#ensureBeforeEOL(end, start));
-  }
-
-  setText(text: string): void {
-    this.#history.clear();
-    this.#setDocumentText(text);
+    const text = this.#lines[line].text;
+    return trimEOL ? TextDocument.trimEOL(text) : text;
   }
 
   applyEdits(
@@ -163,8 +188,7 @@ export class TextDocument {
       return;
     }
     const resolvedEdits = edits.map((edit) => this.#resolveEdit(edit));
-    const textBefore = this.#text;
-    const newText = applyOffsetEdits(textBefore, resolvedEdits);
+    const textBefore = this.getText();
     if (updateHistory && selectionsBefore !== undefined) {
       this.#history.push(
         textBefore,
@@ -173,7 +197,8 @@ export class TextDocument {
         selectionsAfter
       );
     }
-    this.#setDocumentText(newText);
+    this.#applyResolvedEdits(resolvedEdits);
+    this.#version++;
   }
 
   setLastUndoSelectionsAfter(selections: EditorSelection[]): void {
@@ -185,7 +210,7 @@ export class TextDocument {
     if (entry === undefined) {
       return undefined;
     }
-    this.#setDocumentText(applyOffsetEdits(this.#text, entry.inverseEdits));
+    this.#setDocumentText(applyTextEdits(this.getText(), entry.inverseEdits));
     return entry.selectionsBefore !== undefined
       ? entry.selectionsBefore.map((selection) => ({ ...selection }))
       : undefined;
@@ -196,13 +221,39 @@ export class TextDocument {
     if (entry === undefined) {
       return undefined;
     }
-    this.#setDocumentText(applyOffsetEdits(this.#text, entry.forwardEdits));
+    this.#setDocumentText(applyTextEdits(this.getText(), entry.forwardEdits));
     return entry.selectionsAfter !== undefined
       ? entry.selectionsAfter.map((selection) => ({ ...selection }))
       : undefined;
   }
 
-  #resolveEdit(edit: TextEdit): EditorTextChange {
+  positionAt(offset: number): Position {
+    const documentLength = this.#getDocumentLength();
+    const clampedOffset = Math.max(Math.min(offset, documentLength), 0);
+    const line = this.#lineAtOffset(clampedOffset);
+    const lineStart = this.#lines[line].offset;
+    const lineLength = lineLengthWithoutEOL(this.#lines[line].text);
+    const character = Math.min(clampedOffset - lineStart, lineLength);
+    return { line, character };
+  }
+
+  offsetAt(position: Position): number {
+    const { line, character } = position;
+    const documentLength = this.#getDocumentLength();
+    if (line >= this.#lines.length) {
+      return documentLength;
+    } else if (line < 0) {
+      return 0;
+    }
+    const lineOffset = this.#lines[line].offset;
+    if (character <= 0) {
+      return lineOffset;
+    }
+    const lineLength = lineLengthWithoutEOL(this.#lines[line].text);
+    return Math.min(lineOffset + character, lineOffset + lineLength);
+  }
+
+  #resolveEdit(edit: TextEdit): ResolvedTextEdit {
     let start = this.offsetAt(edit.range.start);
     let end = this.offsetAt(edit.range.end);
     if (start > end) {
@@ -213,60 +264,114 @@ export class TextDocument {
     return { start, end, text: edit.newText };
   }
 
-  #setDocumentText(text: string, incrementVersion = true) {
-    this.#text = text;
-    this.#lineOffsets = computeLineOffsets(text);
+  #setDocumentText(text: string, incrementVersion = true): void {
+    this.#setLineBuffers(text, incrementVersion);
+  }
+
+  #setLineBuffers(text: string, incrementVersion: boolean): void {
+    let offset = 0;
+    let hasCRLF = false;
+    const parts = splitFileContents(text);
+    const lines = parts.map((part) => {
+      const line = new LineBuffer(offset, part);
+      if (part.endsWith('\r\n')) {
+        hasCRLF = true;
+      }
+      offset += part.length;
+      return line;
+    });
+    this.#lines = lines;
+    this.#hasCRLF = hasCRLF;
     if (incrementVersion) {
       this.#version++;
     }
   }
 
-  positionAt(offset: number): Position {
-    const columnOffset = Math.max(Math.min(offset, this.#text.length), 0);
-    const lineOffsets = this.#lineOffsets;
-    let lo = 0;
-    let hi = lineOffsets.length - 1;
-    if (hi === 0) {
-      return { line: 0, character: columnOffset };
+  #getDocumentLength(): number {
+    if (this.#lines.length === 0) {
+      return 0;
     }
+    const lastLine = this.#lines[this.#lines.length - 1];
+    return lastLine.offset + lastLine.text.length;
+  }
+
+  #lineAtOffset(offset: number): number {
+    let lo = 0;
+    let hi = this.#lines.length - 1;
     while (lo < hi) {
       const mid = lo + Math.floor((hi - lo + 1) / 2);
-      if (lineOffsets[mid] <= columnOffset) {
+      if (this.#lines[mid].offset <= offset) {
         lo = mid;
       } else {
         hi = mid - 1;
       }
     }
-    const line = lo;
-    const character =
-      this.#ensureBeforeEOL(columnOffset, lineOffsets[line]) - lineOffsets[lo];
-    return { line, character };
+    return lo;
   }
 
-  offsetAt(position: Position): number {
-    const { line, character } = position;
-    const textLength = this.#text.length;
-    const lineOffsets = this.#lineOffsets;
-    if (line >= lineOffsets.length) {
-      return textLength;
-    } else if (line < 0) {
-      return 0;
+  #sliceText(start: number, end: number): string {
+    if (start >= end) {
+      return '';
     }
-    const lineOffset = lineOffsets[line];
-    if (character <= 0) {
-      return lineOffset;
+    const startLine = this.#lineAtOffset(start);
+    const endLine = this.#lineAtOffset(Math.max(start, end - 1));
+    if (startLine === endLine) {
+      const line = this.#lines[startLine];
+      const localStart = start - line.offset;
+      const localEnd = end - line.offset;
+      return line.text.slice(localStart, localEnd);
     }
-    const nextLineOffset =
-      line + 1 < lineOffsets.length ? lineOffsets[line + 1] : textLength;
-    const offset = Math.min(lineOffset + character, nextLineOffset);
-    return this.#ensureBeforeEOL(offset, lineOffset);
+
+    let result = '';
+    for (let lineIndex = startLine; lineIndex <= endLine; lineIndex++) {
+      const line = this.#lines[lineIndex];
+      const localStart = lineIndex === startLine ? start - line.offset : 0;
+      const localEnd =
+        lineIndex === endLine ? end - line.offset : line.text.length;
+      result += line.text.slice(localStart, localEnd);
+    }
+    return result;
   }
 
-  #ensureBeforeEOL(end: number, start: number) {
-    while (end > start && isEOL(this.#text.charCodeAt(end - 1))) {
-      end--;
+  #applyResolvedEdits(edits: ResolvedTextEdit[]): void {
+    const sortedEdits = [...edits].sort((a, b) => b.start - a.start);
+    for (let i = 0; i < sortedEdits.length - 1; i++) {
+      if (sortedEdits[i + 1].end > sortedEdits[i].start) {
+        throw new Error('Overlapping text edits are not supported');
+      }
     }
-    return end;
+    for (const edit of sortedEdits) {
+      this.#applySingleEdit(edit);
+    }
+    this.#hasCRLF = this.#lines.some((line) => line.text.includes('\r\n'));
+  }
+
+  #applySingleEdit(edit: ResolvedTextEdit): void {
+    const start = this.positionAt(edit.start);
+    const end = this.positionAt(edit.end);
+    const startLine = start.line;
+    const endLine = end.line;
+    const startLineParts = splitLineEnding(this.#lines[startLine].text);
+    const endLineParts = splitLineEnding(this.#lines[endLine].text);
+    const head = startLineParts.content.slice(0, start.character);
+    const tail = endLineParts.content.slice(end.character) + endLineParts.eol;
+    const merged = `${head}${edit.text}${tail}`;
+    const nextLineTexts = splitFileContents(merged);
+    const nextLines: LineBuffer[] = nextLineTexts.map(
+      (text) => new LineBuffer(0, text)
+    );
+
+    this.#lines.splice(startLine, endLine - startLine + 1, ...nextLines);
+    let nextOffset =
+      startLine > 0
+        ? this.#lines[startLine - 1].offset +
+          this.#lines[startLine - 1].text.length
+        : 0;
+    for (let i = startLine; i < this.#lines.length; i++) {
+      // @ts-ignore update the line offset
+      this.#lines[i].offset = nextOffset;
+      nextOffset += this.#lines[i].text.length;
+    }
   }
 }
 
@@ -274,21 +379,38 @@ function isEOL(char: number) {
   return char === /* \n */ 10 || char === 13 /* \r */;
 }
 
-function computeLineOffsets(text: string): LineOffsets {
-  const offsets: LineOffsets = [0];
-  for (let i = 0; i < text.length; i++) {
-    const char = text.charCodeAt(i);
-    if (isEOL(char)) {
-      if (
-        char === 13 /* \r */ &&
-        i + 1 < text.length &&
-        text.charCodeAt(i + 1) === /* \n */ 10
-      ) {
-        offsets.hasCRLF = true;
-        i++;
-      }
-      offsets.push(i + 1);
+function lineLengthWithoutEOL(text: string): number {
+  let length = text.length;
+  while (length > 0 && isEOL(text.charCodeAt(length - 1))) {
+    length--;
+  }
+  return length;
+}
+
+function splitLineEnding(text: string): { content: string; eol: string } {
+  let contentEnd = text.length;
+  while (contentEnd > 0 && isEOL(text.charCodeAt(contentEnd - 1))) {
+    contentEnd--;
+  }
+  return {
+    content: text.slice(0, contentEnd),
+    eol: text.slice(contentEnd),
+  };
+}
+
+export function applyTextEdits(
+  originalText: string,
+  edits: ResolvedTextEdit[]
+): string {
+  const sortedEdits = [...edits].sort((a, b) => b.start - a.start);
+  for (let i = 0; i < sortedEdits.length - 1; i++) {
+    if (sortedEdits[i + 1].end > sortedEdits[i].start) {
+      throw new Error('Overlapping text edits are not supported');
     }
   }
-  return offsets;
+  let text = originalText;
+  for (const { start, end, text: insert } of sortedEdits) {
+    text = text.slice(0, start) + insert + text.slice(end);
+  }
+  return text;
 }

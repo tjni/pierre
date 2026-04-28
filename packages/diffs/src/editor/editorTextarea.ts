@@ -1,5 +1,5 @@
-import { type EditorSelection, type EditorTextChange } from './editorSelection';
-import type { TextDocument } from './textDocument';
+import { type EditorSelection, SelectionDirection } from './editorSelection';
+import type { ResolvedTextEdit, TextDocument } from './textDocument';
 
 export interface TextareaSnapshot {
   readonly startLine: number;
@@ -52,13 +52,38 @@ export function createTextareaSnapshot(
   };
 }
 
-export function resolveTextChange(
+export function resolveTextareaChange(
   textareaSnapshot: TextareaSnapshot,
-  newView: string
-): EditorTextChange {
+  newView: string,
+  selectionStart?: number,
+  selectionEnd?: number
+): ResolvedTextEdit {
   const original = textareaSnapshot.text;
   const originalLength = original.length;
   const nextLength = newView.length;
+  if (
+    selectionStart !== undefined &&
+    selectionEnd !== undefined &&
+    selectionStart === selectionEnd &&
+    textareaSnapshot.selectionStart === textareaSnapshot.selectionEnd
+  ) {
+    const lengthDelta = nextLength - originalLength;
+    const start = selectionStart - Math.max(lengthDelta, 0);
+    const end = start + Math.max(-lengthDelta, 0);
+    const text = newView.slice(start, selectionStart);
+    if (
+      lengthDelta !== 0 &&
+      start >= 0 &&
+      end <= originalLength &&
+      original.slice(0, start) + text + original.slice(end) === newView
+    ) {
+      return {
+        start: textareaSnapshot.offset + start,
+        end: textareaSnapshot.offset + end,
+        text,
+      };
+    }
+  }
 
   let prefix = 0;
   while (
@@ -86,4 +111,25 @@ export function resolveTextChange(
     end: textareaSnapshot.offset + originalEnd,
     text: newView.slice(prefix, nextLength - suffix),
   };
+}
+
+export function getSelectionDirectionFromTextarea(
+  textareaEl: HTMLTextAreaElement
+): SelectionDirection {
+  return textareaEl.selectionDirection === 'backward'
+    ? SelectionDirection.Backward
+    : SelectionDirection.Forward;
+}
+
+export function getTextareaSelectionDirection(
+  selection: EditorSelection
+): HTMLTextAreaElement['selectionDirection'] {
+  switch (selection.direction) {
+    case SelectionDirection.Backward:
+      return 'backward';
+    case SelectionDirection.Forward:
+      return 'forward';
+    case SelectionDirection.None:
+      return 'none';
+  }
 }

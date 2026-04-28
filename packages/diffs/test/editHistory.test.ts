@@ -1,10 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import {
-  applyOffsetEdits,
-  buildInverseOffsetEdits,
-  EditHistory,
-} from '../src/editor/editHistory';
+import { EditHistory } from '../src/editor/editHistory';
 import type { EditorSelection } from '../src/editor/editorSelection';
 import { SelectionDirection } from '../src/editor/editorSelection';
 
@@ -25,44 +21,6 @@ function createSelection(
 function caret(character: number) {
   return createSelection(0, character, 0, character, SelectionDirection.None);
 }
-
-describe('EditHistory helpers', () => {
-  test('applyOffsetEdits sorts edits and applies them in offset space', () => {
-    expect(
-      applyOffsetEdits('0123456789', [
-        { start: 8, end: 10, text: 'YZ' },
-        { start: 1, end: 4, text: 'AB' },
-      ])
-    ).toBe('0AB4567YZ');
-  });
-
-  test('assertNonOverlappingDescending rejects overlapping edits', () => {
-    expect(() =>
-      applyOffsetEdits('0123456789', [
-        { start: 6, end: 8, text: 'X' },
-        { start: 4, end: 7, text: 'Y' },
-      ])
-    ).toThrow('Overlapping text edits are not supported');
-  });
-
-  test('buildInverseOffsetEdits restores the original text for mixed edits', () => {
-    const textBefore = 'abcde';
-    const forwardEdits = [
-      { start: 1, end: 2, text: 'XY' },
-      { start: 4, end: 5, text: '' },
-    ];
-
-    const textAfter = applyOffsetEdits(textBefore, forwardEdits);
-    const inverseEdits = buildInverseOffsetEdits(textBefore, forwardEdits);
-
-    expect(textAfter).toBe('aXYcd');
-    expect(inverseEdits).toEqual([
-      { start: 1, end: 3, text: 'b' },
-      { start: 5, end: 5, text: 'e' },
-    ]);
-    expect(applyOffsetEdits(textAfter, inverseEdits)).toBe(textBefore);
-  });
-});
 
 describe('EditHistory', () => {
   test('push stores cloned selections and pop methods move entries between stacks', () => {

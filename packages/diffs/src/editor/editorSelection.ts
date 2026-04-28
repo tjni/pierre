@@ -11,12 +11,6 @@ export type EditorSelection = Range & {
   direction: SelectionDirection;
 };
 
-export type EditorTextChange = {
-  start: number;
-  end: number;
-  text: string;
-};
-
 /**
  * Converts a selection from a web selection to an editor selection.
  */

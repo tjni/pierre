@@ -1,10 +1,11 @@
-import { type EditorSelection, type EditorTextChange } from './editorSelection';
+import type { EditorSelection } from './editorSelection';
+import type { ResolvedTextEdit } from './textDocument';
 
 export type HistoryEntry = {
   /** Forward offset edits from the entry's base text to its final text. */
-  forwardEdits: EditorTextChange[];
+  forwardEdits: ResolvedTextEdit[];
   /** Inverse offset edits from the entry's final text back to its base text. */
-  inverseEdits: EditorTextChange[];
+  inverseEdits: ResolvedTextEdit[];
   /** Base text length before the entry is applied. */
   textLengthBefore: number;
   /** Final text length after the entry is applied. */
@@ -34,7 +35,7 @@ export class EditHistory {
 
   push(
     textBefore: string,
-    resolvedEdits: EditorTextChange[],
+    resolvedEdits: ResolvedTextEdit[],
     selectionsBefore: EditorSelection[],
     selectionsAfter?: EditorSelection[]
   ): void {
@@ -88,42 +89,21 @@ export class EditHistory {
   }
 }
 
-export function applyOffsetEdits(
-  base: string,
-  edits: EditorTextChange[]
-): string {
-  const sortedEdits = [...edits].sort((a, b) => b.start - a.start);
-  for (let i = 0; i < sortedEdits.length - 1; i++) {
-    if (sortedEdits[i + 1].end > sortedEdits[i].start) {
-      throw new Error('Overlapping text edits are not supported');
-    }
-  }
-  let text = base;
-  for (const { start, end, text: insert } of sortedEdits) {
-    text = text.slice(0, start) + insert + text.slice(end);
-  }
-  return text;
-}
-
 export function buildInverseOffsetEdits(
   textBefore: string,
-  ascending: EditorTextChange[]
-): EditorTextChange[] {
-  const inverse: EditorTextChange[] = [];
-  for (let i = 0; i < ascending.length; i++) {
+  ascending: ResolvedTextEdit[]
+): ResolvedTextEdit[] {
+  const inverse: ResolvedTextEdit[] = [];
+  for (let i = 0, offsetDelta = 0; i < ascending.length; i++) {
     const edit = ascending[i];
     const replacedText = textBefore.slice(edit.start, edit.end);
-    let startAfterEdit = edit.start;
-    for (let j = 0; j < i; j++) {
-      const previousEdit = ascending[j];
-      startAfterEdit +=
-        previousEdit.text.length - (previousEdit.end - previousEdit.start);
-    }
+    const startAfterEdit = edit.start + offsetDelta;
     inverse.push({
       start: startAfterEdit,
       end: startAfterEdit + edit.text.length,
       text: replacedText,
     });
+    offsetDelta += edit.text.length - (edit.end - edit.start);
   }
   return inverse;
 }

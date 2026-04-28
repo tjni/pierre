@@ -71,6 +71,14 @@ describe('TextDocument', () => {
     expect(d.offsetAt({ line, character })).toBe(2);
   });
 
+  test('positionAt maps initial line offsets from zero', () => {
+    const d = doc('first\nsecond\nthird');
+    expect(d.positionAt(0)).toEqual({ line: 0, character: 0 });
+    expect(d.positionAt(5)).toEqual({ line: 0, character: 5 });
+    expect(d.positionAt(6)).toEqual({ line: 1, character: 0 });
+    expect(d.offsetAt({ line: 2, character: 0 })).toBe(13);
+  });
+
   test('applyEdits single replacement', () => {
     const d = doc('hello world');
     d.applyEdits([
@@ -119,6 +127,55 @@ describe('TextDocument', () => {
     ];
     d.applyEdits(edits);
     expect(d.getText()).toBe('AA bb CC');
+  });
+
+  test('applyEdits preserves line breaks around edited line', () => {
+    const d = doc('a\nb\nc');
+    d.applyEdits([
+      {
+        range: {
+          start: { line: 1, character: 0 },
+          end: { line: 1, character: 1 },
+        },
+        newText: 'B',
+      },
+    ]);
+    expect(d.getText()).toBe('a\nB\nc');
+    expect(d.lineCount).toBe(3);
+  });
+
+  test('applyEdits preserves CRLF after middle-line edit', () => {
+    const d = doc('a\r\nb\r\nc');
+    d.applyEdits([
+      {
+        range: {
+          start: { line: 1, character: 0 },
+          end: { line: 1, character: 1 },
+        },
+        newText: 'B',
+      },
+    ]);
+    expect(d.getText()).toBe('a\r\nB\r\nc');
+    expect(d.EOF).toBe('\r\n');
+  });
+
+  test('getText(range) spans multiple lines correctly after edits', () => {
+    const d = doc('foo\nbar\nbaz');
+    d.applyEdits([
+      {
+        range: {
+          start: { line: 1, character: 0 },
+          end: { line: 1, character: 3 },
+        },
+        newText: 'BAR',
+      },
+    ]);
+    expect(
+      d.getText({
+        start: { line: 0, character: 2 },
+        end: { line: 2, character: 2 },
+      })
+    ).toBe('o\nBAR\nba');
   });
 
   test('undo restores batch with two disjoint edits', () => {
@@ -319,28 +376,6 @@ describe('TextDocument', () => {
       [caret(0, 1)]
     );
     expect(d.getText()).toBe('ac');
-    expect(d.canRedo).toBe(false);
-  });
-
-  test('setText replaces content and clears history', () => {
-    const d = doc('a');
-    d.applyEdits(
-      [
-        {
-          range: {
-            start: { line: 0, character: 1 },
-            end: { line: 0, character: 1 },
-          },
-          newText: 'b',
-        },
-      ],
-      true,
-      [caret(0, 1)]
-    );
-    expect(d.canUndo).toBe(true);
-    d.setText('fresh');
-    expect(d.getText()).toBe('fresh');
-    expect(d.canUndo).toBe(false);
     expect(d.canRedo).toBe(false);
   });
 

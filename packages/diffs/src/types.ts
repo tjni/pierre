@@ -646,7 +646,11 @@ export interface RenderFileResult {
 }
 
 export interface EditorHook {
-  (fileContainer: HTMLElement, file: FileContents): void;
+  (
+    fileContainer: HTMLElement,
+    file: FileContents,
+    renderRange: RenderRange | undefined
+  ): void;
 }
 
 export interface RenderDiffResult {

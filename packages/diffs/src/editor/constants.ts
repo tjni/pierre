@@ -1,3 +1,6 @@
+export const TOKENIZE_TIME_LIMIT = 500;
+export const TOKENIZE_MAX_LINE_LENGTH = 1000;
+
 export const EDITOR_CSS = /* CSS */ `
   ::selection {
     background-color: transparent;

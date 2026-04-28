@@ -1,9 +1,10 @@
+import { type EditorSelection, SelectionDirection } from './editorSelection';
 import {
-  type EditorSelection,
-  type EditorTextChange,
-  SelectionDirection,
-} from './editorSelection';
-import { type Position, TextDocument, type TextEdit } from './textDocument';
+  type Position,
+  type ResolvedTextEdit,
+  TextDocument,
+  type TextEdit,
+} from './textDocument';
 
 export function mapSelectionMove(
   textDocument: TextDocument,
@@ -73,10 +74,10 @@ export function mapSelectionRangeMove(
   });
 }
 
-export function applySelectionTextChange(
+export function applyTextChangeToSelections(
   textDocument: TextDocument,
   selections: EditorSelection[],
-  change: EditorTextChange
+  change: ResolvedTextEdit
 ): EditorSelection[] {
   const primarySelection = selections[selections.length - 1];
   if (primarySelection === undefined) {
@@ -162,7 +163,7 @@ export function applySelectionTextChange(
   return nextSelections;
 }
 
-export function applySelectionTextReplace(
+export function applyTextReplaceToSelections(
   textDocument: TextDocument,
   selections: EditorSelection[],
   texts: readonly string[]

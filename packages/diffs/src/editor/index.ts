@@ -1,4 +1,11 @@
-import { areThemesAttached, DEFAULT_THEMES, getHighlighterIfLoaded } from '..';
+import { EncodedTokenMetadata, INITIAL, type StateStack } from 'shiki/textmate';
+
+import {
+  areThemesAttached,
+  DEFAULT_THEMES,
+  getFiletypeFromFileName,
+  getHighlighterIfLoaded,
+} from '..';
 import type { File } from '../components/File';
 import {
   type EditorCommand,
@@ -6,15 +13,12 @@ import {
   resolveEditorCommandFromKeyboardEvent,
 } from '../editor/editorCommand';
 import {
-  applySelectionTextChange,
-  applySelectionTextReplace,
+  applyTextChangeToSelections,
+  applyTextReplaceToSelections,
   mapSelectionMove,
   mapSelectionRangeMove,
 } from '../editor/editorMultiSelections';
-import type {
-  EditorSelection,
-  EditorTextChange,
-} from '../editor/editorSelection';
+import type { EditorSelection } from '../editor/editorSelection';
 import {
   comparePosition,
   convertSelection,
@@ -25,28 +29,44 @@ import {
   selectionIntersects,
 } from '../editor/editorSelection';
 import {
-  createTextareaSnapshot,
-  resolveTextChange,
-  type TextareaSnapshot,
-} from '../editor/editorTextareaSnapshot';
-import {
   addEventListener,
   createElement,
   extend,
   getLineIndentationUnit,
   isCodeLineTarget,
 } from '../editor/editorUtils';
-import { TextDocument, type TextEdit } from '../editor/textDocument';
-import type { FileContents, RenderRange } from '../types';
-import { renderFileWithHighlighter } from '../utils/renderFileWithHighlighter';
-import { EDITOR_CSS } from './constants';
+import {
+  type ResolvedTextEdit,
+  TextDocument,
+  type TextEdit,
+} from '../editor/textDocument';
+import type { DiffsHighlighter, FileContents, RenderRange } from '../types';
+import {
+  EDITOR_CSS,
+  TOKENIZE_MAX_LINE_LENGTH,
+  TOKENIZE_TIME_LIMIT,
+} from './constants';
+import {
+  createTextareaSnapshot,
+  getSelectionDirectionFromTextarea,
+  getTextareaSelectionDirection,
+  resolveTextareaChange,
+  type TextareaSnapshot,
+} from './editorTextarea';
 
 export class Editor<LAnnotation> {
+  #disposes?: (() => void)[];
+
   #file?: File<LAnnotation>;
-  #renderRange?: RenderRange;
   #fileContents?: FileContents;
   #textDocument?: TextDocument;
+  #textLinesCache?: string[];
+  #renderRange?: RenderRange;
   #onChange?: (file: FileContents) => void;
+
+  #highlighter?: DiffsHighlighter;
+  #colorMap?: Map<string, string[]>;
+  #stateStackCache?: StateStack[];
 
   // dom elements
   #contentEl?: HTMLElement;
@@ -66,23 +86,22 @@ export class Editor<LAnnotation> {
     'none';
   #shouldIgnoreSelectionChange = false;
   #textareaSnapshot?: TextareaSnapshot;
-  #selections?: EditorSelection[];
   #reservedSelections?: EditorSelection[];
-
-  #disposes?: (() => void)[];
-
-  get text(): string | undefined {
-    return this.#textDocument?.getText();
-  }
+  #selections?: EditorSelection[];
 
   edit(
     file: File<LAnnotation>,
     onChange?: (file: FileContents) => void
   ): () => void {
-    file.__addEditorHook((fileContainer, fileContents) => {
-      this.#initialize(fileContainer, fileContents);
+    file.__addEditorHook((fileContainer, fileContents, renderRange) => {
+      this.#initialize(fileContainer, fileContents, renderRange);
     });
     this.#file = file;
+    this.#highlighter ??= areThemesAttached(
+      file.options.theme ?? DEFAULT_THEMES
+    )
+      ? getHighlighterIfLoaded()
+      : undefined;
     this.#onChange = onChange;
     return this.cleanUp.bind(this);
   }
@@ -90,7 +109,17 @@ export class Editor<LAnnotation> {
   cleanUp(): void {
     this.#disposes?.forEach((dispose) => dispose());
     this.#disposes = undefined;
+
+    this.#file = undefined;
+    this.#fileContents = undefined;
     this.#textDocument = undefined;
+    this.#textLinesCache = undefined;
+    this.#renderRange = undefined;
+    this.#onChange = undefined;
+
+    this.#highlighter = undefined;
+    this.#colorMap = undefined;
+    this.#stateStackCache = undefined;
 
     this.#contentEl = undefined;
     this.#styleEl?.remove();
@@ -107,20 +136,34 @@ export class Editor<LAnnotation> {
     this.#reservedSelections = undefined;
   }
 
-  #initialize(fileContainer: HTMLElement, fileContents: FileContents): void {
-    console.log('[editor] initialize');
+  #initialize(
+    fileContainer: HTMLElement,
+    fileContents: FileContents,
+    renderRange: RenderRange | undefined
+  ): void {
+    console.log('Editor initialized, renderRange:', renderRange);
 
     if (
+      this.#textDocument === undefined ||
       this.#fileContents === undefined ||
-      this.#fileContents.contents !== fileContents.contents
+      this.#fileContents.contents !== fileContents.contents ||
+      this.#fileContents.lang !== fileContents.lang
     ) {
       this.#fileContents = fileContents;
       this.#textDocument = new TextDocument(
         fileContents.name,
         fileContents.contents,
-        fileContents.lang
+        fileContents.lang ?? getFiletypeFromFileName(fileContents.name)
       );
+      this.#textLinesCache = this.#textDocument.lines;
+      this.#stateStackCache = undefined;
+      this.#selections = undefined;
     }
+
+    this.#renderRange = renderRange;
+    setTimeout(() => {
+      this.#prebuildStateStackCache();
+    }, 500);
 
     const shadowRoot =
       fileContainer.shadowRoot ?? fileContainer.attachShadow({ mode: 'open' });
@@ -128,6 +171,7 @@ export class Editor<LAnnotation> {
     if (this.#contentEl === undefined) {
       throw new Error('could not edit the file.');
     }
+
     this.#textareaEl ??= extend(
       createElement('textarea', { dataset: 'textarea' }),
       {
@@ -139,11 +183,13 @@ export class Editor<LAnnotation> {
       }
     );
     this.#contentEl.appendChild(this.#textareaEl);
+
     this.#styleEl ??= createElement(
       'style',
       { dataset: 'editorCss', textContent: EDITOR_CSS },
       shadowRoot
     );
+
     this.#disposes ??= [
       addEventListener(document, 'selectionchange', () => {
         if (this.#shouldIgnoreSelectionChange) {
@@ -189,7 +235,7 @@ export class Editor<LAnnotation> {
         if (selection !== null) {
           const reservedSelections = this.#reservedSelections;
           if (reservedSelections !== undefined) {
-            this.#setSelections([
+            this.#renderSelections([
               ...reservedSelections.filter(
                 (reservedSelection) =>
                   !selectionIntersects(reservedSelection, selection)
@@ -197,7 +243,7 @@ export class Editor<LAnnotation> {
               selection,
             ]);
           } else {
-            this.#setSelections([selection]);
+            this.#renderSelections([selection]);
           }
         }
       }),
@@ -256,8 +302,11 @@ export class Editor<LAnnotation> {
         this.#syncTextareaState();
       }),
     ];
+
     if (this.#selections !== undefined) {
-      this.#setSelections(this.#selections);
+      this.#selectionEls?.forEach((el) => el.remove());
+      this.#selectionEls?.clear();
+      this.#renderSelections(this.#selections);
       this.#textareaEl.focus();
     }
   }
@@ -281,96 +330,284 @@ export class Editor<LAnnotation> {
   }
 
   #rerender(textDocument: TextDocument, nextSelections?: EditorSelection[]) {
-    if (this.#fileContents === undefined || this.#file === undefined) {
+    const file = this.#file;
+    const fileContents = this.#fileContents;
+    const contentEl = this.#contentEl;
+    if (
+      file === undefined ||
+      fileContents === undefined ||
+      contentEl === undefined
+    ) {
       return;
     }
 
-    this.#fileContents.contents = textDocument.getText();
-    this.#onChange?.({ ...this.#fileContents });
+    if (this.#highlighter !== undefined) {
+      const t = performance.now();
+      const { theme = DEFAULT_THEMES } = file.options;
 
-    const highlighter = areThemesAttached(
-      this.#file.options.theme ?? DEFAULT_THEMES
-    )
-      ? getHighlighterIfLoaded()
-      : undefined;
-    if (highlighter !== undefined) {
-      let t = performance.now();
-      const { theme = DEFAULT_THEMES, tokenizeMaxLineLength = 1000 } =
-        this.#file.options;
-      const { startingLine = 0, totalLines = textDocument.lineCount } =
+      const prevLines = this.#textLinesCache ?? [];
+      const { startingLine = 0, totalLines = Infinity } =
         this.#renderRange ?? {};
-      const text = textDocument.getText({
-        start: { line: startingLine, character: 0 },
-        end: { line: startingLine + totalLines, character: 0 },
-      });
-      const result = renderFileWithHighlighter(
-        { ...this.#fileContents, contents: text },
-        highlighter,
-        {
-          theme,
-          tokenizeMaxLineLength,
-          useTokenTransformer: true, // get `data-char` on token span
-        }
-      );
-      console.log(
-        '[editor] renderFileWithHighlighter time:',
-        performance.now() - t
-      );
-
-      const lineElMap = new Map<number, HTMLDivElement>();
-      for (const child of this.#contentEl?.children ?? []) {
-        const divEl = child as HTMLDivElement;
-        if (divEl.dataset.lineIndex === undefined) {
-          continue;
-        }
-        lineElMap.set(Number(divEl.dataset.lineIndex), divEl);
-      }
-
-      for (const line of result.code) {
-        if (line.type === 'element') {
-          const lineIndex = line.properties['data-line-index'];
-          if (typeof lineIndex === 'number') {
-            const oldLineEl = lineElMap.get(lineIndex);
-            if (oldLineEl !== undefined) {
-              const newLineEl = createElement(
-                line.tagName as keyof HTMLElementTagNameMap,
-                {
-                  dataset: {
-                    line: String(lineIndex + 1),
-                    lineIndex: String(lineIndex),
-                    lineType: String(line.properties['data-line-type']),
-                  },
-                }
-              );
-              for (const span of line.children) {
-                if (span.type === 'element') {
-                  const token = span.children[0];
-                  createElement(
-                    span.tagName as keyof HTMLElementTagNameMap,
-                    {
-                      dataset: {
-                        char: String(span.properties['data-char']),
-                      },
-                      style: {
-                        cssText: span.properties['style'] as string | undefined,
-                      },
-                      textContent:
-                        token.type === 'text' ? token.value : undefined,
-                    },
-                    newLineEl
-                  );
-                }
-              }
-              oldLineEl.replaceWith(newLineEl);
-            }
+      const endLine =
+        totalLines === Infinity
+          ? textDocument.lineCount
+          : Math.min(startingLine + totalLines, textDocument.lineCount);
+      const prevEndLine =
+        totalLines === Infinity
+          ? prevLines.length
+          : Math.min(startingLine + totalLines, prevLines.length);
+      const compareEndLine = Math.max(endLine, prevEndLine);
+      const dirtyLines = new Set<number>();
+      const linesChange = textDocument.lineCount - prevLines.length;
+      let dirtyLineStart = -1;
+      let dirtyLineEnd = -1;
+      for (let line = startingLine; line < compareEndLine; line++) {
+        const prevLine = line < prevLines.length ? prevLines[line] : undefined;
+        const nextLine =
+          line < textDocument.lineCount
+            ? textDocument.getLineText(line, false)
+            : undefined;
+        if (prevLine !== nextLine) {
+          if (dirtyLineStart === -1) {
+            dirtyLineStart = line;
+          }
+          dirtyLineEnd = line;
+          if (line < endLine) {
+            dirtyLines.add(line);
           }
         }
       }
+      for (let line = endLine; line < prevEndLine; line++) {
+        this.#getLineElement(line)?.remove();
+      }
+
+      let themeName: string;
+      let themeType = file.options.themeType ?? 'system';
+      if (themeType === 'system') {
+        themeType = window.matchMedia('(prefers-color-scheme: dark)').matches
+          ? 'dark'
+          : 'light';
+      }
+      if (typeof theme === 'string') {
+        themeName = theme;
+      } else {
+        themeName = theme[themeType];
+      }
+      let colorMap = this.#colorMap?.get(themeName);
+      if (colorMap === undefined) {
+        const ret = this.#highlighter.setTheme(themeName);
+        colorMap = ret.colorMap;
+        (this.#colorMap ?? (this.#colorMap = new Map())).set(
+          themeName,
+          ret.colorMap ?? []
+        );
+      }
+
+      const grammar = this.#highlighter.getLanguage(textDocument.languageId);
+      const previousStateStackCache = this.#stateStackCache;
+      if (dirtyLineStart !== -1) {
+        this.#stateStackCache = previousStateStackCache?.slice(
+          0,
+          dirtyLineStart + 1
+        );
+      }
+
+      const updateLineEl = (line: number, children: Element[]) => {
+        const lineEl = createElement('div', {
+          dataset: {
+            line: String(line + 1),
+            lineIndex: String(line),
+            lineType: 'context',
+          },
+        });
+        lineEl.replaceChildren(...children);
+        const prevLineEl = contentEl.querySelector(
+          `[data-line-index="${line}"]`
+        );
+        if (prevLineEl !== null) {
+          prevLineEl.replaceWith(lineEl);
+        } else {
+          contentEl.insertBefore(lineEl, this.#textareaEl ?? null);
+        }
+      };
+
+      let state =
+        dirtyLineStart === -1
+          ? INITIAL
+          : this.#buildStateStackCache(textDocument, grammar, dirtyLineStart);
+      for (let line = dirtyLineStart; line >= 0 && line < endLine; line++) {
+        const isDirty = dirtyLines.has(line);
+        const previousState = previousStateStackCache?.[line];
+        const didLineStateChange =
+          previousState !== undefined && !state.equals(previousState);
+        const shouldUpdateLineEl =
+          isDirty ||
+          didLineStateChange ||
+          (line > dirtyLineEnd && previousState === undefined);
+        const lineText = textDocument.getLineText(line);
+        this.#stateStackCache ??= [INITIAL];
+        this.#stateStackCache[line] = state;
+
+        if (lineText.length > TOKENIZE_MAX_LINE_LENGTH) {
+          if (shouldUpdateLineEl) {
+            console.warn(
+              `[diffs] Line(${line}) too long to tokenize: ${lineText.length}`
+            );
+            updateLineEl(line, [
+              createElement('span', { textContent: lineText }),
+            ]);
+          }
+          this.#stateStackCache[line + 1] = state;
+          if (
+            line >= dirtyLineEnd &&
+            this.#isStateStackCacheSettled(previousStateStackCache, line, state)
+          ) {
+            break;
+          }
+          continue;
+        }
+
+        if (lineText === '' || lineText.trim() === '') {
+          if (shouldUpdateLineEl) {
+            updateLineEl(line, [
+              createElement('span', {
+                textContent: lineText === '' ? ' ' : lineText,
+              }),
+            ]);
+          }
+          this.#stateStackCache[line + 1] = state;
+          if (
+            line >= dirtyLineEnd &&
+            this.#isStateStackCacheSettled(previousStateStackCache, line, state)
+          ) {
+            break;
+          }
+          continue;
+        }
+
+        // even the line is NOT dirty, we still need to tokenize it to get the new state
+        const result = grammar.tokenizeLine2(
+          lineText,
+          state,
+          TOKENIZE_TIME_LIMIT
+        );
+        if (result.stoppedEarly) {
+          console.warn(
+            `[diffs] Time limit reached when tokenizing line: ${lineText.substring(0, 100)}`
+          );
+        }
+        if (shouldUpdateLineEl) {
+          const tokens = result.tokens;
+          const lineLength = lineText.length;
+          const tokensLength = tokens.length / 2;
+          const spans: Element[] = [];
+          for (let j = 0; j < tokensLength; j++) {
+            const offset = tokens[2 * j];
+            const nextOffset =
+              j + 1 < tokensLength ? tokens[2 * j + 2] : lineLength;
+            if (offset === nextOffset) {
+              // empty token ?
+              continue;
+            }
+            const metadata = tokens[2 * j + 1];
+            const fg = colorMap[EncodedTokenMetadata.getForeground(metadata)];
+            const tokenText = lineText.slice(offset, nextOffset);
+            spans.push(
+              createElement('span', {
+                dataset: { char: String(offset) },
+                style: { cssText: `--diffs-token-${themeType}:${fg}` },
+                textContent: tokenText,
+              })
+            );
+          }
+          updateLineEl(line, spans);
+        }
+        state = result.ruleStack;
+        this.#stateStackCache[line + 1] = state;
+        if (
+          line >= dirtyLineEnd &&
+          this.#isStateStackCacheSettled(previousStateStackCache, line, state)
+        ) {
+          break;
+        }
+      }
+
+      console.log(
+        `[diffs] re-render time: ${Math.round((performance.now() - t) * 1000) / 1000}ms`,
+        'dirtyLines:',
+        dirtyLines.size,
+        'linesChange:',
+        linesChange
+      );
 
       if (nextSelections !== undefined) {
-        this.#setSelections(nextSelections);
+        this.#renderSelections(nextSelections);
       }
     }
+
+    this.#textLinesCache = textDocument.lines;
+    if (this.#onChange !== undefined) {
+      this.#onChange({ ...fileContents, contents: textDocument.getText() });
+    }
+  }
+
+  #buildStateStackCache(
+    textDocument: TextDocument,
+    grammar: ReturnType<DiffsHighlighter['getLanguage']>,
+    endLine: number
+  ): StateStack {
+    const stateStackCache = (this.#stateStackCache ??= [INITIAL]);
+    const boundedEndLine = Math.min(
+      Math.max(0, endLine),
+      textDocument.lineCount
+    );
+    let line = Math.min(stateStackCache.length - 1, boundedEndLine);
+    let state = stateStackCache[line] ?? INITIAL;
+    for (; line < boundedEndLine; line++) {
+      stateStackCache[line] = state;
+      const lineText = textDocument.getLineText(line);
+      if (
+        lineText.length <= TOKENIZE_MAX_LINE_LENGTH &&
+        lineText !== '' &&
+        lineText.trim() !== ''
+      ) {
+        state = grammar.tokenizeLine2(
+          lineText,
+          state,
+          TOKENIZE_TIME_LIMIT
+        ).ruleStack;
+      }
+      stateStackCache[line + 1] = state;
+    }
+    return stateStackCache[boundedEndLine] ?? INITIAL;
+  }
+
+  #isStateStackCacheSettled(
+    previousStateStackCache: StateStack[] | undefined,
+    line: number,
+    state: StateStack
+  ) {
+    const previousNextState = previousStateStackCache?.[line + 1];
+    return previousNextState !== undefined && state.equals(previousNextState);
+  }
+
+  #prebuildStateStackCache() {
+    const textDocument = this.#textDocument;
+    if (textDocument === undefined) {
+      return;
+    }
+    const { startingLine = 0, totalLines = Infinity } = this.#renderRange ?? {};
+    const endLine = Math.min(
+      totalLines === Infinity ? Infinity : startingLine + totalLines,
+      textDocument.lineCount
+    );
+
+    const grammar = this.#highlighter?.getLanguage(textDocument.languageId);
+    if (grammar === undefined) {
+      return;
+    }
+
+    this.#buildStateStackCache(textDocument, grammar, endLine);
   }
 
   #syncTextareaState() {
@@ -387,12 +624,17 @@ export class Editor<LAnnotation> {
     const { selectionStart, selectionEnd, value } = textareaEl;
     if (value !== textareaSnapshot.text) {
       // Text in the textarea has been changed.
-      const change = resolveTextChange(textareaSnapshot, value);
+      const change = resolveTextareaChange(
+        textareaSnapshot,
+        value,
+        selectionStart,
+        selectionEnd
+      );
       this.#applyTextChange(change);
     } else if (this.#selections !== undefined) {
       // Selection in the textarea changed, but no text change was made.
       if (selectionStart === selectionEnd) {
-        this.#setSelections(
+        this.#renderSelections(
           mapSelectionMove(
             textDocument,
             this.#selections,
@@ -409,7 +651,7 @@ export class Editor<LAnnotation> {
         const focusOffset =
           textareaSnapshot.offset +
           (isBackward ? selectionStart : selectionEnd);
-        this.#setSelections(
+        this.#renderSelections(
           mapSelectionRangeMove(
             textDocument,
             this.#selections,
@@ -421,18 +663,18 @@ export class Editor<LAnnotation> {
     }
   }
 
-  #applyTextChange(change: EditorTextChange) {
+  #applyTextChange(change: ResolvedTextEdit) {
     if (this.#textDocument !== undefined && this.#selections !== undefined) {
-      const newSelections = applySelectionTextChange(
+      const nextSelections = applyTextChangeToSelections(
         this.#textDocument,
         this.#selections,
         change
       );
-      this.#rerender(this.#textDocument, newSelections);
+      this.#rerender(this.#textDocument, nextSelections);
     }
   }
 
-  #setSelections(selections: EditorSelection[]) {
+  #renderSelections(selections: EditorSelection[]) {
     const primarySelection = getPrimarySelection(selections);
     if (primarySelection === undefined) {
       return;
@@ -486,10 +728,27 @@ export class Editor<LAnnotation> {
     }, 0);
   }
 
+  // Check whether a selection overlaps the currently rendered line window.
+  #isSelectionVisible(selection: EditorSelection): boolean {
+    if (this.#renderRange === undefined) {
+      return true;
+    }
+    const { start, end } = selection;
+    const { startingLine, totalLines } = this.#renderRange;
+    if (totalLines === Infinity) {
+      return end.line >= startingLine;
+    }
+    const endLine = startingLine + totalLines;
+    return start.line < endLine && end.line >= startingLine;
+  }
+
   #renderLineHighlight(
     selection: EditorSelection,
     markMap: Map<string, HTMLElement>
   ) {
+    if (!this.#isSelectionVisible(selection)) {
+      return;
+    }
     const hlEl = createElement(
       'div',
       {
@@ -500,6 +759,7 @@ export class Editor<LAnnotation> {
       },
       this.#contentEl
     );
+
     this.#file?.setSelectedLines({
       start: selection.start.line + 1,
       end: selection.end.line + 1,
@@ -513,6 +773,10 @@ export class Editor<LAnnotation> {
     ch: number,
     markMap: Map<string, HTMLElement>
   ) {
+    if (!this.#isSelectionVisible(selection)) {
+      return;
+    }
+
     const selectionEls = this.#selectionEls;
     const { start, end } = selection;
 
@@ -526,20 +790,19 @@ export class Editor<LAnnotation> {
       const lineLength = lineText.length;
       const startChar = ln === start.line ? start.character : 0;
       const endChar = ln === end.line ? end.character : lineLength;
-      const spacing = ln === end.line ? 0 : ch;
+      const spacing = ln === end.line || startChar === endChar ? 0 : ch;
       const cacheKey = `selection-${ln}-${startChar}-${endChar}`;
 
-      let left = 0;
-      let width = spacing;
       let rangeEl: HTMLElement | undefined;
-
       if (selectionEls?.has(cacheKey) === true) {
-        console.log('use cached selection range', cacheKey);
         rangeEl = selectionEls.get(cacheKey)!;
         selectionEls.delete(cacheKey);
       } else {
+        let left = 0;
+        let width = 0;
         if (startChar === endChar && startChar === 0) {
           left = ch;
+          width = ch;
         } else {
           const startX = this.#getCharacterX(ln, startChar);
           const endX =
@@ -553,7 +816,7 @@ export class Editor<LAnnotation> {
             rangeEl = el;
             selectionEls?.delete(key);
             el.style.left = left + 'px';
-            el.style.width = width + 'px';
+            el.style.width = width + spacing + 'px';
             break;
           }
         }
@@ -563,7 +826,7 @@ export class Editor<LAnnotation> {
           style: {
             top: this.#getLineY(ln) + 'px',
             left: left + 'px',
-            width: width + 'px',
+            width: width + spacing + 'px',
           },
         });
       }
@@ -578,6 +841,10 @@ export class Editor<LAnnotation> {
     ch: number,
     markMap: Map<string, HTMLElement>
   ) {
+    if (!this.#isSelectionVisible(selection)) {
+      return;
+    }
+
     const { start, end, direction } = selection;
     const isBackward = direction === SelectionDirection.Backward;
     const line = isBackward ? start.line : end.line;
@@ -600,7 +867,7 @@ export class Editor<LAnnotation> {
   async #runCommand(command: EditorCommand) {
     switch (command) {
       case 'selectAll':
-        this.#setSelections([this.#getFullSelection()]);
+        this.#renderSelections([this.#getFullSelection()]);
         break;
 
       case 'copy':
@@ -678,22 +945,22 @@ export class Editor<LAnnotation> {
 
       case 'documentStart':
       case 'documentEnd':
-        this.#setSelections([
+        this.#renderSelections([
           this.#getDocumentBoundarySelection(command === 'documentEnd'),
         ]);
         break;
 
       case 'undo':
         if (this.#textDocument?.canUndo === true) {
-          const undoSelections = this.#textDocument.undo();
-          this.#rerender(this.#textDocument, undoSelections);
+          const nextSelections = this.#textDocument.undo();
+          this.#rerender(this.#textDocument, nextSelections);
         }
         break;
 
       case 'redo':
         if (this.#textDocument?.canRedo === true) {
-          const redoSelections = this.#textDocument.redo();
-          this.#rerender(this.#textDocument, redoSelections);
+          const nextSelections = this.#textDocument.redo();
+          this.#rerender(this.#textDocument, nextSelections);
         }
         break;
     }
@@ -761,8 +1028,8 @@ export class Editor<LAnnotation> {
       ? text.map((value) => value.replace(/\r\n?|\n/g, textDocument.EOF))
       : text.replace(/\r\n?|\n/g, textDocument.EOF);
     const nextSelections = Array.isArray(normalizedText)
-      ? applySelectionTextReplace(textDocument, selections, normalizedText)
-      : applySelectionTextChange(textDocument, selections, {
+      ? applyTextReplaceToSelections(textDocument, selections, normalizedText)
+      : applyTextChangeToSelections(textDocument, selections, {
           start: textDocument.offsetAt(selection.start),
           end: textDocument.offsetAt(selection.end),
           text: normalizedText,
@@ -903,27 +1170,6 @@ export class Editor<LAnnotation> {
         contentEl.contains(range.endContainer)
       );
     });
-  }
-}
-
-function getSelectionDirectionFromTextarea(
-  textareaEl: HTMLTextAreaElement
-): SelectionDirection {
-  return textareaEl.selectionDirection === 'backward'
-    ? SelectionDirection.Backward
-    : SelectionDirection.Forward;
-}
-
-function getTextareaSelectionDirection(
-  selection: EditorSelection
-): HTMLTextAreaElement['selectionDirection'] {
-  switch (selection.direction) {
-    case SelectionDirection.Backward:
-      return 'backward';
-    case SelectionDirection.Forward:
-      return 'forward';
-    case SelectionDirection.None:
-      return 'none';
   }
 }
 
