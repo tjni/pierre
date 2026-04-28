@@ -47,13 +47,16 @@ export function createDomScrollSource({
           syncSnapshot('unknown');
         });
 
+  // Measure from the scrollport edge rather than the border box so bordered
+  // scrollers report the same viewport origin the user actually sees.
   function readViewportTop(): number {
     if (host == null) {
       return snapshot.viewportTop;
     }
 
     return (
-      scrollContainer.getBoundingClientRect().top -
+      scrollContainer.getBoundingClientRect().top +
+      scrollContainer.clientTop -
       host.getBoundingClientRect().top
     );
   }

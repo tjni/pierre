@@ -327,6 +327,10 @@ describe('createDomScrollSource', () => {
         configurable: true,
         get: () => 120,
       });
+      Object.defineProperty(scrollContainer, 'clientTop', {
+        configurable: true,
+        get: () => 8,
+      });
       scrollContainer.getBoundingClientRect = () =>
         createRect(scrollContainerTop, 120);
       host.getBoundingClientRect = () =>
@@ -345,7 +349,7 @@ describe('createDomScrollSource', () => {
         scrollOrigin: 'unknown',
         topInset: 12,
         viewportHeight: 120,
-        viewportTop: -120,
+        viewportTop: -112,
       });
 
       let notificationCount = 0;
@@ -358,14 +362,14 @@ describe('createDomScrollSource', () => {
       expect(notificationCount).toBe(1);
       expect(source.getSnapshot()).toMatchObject({
         scrollOrigin: 'user',
-        viewportTop: -90,
+        viewportTop: -82,
       });
 
       source.scrollToViewportTop(40, {
         origin: 'programmatic',
         reason: 'focus-reveal',
       });
-      expect(scrollContainer.scrollTop).toBe(160);
+      expect(scrollContainer.scrollTop).toBe(152);
       expect(source.getSnapshot()).toMatchObject({
         scrollOrigin: 'programmatic',
         viewportTop: 40,
