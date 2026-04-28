@@ -173,11 +173,11 @@ export class File<LAnnotation = undefined> {
     this.workerManager?.subscribeToThemeChanges(this);
   }
 
-  private __editorHook: EditorHook<LAnnotation> | undefined;
+  private __editorHook: EditorHook | undefined;
 
-  public __addEditorHook(hook: EditorHook<LAnnotation>): void {
+  public __addEditorHook(hook: EditorHook): void {
     if (this.fileContainer != null && this.file != null) {
-      hook(this.fileRenderer, this.fileContainer, this.file, this.renderRange);
+      hook(this.fileContainer, this.file);
     }
     this.__editorHook = hook;
   }
@@ -473,12 +473,7 @@ export class File<LAnnotation = undefined> {
       if (!preventEmit) {
         this.emitPostRender();
       }
-      this.__editorHook?.(
-        this.fileRenderer,
-        fileContainer,
-        file,
-        this.renderRange
-      );
+      this.__editorHook?.(fileContainer, file);
       return true;
     }
 
@@ -529,12 +524,7 @@ export class File<LAnnotation = undefined> {
     if (!preventEmit) {
       this.emitPostRender();
     }
-    this.__editorHook?.(
-      this.fileRenderer,
-      fileContainer,
-      file,
-      this.renderRange
-    );
+    this.__editorHook?.(fileContainer, file);
     return true;
   }
 

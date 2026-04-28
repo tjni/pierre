@@ -4,6 +4,7 @@ import {
   applySelectionTextChange,
   applySelectionTextReplace,
   mapSelectionMove,
+  mapSelectionRangeMove,
 } from '../src/editor/editorMultiSelections';
 import type { EditorSelection } from '../src/editor/editorSelection';
 import { SelectionDirection } from '../src/editor/editorSelection';
@@ -137,6 +138,48 @@ describe('mapSelectionMove', () => {
     ).toEqual([
       createSelection(0, 1, 0, 1, SelectionDirection.None),
       createSelection(1, 1, 1, 1, SelectionDirection.None),
+    ]);
+  });
+});
+
+describe('mapSelectionRangeMove', () => {
+  test('extends all carets when the primary textarea selection becomes a range', () => {
+    const textDocument = new TextDocument('inmemory://1', 'abcd\nefgh');
+    const selections = [
+      createSelection(0, 1, 0, 1),
+      createSelection(1, 1, 1, 1),
+    ];
+
+    expect(
+      mapSelectionRangeMove(
+        textDocument,
+        selections,
+        { line: 1, character: 1 },
+        { line: 1, character: 3 }
+      )
+    ).toEqual([
+      createSelection(0, 1, 0, 3, SelectionDirection.Forward),
+      createSelection(1, 1, 1, 3, SelectionDirection.Forward),
+    ]);
+  });
+
+  test('preserves backward selection direction from the textarea focus', () => {
+    const textDocument = new TextDocument('inmemory://1', 'abcd\nefgh');
+    const selections = [
+      createSelection(0, 2, 0, 2),
+      createSelection(1, 2, 1, 2),
+    ];
+
+    expect(
+      mapSelectionRangeMove(
+        textDocument,
+        selections,
+        { line: 1, character: 2 },
+        { line: 1, character: 0 }
+      )
+    ).toEqual([
+      createSelection(0, 0, 0, 2, SelectionDirection.Backward),
+      createSelection(1, 0, 1, 2, SelectionDirection.Backward),
     ]);
   });
 });

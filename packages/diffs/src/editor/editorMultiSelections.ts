@@ -46,6 +46,33 @@ export function mapSelectionMove(
   });
 }
 
+export function mapSelectionRangeMove(
+  textDocument: TextDocument,
+  selections: readonly EditorSelection[],
+  nextAnchor: Position,
+  nextFocus: Position
+): EditorSelection[] {
+  const primarySelection = selections[selections.length - 1];
+  if (primarySelection === undefined) {
+    return [];
+  }
+  const [primaryAnchorOffset, primaryFocusOffset] =
+    getSelectionAnchorAndFocusOffsets(textDocument, primarySelection);
+  const anchorDelta = textDocument.offsetAt(nextAnchor) - primaryAnchorOffset;
+  const focusDelta = textDocument.offsetAt(nextFocus) - primaryFocusOffset;
+  return selections.map((selection) => {
+    const [anchorOffset, focusOffset] = getSelectionAnchorAndFocusOffsets(
+      textDocument,
+      selection
+    );
+    return createSelectionFromAnchorAndFocusOffsets(
+      textDocument,
+      anchorOffset + anchorDelta,
+      focusOffset + focusDelta
+    );
+  });
+}
+
 export function applySelectionTextChange(
   textDocument: TextDocument,
   selections: EditorSelection[],
@@ -193,7 +220,7 @@ export function applySelectionTextReplace(
   return nextSelections;
 }
 
-function createSelectionFromAnchorAndFocusOffsets(
+export function createSelectionFromAnchorAndFocusOffsets(
   textDocument: TextDocument,
   anchorOffset: number,
   focusOffset: number
@@ -211,4 +238,15 @@ function createSelectionFromAnchorAndFocusOffsets(
     end: textDocument.positionAt(end),
     direction,
   };
+}
+
+function getSelectionAnchorAndFocusOffsets(
+  textDocument: TextDocument,
+  selection: EditorSelection
+): [anchorOffset: number, focusOffset: number] {
+  const isBackward = selection.direction === SelectionDirection.Backward;
+  return [
+    textDocument.offsetAt(isBackward ? selection.end : selection.start),
+    textDocument.offsetAt(isBackward ? selection.start : selection.end),
+  ];
 }

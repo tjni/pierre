@@ -9,6 +9,7 @@ import {
   applySelectionTextChange,
   applySelectionTextReplace,
   mapSelectionMove,
+  mapSelectionRangeMove,
 } from '../editor/editorMultiSelections';
 import type {
   EditorSelection,
@@ -36,14 +37,12 @@ import {
   isCodeLineTarget,
 } from '../editor/editorUtils';
 import { TextDocument, type TextEdit } from '../editor/textDocument';
-import type { FileRenderer } from '../renderers/FileRenderer';
 import type { FileContents, RenderRange } from '../types';
 import { renderFileWithHighlighter } from '../utils/renderFileWithHighlighter';
 import { EDITOR_CSS } from './constants';
 
 export class Editor<LAnnotation> {
   #file?: File<LAnnotation>;
-  #fileRenderer?: FileRenderer<LAnnotation>;
   #renderRange?: RenderRange;
   #fileContents?: FileContents;
   #textDocument?: TextDocument;
@@ -61,7 +60,10 @@ export class Editor<LAnnotation> {
   #selectionStartY = 0;
   #selectionEndX = 0;
   #selectionEndY = 0;
-  #textareSelectionStart = 0;
+  #textareaSelectionStart = 0;
+  #textareaSelectionEnd = 0;
+  #textareaSelectionDirection: HTMLTextAreaElement['selectionDirection'] =
+    'none';
   #shouldIgnoreSelectionChange = false;
   #textareaSnapshot?: TextareaSnapshot;
   #selections?: EditorSelection[];
@@ -77,16 +79,9 @@ export class Editor<LAnnotation> {
     file: File<LAnnotation>,
     onChange?: (file: FileContents) => void
   ): () => void {
-    file.__addEditorHook(
-      (fileRenderer, fileContainer, fileContents, renderRange) => {
-        this.#initialize(
-          fileRenderer,
-          fileContainer,
-          fileContents,
-          renderRange
-        );
-      }
-    );
+    file.__addEditorHook((fileContainer, fileContents) => {
+      this.#initialize(fileContainer, fileContents);
+    });
     this.#file = file;
     this.#onChange = onChange;
     return this.cleanUp.bind(this);
@@ -112,15 +107,8 @@ export class Editor<LAnnotation> {
     this.#reservedSelections = undefined;
   }
 
-  #initialize(
-    fileRenderer: FileRenderer<LAnnotation>,
-    fileContainer: HTMLElement,
-    fileContents: FileContents,
-    renderRange: RenderRange | undefined
-  ): void {
-    console.log('[editor] initialize, renderRange:', renderRange);
-
-    this.#fileRenderer ??= fileRenderer;
+  #initialize(fileContainer: HTMLElement, fileContents: FileContents): void {
+    console.log('[editor] initialize');
 
     if (
       this.#fileContents === undefined ||
@@ -133,7 +121,6 @@ export class Editor<LAnnotation> {
         fileContents.lang
       );
     }
-    this.#renderRange = renderRange;
 
     const shadowRoot =
       fileContainer.shadowRoot ?? fileContainer.attachShadow({ mode: 'open' });
@@ -168,12 +155,17 @@ export class Editor<LAnnotation> {
           this.#textareaEl !== undefined &&
           this.#textareaSnapshot !== undefined
         ) {
-          const { selectionStart } = this.#textareaEl;
+          const { selectionStart, selectionEnd, selectionDirection } =
+            this.#textareaEl;
           if (
-            this.#textareSelectionStart !== selectionStart &&
+            (this.#textareaSelectionStart !== selectionStart ||
+              this.#textareaSelectionEnd !== selectionEnd ||
+              this.#textareaSelectionDirection !== selectionDirection) &&
             this.#textareaSnapshot.text === this.#textareaEl.value
           ) {
-            this.#textareSelectionStart = selectionStart;
+            this.#textareaSelectionStart = selectionStart;
+            this.#textareaSelectionEnd = selectionEnd;
+            this.#textareaSelectionDirection = selectionDirection;
             this.#syncTextareaState();
             return;
           }
@@ -394,20 +386,38 @@ export class Editor<LAnnotation> {
     }
     const { selectionStart, selectionEnd, value } = textareaEl;
     if (value !== textareaSnapshot.text) {
+      // Text in the textarea has been changed.
       const change = resolveTextChange(textareaSnapshot, value);
       this.#applyTextChange(change);
-    } else if (
-      selectionStart === selectionEnd &&
-      this.#selections !== undefined
-    ) {
-      // caret in the textarea has been moved, but no text change has been made.
-      this.#setSelections(
-        mapSelectionMove(
-          textDocument,
-          this.#selections,
-          textDocument.positionAt(textareaSnapshot.offset + selectionStart)
-        )
-      );
+    } else if (this.#selections !== undefined) {
+      // Selection in the textarea changed, but no text change was made.
+      if (selectionStart === selectionEnd) {
+        this.#setSelections(
+          mapSelectionMove(
+            textDocument,
+            this.#selections,
+            textDocument.positionAt(textareaSnapshot.offset + selectionStart)
+          )
+        );
+      } else {
+        const isBackward =
+          getSelectionDirectionFromTextarea(textareaEl) ===
+          SelectionDirection.Backward;
+        const anchorOffset =
+          textareaSnapshot.offset +
+          (isBackward ? selectionEnd : selectionStart);
+        const focusOffset =
+          textareaSnapshot.offset +
+          (isBackward ? selectionStart : selectionEnd);
+        this.#setSelections(
+          mapSelectionRangeMove(
+            textDocument,
+            this.#selections,
+            textDocument.positionAt(anchorOffset),
+            textDocument.positionAt(focusOffset)
+          )
+        );
+      }
     }
   }
 
@@ -456,15 +466,20 @@ export class Editor<LAnnotation> {
       textDocument,
       primarySelection
     );
-    this.#shouldIgnoreSelectionChange = true;
-    this.#textareSelectionStart = textareaSnapshot.selectionStart;
+    const textareaSelectionDirection =
+      getTextareaSelectionDirection(primarySelection);
+    this.#textareaSelectionStart = textareaSnapshot.selectionStart;
+    this.#textareaSelectionEnd = textareaSnapshot.selectionEnd;
+    this.#textareaSelectionDirection = textareaSelectionDirection;
     this.#textareaSnapshot = textareaSnapshot;
+    this.#shouldIgnoreSelectionChange = true;
     textareaEl.style.top = this.#getLineY(primarySelection.start.line) + 'px';
     textareaEl.style.height = textareaSnapshot.lines + 'lh';
     textareaEl.value = textareaSnapshot.text;
     textareaEl.setSelectionRange(
       textareaSnapshot.selectionStart,
-      textareaSnapshot.selectionEnd
+      textareaSnapshot.selectionEnd,
+      textareaSelectionDirection
     );
     setTimeout(() => {
       this.#shouldIgnoreSelectionChange = false;
@@ -544,13 +559,13 @@ export class Editor<LAnnotation> {
         }
 
         rangeEl ??= createElement('div', {
-            dataset: 'selectionRange',
-            style: {
-              top: this.#getLineY(ln) + 'px',
-              left: left + 'px',
-              width: width + 'px',
-            },
-          });
+          dataset: 'selectionRange',
+          style: {
+            top: this.#getLineY(ln) + 'px',
+            left: left + 'px',
+            width: width + 'px',
+          },
+        });
       }
 
       this.#contentEl?.append(rangeEl);
@@ -888,6 +903,27 @@ export class Editor<LAnnotation> {
         contentEl.contains(range.endContainer)
       );
     });
+  }
+}
+
+function getSelectionDirectionFromTextarea(
+  textareaEl: HTMLTextAreaElement
+): SelectionDirection {
+  return textareaEl.selectionDirection === 'backward'
+    ? SelectionDirection.Backward
+    : SelectionDirection.Forward;
+}
+
+function getTextareaSelectionDirection(
+  selection: EditorSelection
+): HTMLTextAreaElement['selectionDirection'] {
+  switch (selection.direction) {
+    case SelectionDirection.Backward:
+      return 'backward';
+    case SelectionDirection.Forward:
+      return 'forward';
+    case SelectionDirection.None:
+      return 'none';
   }
 }
 

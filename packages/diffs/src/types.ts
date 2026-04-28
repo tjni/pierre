@@ -12,8 +12,6 @@ import type {
   ThemeRegistrationResolved,
 } from 'shiki';
 
-import type { FileRenderer } from './renderers/FileRenderer';
-
 export type { CreatePatchOptionsNonabortable };
 
 /**
@@ -647,13 +645,8 @@ export interface RenderFileResult {
   options: RenderFileOptions;
 }
 
-export interface EditorHook<LAnnotation> {
-  (
-    fileRenderer: FileRenderer<LAnnotation>,
-    fileContainer: HTMLElement,
-    file: FileContents,
-    renderRange: RenderRange | undefined
-  ): void;
+export interface EditorHook {
+  (fileContainer: HTMLElement, file: FileContents): void;
 }
 
 export interface RenderDiffResult {
