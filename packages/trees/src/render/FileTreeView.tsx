@@ -1014,6 +1014,7 @@ function renderStyledRow(
     renderDecorationForRow,
     openContextMenuForRow,
     onRowClick,
+    onKeyDown,
   } = frame;
   const targetPath = getFileTreeRowPath(row);
   const { isParked = false, mode = 'flow', style } = options;
@@ -1135,7 +1136,7 @@ function renderStyledRow(
           controller.focusMountedPathFromInput(targetPath);
         }
       : undefined,
-    onKeyDown: undefined,
+    onKeyDown,
     ref: (element: HTMLElement | null) => {
       registerButton(targetPath, element);
     },
@@ -3612,6 +3613,7 @@ export function FileTreeView({
       onDragLeave={dragAndDropEnabled ? handleTreeDragLeave : undefined}
       onDragOver={dragAndDropEnabled ? handleTreeDragOver : undefined}
       onDrop={dragAndDropEnabled ? handleTreeDrop : undefined}
+      onKeyDown={handleTreeKeyDown}
       onPointerLeave={contextMenuEnabled ? handleTreePointerLeave : undefined}
       onPointerOver={contextMenuEnabled ? handleTreePointerOver : undefined}
       role="tree"
