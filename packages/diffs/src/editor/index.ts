@@ -438,7 +438,7 @@ export class Editor<LAnnotation> {
       if (selections.length > 1 || !isCollapsedSelection(selection)) {
         this.#renderSelectionRange(selection, ch, selectionEls);
       }
-      this.#renderCaret(selection, selectionEls);
+      this.#renderCaret(selection, ch, selectionEls);
     });
     this.#selectionEls?.forEach((el) => el.remove());
     this.#selectionEls?.clear();
@@ -534,12 +534,16 @@ export class Editor<LAnnotation> {
     }
   }
 
-  #renderCaret(selection: EditorSelection, cacheMap: Map<string, HTMLElement>) {
+  #renderCaret(
+    selection: EditorSelection,
+    ch: number,
+    cacheMap: Map<string, HTMLElement>
+  ) {
     const { start, end, direction } = selection;
     const isBackward = direction === SelectionDirection.Backward;
     const line = isBackward ? start.line : end.line;
     const character = isBackward ? start.character : end.character;
-    const left = this.#getCharacterX(line, character);
+    const left = Math.max(ch, this.#getCharacterX(line, character));
     const caretEl = createElement(
       'div',
       {
