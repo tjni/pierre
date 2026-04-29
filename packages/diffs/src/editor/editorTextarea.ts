@@ -2,12 +2,12 @@ import { type EditorSelection, SelectionDirection } from './editorSelection';
 import type { ResolvedTextEdit, TextDocument } from './textDocument';
 
 export interface TextareaSnapshot {
-  readonly startLine: number;
-  readonly offset: number;
-  readonly selectionStart: number;
-  readonly selectionEnd: number;
-  readonly lines: number;
-  readonly text: string;
+  startLine: number;
+  offset: number;
+  selectionStart: number;
+  selectionEnd: number;
+  lines: number;
+  text: string;
 }
 
 export function createTextareaSnapshot(
@@ -26,9 +26,6 @@ export function createTextareaSnapshot(
 
   for (let line = startLine; line <= endLine; line++) {
     const lineText = textDocument.getLineText(line);
-    if (lineText === undefined) {
-      throw new Error(`Line ${line} is out of bounds`);
-    }
     if (line === primarySelection.start.line) {
       selectionStart = offset + primarySelection.start.character;
     }
@@ -121,7 +118,7 @@ export function getSelectionDirectionFromTextarea(
     : SelectionDirection.Forward;
 }
 
-export function getTextareaSelectionDirection(
+export function toTextareaSelectionDirection(
   selection: EditorSelection
 ): HTMLTextAreaElement['selectionDirection'] {
   switch (selection.direction) {

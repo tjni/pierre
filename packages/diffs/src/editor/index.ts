@@ -48,9 +48,9 @@ import {
 import {
   createTextareaSnapshot,
   getSelectionDirectionFromTextarea,
-  getTextareaSelectionDirection,
   resolveTextareaChange,
   type TextareaSnapshot,
+  toTextareaSelectionDirection,
 } from './editorTextarea';
 
 export class Editor<LAnnotation> {
@@ -102,6 +102,31 @@ export class Editor<LAnnotation> {
       : undefined;
     this.#onChange = onChange;
     return this.cleanUp.bind(this);
+  }
+
+  setSelections(selections: EditorSelection[], resetTextarea = true): void {
+    const primarySelection = selections.at(-1);
+    if (primarySelection === undefined) {
+      return;
+    }
+    if (resetTextarea) {
+      this.#textareaSnapshot = undefined;
+    }
+    const shouldUpdateTextarea =
+      Math.max(0, primarySelection.start.line - 1) !==
+      this.#textareaSnapshot?.startLine;
+    this.#selections = selections;
+    this.#file?.setSelectedLines(null);
+    this.#renderSelections(selections, primarySelection);
+    if (shouldUpdateTextarea) {
+      this.#updateTextarea(primarySelection);
+    } else if (
+      this.#textareaEl !== undefined &&
+      this.#textareaSnapshot !== undefined &&
+      this.#textareaSnapshot.text !== this.#textareaEl.value
+    ) {
+      this.#textareaSnapshot.text = this.#textareaEl.value;
+    }
   }
 
   cleanUp(): void {
@@ -194,6 +219,24 @@ export class Editor<LAnnotation> {
           return;
         }
 
+        // if caret position changes in textarea, sync the textarea state.
+        if (
+          this.#textareaEl !== undefined &&
+          this.#textareaSnapshot !== undefined
+        ) {
+          const { selectionStart, selectionEnd } = this.#textareaEl;
+          if (
+            (this.#textareaSnapshot.selectionStart !== selectionStart ||
+              this.#textareaSnapshot.selectionEnd !== selectionEnd) &&
+            this.#textareaSnapshot.text === this.#textareaEl.value
+          ) {
+            this.#textareaSnapshot.selectionStart = selectionStart;
+            this.#textareaSnapshot.selectionEnd = selectionEnd;
+            this.#syncTextareaState();
+            return;
+          }
+        }
+
         const selectionRaw = document.getSelection();
         const composedRanges = selectionRaw?.getComposedRanges({
           shadowRoots: [shadowRoot],
@@ -210,17 +253,17 @@ export class Editor<LAnnotation> {
           this.#computeMouseSelectionDirection()
         );
         if (selection !== null) {
-          const reservedSelections = this.#reservedSelections;
-          if (reservedSelections !== undefined) {
-            this.#renderSelections([
-              ...reservedSelections.filter(
+          this.#textareaSnapshot = undefined;
+          if (this.#reservedSelections !== undefined) {
+            this.setSelections([
+              ...this.#reservedSelections.filter(
                 (reservedSelection) =>
                   !selectionIntersects(reservedSelection, selection)
               ),
               selection,
             ]);
           } else {
-            this.#renderSelections([selection]);
+            this.setSelections([selection]);
           }
         }
       }),
@@ -274,7 +317,7 @@ export class Editor<LAnnotation> {
         }
       }),
 
-      addEventListener(this.#textareaEl, 'keyup', () => {
+      addEventListener(this.#textareaEl, 'input', () => {
         if (this.#shouldIgnoreSelectionChange) {
           return;
         }
@@ -286,7 +329,7 @@ export class Editor<LAnnotation> {
     if (this.#selections !== undefined) {
       this.#selectionEls?.forEach((el) => el.remove());
       this.#selectionEls?.clear();
-      this.#renderSelections(this.#selections);
+      this.setSelections(this.#selections);
       this.#textareaEl.focus();
     }
 
@@ -521,7 +564,7 @@ export class Editor<LAnnotation> {
       );
 
       if (nextSelections !== undefined) {
-        this.#renderSelections(nextSelections);
+        this.setSelections(nextSelections, false);
       }
     }
 
@@ -614,12 +657,13 @@ export class Editor<LAnnotation> {
     } else if (this.#selections !== undefined) {
       // Selection in the textarea changed, but no text change was made.
       if (selectionStart === selectionEnd) {
-        this.#renderSelections(
+        this.setSelections(
           mapSelectionMove(
             textDocument,
             this.#selections,
             textDocument.positionAt(textareaSnapshot.offset + selectionStart)
-          )
+          ),
+          false
         );
       } else {
         const isBackward =
@@ -631,13 +675,14 @@ export class Editor<LAnnotation> {
         const focusOffset =
           textareaSnapshot.offset +
           (isBackward ? selectionStart : selectionEnd);
-        this.#renderSelections(
+        this.setSelections(
           mapSelectionRangeMove(
             textDocument,
             this.#selections,
             textDocument.positionAt(anchorOffset),
             textDocument.positionAt(focusOffset)
-          )
+          ),
+          false
         );
       }
     }
@@ -654,30 +699,8 @@ export class Editor<LAnnotation> {
     }
   }
 
-  #renderSelections(selections: EditorSelection[]) {
-    const primarySelection = selections.at(-1);
-    if (primarySelection === undefined) {
-      return;
-    }
-    this.#selections = selections;
-    this.#file?.setSelectedLines(null);
-    const selectionEls = new Map<string, HTMLElement>();
-    if (isCollapsedSelection(primarySelection)) {
-      this.#renderLineHighlight(primarySelection, selectionEls);
-    }
-    selections.forEach((selection) => {
-      if (selections.length > 1 || !isCollapsedSelection(selection)) {
-        this.#renderSelectionRange(selection, selectionEls);
-      }
-      this.#renderCaret(selection, selectionEls);
-    });
-    this.#selectionEls?.forEach((el) => el.remove());
-    this.#selectionEls?.clear();
-    this.#selectionEls = selectionEls;
-    this.#updateTextarea(primarySelection);
-  }
-
   #updateTextarea(primarySelection: EditorSelection) {
+    console.log('updateTextarea');
     const textDocument = this.#textDocument;
     const textareaEl = this.#textareaEl;
     if (textDocument === undefined || textareaEl === undefined) {
@@ -687,18 +710,17 @@ export class Editor<LAnnotation> {
       textDocument,
       primarySelection
     );
-    const textareaSelectionDirection =
-      getTextareaSelectionDirection(primarySelection);
-    this.#textareaSnapshot = textareaSnapshot;
-    this.#shouldIgnoreSelectionChange = true;
+    const direction = toTextareaSelectionDirection(primarySelection);
     textareaEl.style.top = this.#getLineY(primarySelection.start.line) + 'px';
     textareaEl.style.height = textareaSnapshot.lines + 'lh';
     textareaEl.value = textareaSnapshot.text;
     textareaEl.setSelectionRange(
       textareaSnapshot.selectionStart,
       textareaSnapshot.selectionEnd,
-      textareaSelectionDirection
+      direction
     );
+    this.#textareaSnapshot = textareaSnapshot;
+    this.#shouldIgnoreSelectionChange = true;
     setTimeout(() => {
       this.#shouldIgnoreSelectionChange = false;
     }, 0);
@@ -716,6 +738,25 @@ export class Editor<LAnnotation> {
     }
     const endLine = startingLine + totalLines;
     return start.line < endLine && end.line >= startingLine;
+  }
+
+  #renderSelections(
+    selections: EditorSelection[],
+    primarySelection: EditorSelection
+  ) {
+    const selectionEls = new Map<string, HTMLElement>();
+    if (isCollapsedSelection(primarySelection)) {
+      this.#renderLineHighlight(primarySelection, selectionEls);
+    }
+    selections.forEach((selection) => {
+      if (selections.length > 1 || !isCollapsedSelection(selection)) {
+        this.#renderSelectionRange(selection, selectionEls);
+      }
+      this.#renderCaret(selection, selectionEls);
+    });
+    this.#selectionEls?.forEach((el) => el.remove());
+    this.#selectionEls?.clear();
+    this.#selectionEls = selectionEls;
   }
 
   #renderLineHighlight(
@@ -842,7 +883,7 @@ export class Editor<LAnnotation> {
   async #runCommand(command: EditorCommand) {
     switch (command) {
       case 'selectAll':
-        this.#renderSelections([this.#getFullSelection()]);
+        this.setSelections([this.#getFullSelection()]);
         break;
 
       case 'copy':
@@ -922,7 +963,7 @@ export class Editor<LAnnotation> {
 
       case 'documentStart':
       case 'documentEnd':
-        this.#renderSelections([
+        this.setSelections([
           this.#getDocumentBoundarySelection(command === 'documentEnd'),
         ]);
         break;

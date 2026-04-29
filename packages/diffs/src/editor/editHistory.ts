@@ -97,7 +97,7 @@ export class EditHistory {
   }
 }
 
-export function buildInverseOffsetEdits(
+function buildInverseOffsetEdits(
   textBefore: string,
   ascending: ResolvedTextEdit[]
 ): ResolvedTextEdit[] {
