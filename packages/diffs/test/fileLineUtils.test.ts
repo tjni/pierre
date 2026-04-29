@@ -81,3 +81,33 @@ describe('getLineText', () => {
     );
   });
 });
+
+describe('renderable line count', () => {
+  test('keeps regular final lines', () => {
+    const lines = computeLineOffsets({
+      name: 'lines.ts',
+      contents: 'first\nsecond',
+    });
+
+    expect(lines.lineCount).toBe(2);
+  });
+
+  test('excludes one final newline-only row from multi-line files', () => {
+    const lines = computeLineOffsets({
+      name: 'lines.ts',
+      contents: 'first\nsecond\n\n',
+    });
+
+    expect(lines.offsets).toEqual([0, 6, 13, 14]);
+    expect(lines.lineCount).toBe(2);
+  });
+
+  test('keeps a newline-only row when it is the whole file', () => {
+    const lines = computeLineOffsets({
+      name: 'blank.ts',
+      contents: '\n',
+    });
+
+    expect(lines.lineCount).toBe(1);
+  });
+});

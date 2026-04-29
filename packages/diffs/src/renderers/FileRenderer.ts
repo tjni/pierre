@@ -41,7 +41,6 @@ import {
   createHastElement,
 } from '../utils/hast_utils';
 import { isFilePlainText } from '../utils/isFilePlainText';
-import { iterateOverFile } from '../utils/iterateOverFile';
 import { renderFileWithHighlighter } from '../utils/renderFileWithHighlighter';
 import { shouldUseTokenTransformer } from '../utils/shouldUseTokenTransformer';
 import type { WorkerPoolManager } from '../worker';
@@ -197,7 +196,6 @@ export class FileRenderer<LAnnotation = undefined> {
     line: number,
     tokens: Array<[char: number, style: string, text: string]>
   ): void {
-    console.log('updateRenderCacheAt', line, tokens);
     if (this.renderCache != null && this.renderCache.result != null) {
       this.renderCache.result.code[line] = {
         type: 'element',
@@ -378,53 +376,56 @@ export class FileRenderer<LAnnotation = undefined> {
     const gutter = createGutterWrapper();
     const lines = this.getOrCreateLineCache(file);
     const totalLines = lines.lineCount;
+    const endLine = Math.min(
+      renderRange.startingLine + renderRange.totalLines,
+      lines.lineCount
+    );
     let rowCount = 0;
 
-    iterateOverFile({
-      lines,
-      startingLine: renderRange.startingLine,
-      totalLines: renderRange.totalLines,
-      callback: ({ lineIndex, lineNumber }) => {
-        // Sparse array - directly indexed by lineIndex
-        const line = code[lineIndex];
-        if (line == null) {
-          const message = 'FileRenderer.processFileResult: Line doesnt exist';
-          console.error(message, {
-            name: file.name,
-            lineIndex,
-            lineNumber,
-            lines,
-          });
-          throw new Error(message);
-        }
+    for (
+      let lineIndex = renderRange.startingLine;
+      lineIndex < endLine;
+      lineIndex++
+    ) {
+      const lineNumber = lineIndex + 1;
 
-        if (line != null) {
-          // Add gutter line number
-          gutter.children.push(
-            createGutterItem('context', lineNumber, `${lineIndex}`)
-          );
-          contentArray.push(line);
-          rowCount++;
+      // Sparse array - directly indexed by lineIndex
+      const line = code[lineIndex];
+      if (line == null) {
+        const message = 'FileRenderer.processFileResult: Line doesnt exist';
+        console.error(message, {
+          name: file.name,
+          lineIndex,
+          lineNumber,
+          lines,
+        });
+        throw new Error(message);
+      }
 
-          // Check annotations using ACTUAL line number from file
-          const annotations = this.lineAnnotations[lineNumber];
-          if (annotations != null) {
-            gutter.children.push(createGutterGap('context', 'annotation', 1));
-            contentArray.push(
-              createAnnotationElement({
-                type: 'annotation',
-                hunkIndex: 0,
-                lineIndex: lineNumber,
-                annotations: annotations.map((annotation) =>
-                  getLineAnnotationName(annotation)
-                ),
-              })
-            );
-            rowCount++;
-          }
-        }
-      },
-    });
+      // Add gutter line number
+      gutter.children.push(
+        createGutterItem('context', lineNumber, `${lineIndex}`)
+      );
+      contentArray.push(line);
+      rowCount++;
+
+      // Check annotations using ACTUAL line number from file
+      const annotations = this.lineAnnotations[lineNumber];
+      if (annotations != null) {
+        gutter.children.push(createGutterGap('context', 'annotation', 1));
+        contentArray.push(
+          createAnnotationElement({
+            type: 'annotation',
+            hunkIndex: 0,
+            lineIndex: lineNumber,
+            annotations: annotations.map((annotation) =>
+              getLineAnnotationName(annotation)
+            ),
+          })
+        );
+        rowCount++;
+      }
+    }
 
     // Finalize: wrap gutter and content
     gutter.properties.style = `grid-row: span ${rowCount}`;

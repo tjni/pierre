@@ -711,7 +711,6 @@ export class Editor<LAnnotation> {
   }
 
   #updateTextarea(primarySelection: EditorSelection) {
-    console.log('updateTextarea');
     const textDocument = this.#textDocument;
     const textareaEl = this.#textareaEl;
     if (textDocument === undefined || textareaEl === undefined) {

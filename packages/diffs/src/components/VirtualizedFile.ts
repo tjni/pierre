@@ -5,7 +5,6 @@ import type {
   RenderWindow,
   VirtualFileMetrics,
 } from '../types';
-import { iterateOverFile } from '../utils/iterateOverFile';
 import type { WorkerPoolManager } from '../worker';
 import { File, type FileOptions, type FileRenderProps } from './File';
 import type { Virtualizer } from './Virtualizer';
@@ -188,12 +187,9 @@ export class VirtualizedFile<
     if (overflow === 'scroll' && this.lineAnnotations.length === 0) {
       this.height += lines.lineCount * lineHeight;
     } else {
-      iterateOverFile({
-        lines: lines,
-        callback: ({ lineIndex }) => {
-          this.height += this.getLineHeight(lineIndex, false);
-        },
-      });
+      for (let lineIndex = 0; lineIndex < lines.lineCount; lineIndex++) {
+        this.height += this.getLineHeight(lineIndex, false);
+      }
     }
 
     // Bottom padding
@@ -377,50 +373,45 @@ export class VirtualizedFile<
     let centerHunk: number | undefined;
     let overflowCounter: number | undefined;
 
-    iterateOverFile({
-      lines,
-      callback: ({ lineIndex }) => {
-        const isAtHunkBoundary = currentLine % hunkLineCount === 0;
+    for (let lineIndex = 0; lineIndex < lineCount; lineIndex++) {
+      const isAtHunkBoundary = currentLine % hunkLineCount === 0;
 
-        if (isAtHunkBoundary) {
-          hunkOffsets.push(absoluteLineTop - (fileTop + headerRegion));
+      if (isAtHunkBoundary) {
+        hunkOffsets.push(absoluteLineTop - (fileTop + headerRegion));
 
-          if (overflowCounter != null) {
-            if (overflowCounter <= 0) {
-              return true;
-            }
-            overflowCounter--;
+        if (overflowCounter != null) {
+          if (overflowCounter <= 0) {
+            break;
           }
+          overflowCounter--;
         }
+      }
 
-        const lineHeight = this.getLineHeight(lineIndex, false);
-        const currentHunk = Math.floor(currentLine / hunkLineCount);
+      const lineHeight = this.getLineHeight(lineIndex, false);
+      const currentHunk = Math.floor(currentLine / hunkLineCount);
 
-        // Track visible region
-        if (absoluteLineTop > top - lineHeight && absoluteLineTop < bottom) {
-          firstVisibleHunk ??= currentHunk;
-        }
+      // Track visible region
+      if (absoluteLineTop > top - lineHeight && absoluteLineTop < bottom) {
+        firstVisibleHunk ??= currentHunk;
+      }
 
-        // Track which hunk contains the viewport center
-        if (absoluteLineTop + lineHeight > viewportCenter) {
-          centerHunk ??= currentHunk;
-        }
+      // Track which hunk contains the viewport center
+      if (absoluteLineTop + lineHeight > viewportCenter) {
+        centerHunk ??= currentHunk;
+      }
 
-        // Start overflow when we are out of the viewport at a hunk boundary
-        if (
-          overflowCounter == null &&
-          absoluteLineTop >= bottom &&
-          isAtHunkBoundary
-        ) {
-          overflowCounter = overflowHunks;
-        }
+      // Start overflow when we are out of the viewport at a hunk boundary
+      if (
+        overflowCounter == null &&
+        absoluteLineTop >= bottom &&
+        isAtHunkBoundary
+      ) {
+        overflowCounter = overflowHunks;
+      }
 
-        currentLine++;
-        absoluteLineTop += lineHeight;
-
-        return false;
-      },
-    });
+      currentLine++;
+      absoluteLineTop += lineHeight;
+    }
 
     // No visible lines found
     if (firstVisibleHunk == null) {
