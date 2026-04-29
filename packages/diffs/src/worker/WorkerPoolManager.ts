@@ -12,6 +12,7 @@ import { resolveThemes } from '../highlighter/themes/resolveThemes';
 import type {
   DiffsHighlighter,
   FileContents,
+  FileContentsWithLineOffsets,
   FileDiffMetadata,
   HighlighterTypes,
   HunkExpansionRegion,
@@ -546,7 +547,7 @@ export class WorkerPoolManager {
     file: FileContents,
     startingLine: number,
     totalLines: number,
-    lines?: string[]
+    lines?: FileContentsWithLineOffsets
   ): ThemedFileResult | undefined {
     if (this.highlighter == null) {
       this.queueInitialization();

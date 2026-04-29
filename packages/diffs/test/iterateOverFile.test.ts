@@ -1,14 +1,17 @@
 import { describe, expect, test } from 'bun:test';
 
+import { computeLineOffsets } from '../src/utils/computeFileOffsets';
 import {
   type FileLineCallbackProps,
   iterateOverFile,
 } from '../src/utils/iterateOverFile';
-import { splitFileContents } from '../src/utils/splitFileContents';
 
 describe('iterateOverFile', () => {
   test('basic iteration', () => {
-    const lines = splitFileContents('line1\nline2\nline3\nline4\nline5');
+    const lines = computeLineOffsets({
+      name: 'test.txt',
+      contents: 'line1\nline2\nline3\nline4\nline5',
+    });
 
     const results: FileLineCallbackProps[] = [];
     iterateOverFile({
@@ -46,7 +49,7 @@ describe('iterateOverFile', () => {
   });
 
   test('empty file', () => {
-    const lines = splitFileContents('');
+    const lines = computeLineOffsets({ name: 'test.txt', contents: '' });
 
     const results: FileLineCallbackProps[] = [];
     iterateOverFile({
@@ -60,7 +63,10 @@ describe('iterateOverFile', () => {
   });
 
   test('single line file', () => {
-    const lines = splitFileContents('only line');
+    const lines = computeLineOffsets({
+      name: 'test.txt',
+      contents: 'only line',
+    });
 
     const results: FileLineCallbackProps[] = [];
     iterateOverFile({
@@ -78,7 +84,10 @@ describe('iterateOverFile', () => {
   });
 
   test('preserves empty lines', () => {
-    const lines = splitFileContents('line1\n\nline3\n\n\nline6');
+    const lines = computeLineOffsets({
+      name: 'test.txt',
+      contents: 'line1\n\nline3\n\n\nline6',
+    });
 
     const results: string[] = [];
     iterateOverFile({
@@ -93,12 +102,13 @@ describe('iterateOverFile', () => {
   });
 
   test('windowing', () => {
-    const lines = splitFileContents(
-      Array(100)
+    const lines = computeLineOffsets({
+      name: 'test.txt',
+      contents: Array(100)
         .fill(0)
         .map((_, i) => `line${i}`)
-        .join('\n')
-    );
+        .join('\n'),
+    });
 
     // Windowing from start
     let results: number[] = [];
@@ -125,7 +135,10 @@ describe('iterateOverFile', () => {
     expect(results).toEqual([50, 51, 52, 53, 54, 55, 56, 57, 58, 59]);
 
     // Windowing past end - request more lines than available
-    const shortLines = splitFileContents('line1\nline2\nline3\nline4\nline5');
+    const shortLines = computeLineOffsets({
+      name: 'test.txt',
+      contents: 'line1\nline2\nline3\nline4\nline5',
+    });
     results = [];
     iterateOverFile({
       lines: shortLines,
@@ -151,7 +164,10 @@ describe('iterateOverFile', () => {
   });
 
   test('last new line is not iterated over', () => {
-    const lines = splitFileContents('line1\nline2\nline3\n\n\n');
+    const lines = computeLineOffsets({
+      name: 'test.txt',
+      contents: 'line1\nline2\nline3\n\n\n',
+    });
 
     const results: string[] = [];
     iterateOverFile({
@@ -167,12 +183,13 @@ describe('iterateOverFile', () => {
   });
 
   test('isLastLine with windowing', () => {
-    const lines = splitFileContents(
-      Array(10)
+    const lines = computeLineOffsets({
+      name: 'test.txt',
+      contents: Array(10)
         .fill(0)
         .map((_, i) => `line${i}`)
-        .join('\n')
-    );
+        .join('\n'),
+    });
 
     // Window lines 5-7 (not including the actual last line of the file)
     const results: FileLineCallbackProps[] = [];
@@ -208,12 +225,13 @@ describe('iterateOverFile', () => {
   });
 
   test('early termination', () => {
-    const lines = splitFileContents(
-      Array(100)
+    const lines = computeLineOffsets({
+      name: 'test.txt',
+      contents: Array(100)
         .fill(0)
         .map((_, i) => `line${i}`)
-        .join('\n')
-    );
+        .join('\n'),
+    });
 
     // Returning true stops iteration
     let results: number[] = [];
@@ -230,7 +248,10 @@ describe('iterateOverFile', () => {
     expect(results).toEqual([0, 1, 2, 3, 4]);
 
     // Returning false continues
-    const shortLines = splitFileContents('a\nb\nc\nd\ne');
+    const shortLines = computeLineOffsets({
+      name: 'test.txt',
+      contents: 'a\nb\nc\nd\ne',
+    });
     results = [];
     iterateOverFile({
       lines: shortLines,

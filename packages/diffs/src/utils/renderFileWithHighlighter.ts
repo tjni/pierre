@@ -4,18 +4,18 @@ import type {
   DiffsHighlighter,
   DiffsThemeNames,
   FileContents,
+  FileContentsWithLineOffsets,
   ForceFilePlainTextOptions,
   RenderFileOptions,
   ThemedFileResult,
 } from '../types';
 import { cleanLastNewline } from './cleanLastNewline';
+import { computeLineOffsets } from './computeFileOffsets';
 import { createTransformerWithState } from './createTransformerWithState';
 import { formatCSSVariablePrefix } from './formatCSSVariablePrefix';
 import { getFiletypeFromFileName } from './getFiletypeFromFileName';
 import { getHighlighterThemeStyles } from './getHighlighterThemeStyles';
 import { getLineNodes } from './getLineNodes';
-import { iterateOverFile } from './iterateOverFile';
-import { splitFileContents } from './splitFileContents';
 
 const DEFAULT_PLAIN_TEXT_OPTIONS: ForceFilePlainTextOptions = {
   forcePlainText: false,
@@ -85,10 +85,12 @@ export function renderFileWithHighlighter(
     };
   })();
   const highlightedLines = getLineNodes(
+    // TODO(@ije): use `grammar.tokenizeLine2` to replace `codeToHast` for better performance,
+    // use lines.offsets for line text extraction without concatenating strings
     highlighter.codeToHast(
       isWindowedHighlight
         ? extractWindowedFileContent(
-            lines ?? splitFileContents(file.contents),
+            lines ?? computeLineOffsets(file),
             startingLine,
             totalLines
           )
@@ -107,18 +109,15 @@ export function renderFileWithHighlighter(
 }
 
 function extractWindowedFileContent(
-  lines: string[],
+  lines: FileContentsWithLineOffsets,
   startingLine: number,
   totalLines: number
 ): string {
-  let windowContent: string = '';
-  iterateOverFile({
-    lines,
-    startingLine,
-    totalLines,
-    callback({ content }) {
-      windowContent += content;
-    },
-  });
-  return windowContent;
+  if (lines.lineCount === 0) {
+    return '';
+  }
+  const endLine = Math.min(startingLine + totalLines, lines.lineCount);
+  const startOffset = lines.offsets[startingLine] ?? lines.contents.length;
+  const endOffset = lines.offsets[endLine] ?? lines.contents.length;
+  return lines.contents.slice(startOffset, endOffset);
 }

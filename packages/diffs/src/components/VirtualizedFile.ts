@@ -186,10 +186,10 @@ export class VirtualizedFile<
     }
 
     if (overflow === 'scroll' && this.lineAnnotations.length === 0) {
-      this.height += this.getOrCreateLineCache(this.file).length * lineHeight;
+      this.height += lines.lineCount * lineHeight;
     } else {
       iterateOverFile({
-        lines,
+        lines: lines,
         callback: ({ lineIndex }) => {
           this.height += this.getLineHeight(lineIndex, false);
         },
@@ -197,7 +197,7 @@ export class VirtualizedFile<
     }
 
     // Bottom padding
-    if (lines.length > 0) {
+    if (lines.lineCount > 0) {
       this.height += fileGap;
     }
 
@@ -296,7 +296,7 @@ export class VirtualizedFile<
     const { diffHeaderHeight, fileGap, hunkLineCount, lineHeight } =
       this.metrics;
     const lines = this.getOrCreateLineCache(file);
-    const lineCount = lines.length;
+    const lineCount = lines.lineCount;
     const fileHeight = this.height;
     const headerRegion = disableFileHeader ? fileGap : diffHeaderHeight;
 

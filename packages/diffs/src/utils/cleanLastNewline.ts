@@ -1,3 +1,10 @@
 export function cleanLastNewline(contents: string): string {
-  return contents.replace(/\n$|\r\n$/, '');
+  let end = contents.length;
+  if (contents.charAt(end - 1) === '\n') {
+    end--;
+    if (contents.charAt(end - 1) === '\r') {
+      end--;
+    }
+  }
+  return contents.slice(0, end);
 }

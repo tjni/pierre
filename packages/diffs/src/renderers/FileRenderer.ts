@@ -13,6 +13,7 @@ import type {
   BaseCodeOptions,
   DiffsHighlighter,
   FileContents,
+  FileContentsWithLineOffsets,
   FileHeaderRenderMode,
   LineAnnotation,
   RenderedFileASTCache,
@@ -24,6 +25,7 @@ import type {
 } from '../types';
 import { areRenderRangesEqual } from '../utils/areRenderRangesEqual';
 import { areThemesEqual } from '../utils/areThemesEqual';
+import { computeLineOffsets } from '../utils/computeFileOffsets';
 import { createAnnotationElement } from '../utils/createAnnotationElement';
 import { createContentColumn } from '../utils/createContentColumn';
 import { createFileHeaderElement } from '../utils/createFileHeaderElement';
@@ -42,7 +44,6 @@ import { isFilePlainText } from '../utils/isFilePlainText';
 import { iterateOverFile } from '../utils/iterateOverFile';
 import { renderFileWithHighlighter } from '../utils/renderFileWithHighlighter';
 import { shouldUseTokenTransformer } from '../utils/shouldUseTokenTransformer';
-import { splitFileContents } from '../utils/splitFileContents';
 import type { WorkerPoolManager } from '../worker';
 
 type AnnotationLineMap<LAnnotation> = Record<
@@ -69,11 +70,6 @@ export interface FileRenderResult {
   bufferAfter: number;
 }
 
-interface LineCache {
-  cacheKey: string | undefined;
-  lines: string[];
-}
-
 export interface FileRendererOptions extends BaseCodeOptions {
   headerRenderMode?: FileHeaderRenderMode;
 }
@@ -87,7 +83,7 @@ export class FileRenderer<LAnnotation = undefined> {
   private renderCache: RenderedFileASTCache | undefined;
   private computedLang: SupportedLanguages = 'text';
   private lineAnnotations: AnnotationLineMap<LAnnotation> = {};
-  private lineCache: LineCache | undefined;
+  private lineCache: FileContentsWithLineOffsets | undefined;
 
   constructor(
     public options: FileRendererOptions = { theme: DEFAULT_THEMES },
@@ -181,23 +177,20 @@ export class FileRenderer<LAnnotation = undefined> {
     return { options, forceRender: false };
   }
 
-  public getOrCreateLineCache(file: FileContents): string[] {
+  public getOrCreateLineCache(file: FileContents): FileContentsWithLineOffsets {
     // Uncached files will get split every time, not the greatest experience
     // tbh... but something people should try to optimize away
     if (file.cacheKey == null) {
       this.lineCache = undefined;
-      return splitFileContents(file.contents);
+      return computeLineOffsets(file);
     }
 
     let { lineCache } = this;
     if (lineCache == null || lineCache.cacheKey !== file.cacheKey) {
-      lineCache = {
-        cacheKey: file.cacheKey,
-        lines: splitFileContents(file.contents),
-      };
+      lineCache = computeLineOffsets(file);
     }
     this.lineCache = lineCache;
-    return lineCache.lines;
+    return lineCache;
   }
 
   public renderFile(
@@ -350,6 +343,7 @@ export class FileRenderer<LAnnotation = undefined> {
     const contentArray: ElementContent[] = [];
     const gutter = createGutterWrapper();
     const lines = this.getOrCreateLineCache(file);
+    const totalLines = lines.lineCount;
     let rowCount = 0;
 
     iterateOverFile({
@@ -403,9 +397,9 @@ export class FileRenderer<LAnnotation = undefined> {
     return {
       gutterAST: gutter.children ?? [],
       contentAST: contentArray,
-      preAST: this.createPreElement(lines.length),
+      preAST: this.createPreElement(totalLines),
       headerAST: !disableFileHeader ? this.renderHeader(file) : undefined,
-      totalLines: lines.length,
+      totalLines,
       rowCount,
       themeStyles: themeStyles,
       baseThemeType,

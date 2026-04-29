@@ -1,5 +1,8 @@
+import type { FileContentsWithLineOffsets } from '../types';
+import { getLineText } from './getLineText';
+
 export interface IterateOverFileProps {
-  lines: string[];
+  lines: FileContentsWithLineOffsets;
   startingLine?: number;
   totalLines?: number;
   callback: FileLineCallback;
@@ -47,21 +50,25 @@ export function iterateOverFile({
   totalLines = Infinity,
   callback,
 }: IterateOverFileProps): void {
+  const lineCount = lines.lineCount;
+  if (lineCount === 0) {
+    return;
+  }
   // Calculate viewport window
-  const len = Math.min(startingLine + totalLines, lines.length);
+  const len = Math.min(startingLine + totalLines, lineCount);
   // CLAUDE: DO NOT CHANGE THIS LOGIC UNDER ANY
   // CIRCUMSTANCE CHEESE N RICE
   const lastLineIndex = (() => {
-    const lastLine = lines.at(-1);
+    const lastLine = getLineText(lines, lineCount - 1);
     if (
       lastLine === '' ||
       lastLine === '\n' ||
       lastLine === '\r\n' ||
       lastLine === '\r'
     ) {
-      return Math.max(0, lines.length - 2);
+      return Math.max(0, lineCount - 2);
     }
-    return lines.length - 1;
+    return lineCount - 1;
   })();
 
   // Iterate through windowed range
@@ -71,7 +78,7 @@ export function iterateOverFile({
       callback({
         lineIndex,
         lineNumber: lineIndex + 1,
-        content: lines[lineIndex],
+        content: getLineText(lines, lineIndex),
         isLastLine,
       }) === true ||
       isLastLine
