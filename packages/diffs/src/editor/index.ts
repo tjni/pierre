@@ -22,7 +22,6 @@ import type { EditorSelection } from '../editor/editorSelection';
 import {
   comparePosition,
   convertSelection,
-  getPrimarySelection,
   isCollapsedSelection,
   resolveIndentEdits,
   SelectionDirection,
@@ -74,16 +73,15 @@ export class Editor<LAnnotation> {
   #textareaEl?: HTMLTextAreaElement;
   #selectionEls?: Map<string, HTMLElement>;
 
+  #charWidth = -1;
+  #lineHeight = 20;
+  #tabSize = 2;
+
   // state
-  #selectionLineHeight = 20;
   #selectionStartX = 0;
   #selectionStartY = 0;
   #selectionEndX = 0;
   #selectionEndY = 0;
-  #textareaSelectionStart = 0;
-  #textareaSelectionEnd = 0;
-  #textareaSelectionDirection: HTMLTextAreaElement['selectionDirection'] =
-    'none';
   #shouldIgnoreSelectionChange = false;
   #textareaSnapshot?: TextareaSnapshot;
   #reservedSelections?: EditorSelection[];
@@ -196,27 +194,6 @@ export class Editor<LAnnotation> {
           return;
         }
 
-        // if caret position changes in textarea, sync the textarea state.
-        if (
-          this.#textareaEl !== undefined &&
-          this.#textareaSnapshot !== undefined
-        ) {
-          const { selectionStart, selectionEnd, selectionDirection } =
-            this.#textareaEl;
-          if (
-            (this.#textareaSelectionStart !== selectionStart ||
-              this.#textareaSelectionEnd !== selectionEnd ||
-              this.#textareaSelectionDirection !== selectionDirection) &&
-            this.#textareaSnapshot.text === this.#textareaEl.value
-          ) {
-            this.#textareaSelectionStart = selectionStart;
-            this.#textareaSelectionEnd = selectionEnd;
-            this.#textareaSelectionDirection = selectionDirection;
-            this.#syncTextareaState();
-            return;
-          }
-        }
-
         const selectionRaw = document.getSelection();
         const composedRanges = selectionRaw?.getComposedRanges({
           shadowRoots: [shadowRoot],
@@ -261,15 +238,17 @@ export class Editor<LAnnotation> {
           this.#reservedSelections = undefined;
         }
 
-        this.#selectionLineHeight = this.#getLineHeight();
-        this.#selectionStartY = e.clientY;
-        this.#selectionStartX = e.clientX;
+        if (!e.shiftKey) {
+          this.#selectionStartY = e.clientY;
+          this.#selectionStartX = e.clientX;
+        }
         this.#selectionEndX = e.clientX;
         this.#selectionEndY = e.clientY;
       }),
 
       addEventListener(document, 'mouseup', (e) => {
-        if (!isCodeLineTarget(e.composedPath()[0])) {
+        const target = e.composedPath()[0];
+        if (!isCodeLineTarget(target)) {
           return;
         }
 
@@ -295,10 +274,11 @@ export class Editor<LAnnotation> {
         }
       }),
 
-      addEventListener(this.#textareaEl, 'input', () => {
+      addEventListener(this.#textareaEl, 'keyup', () => {
         if (this.#shouldIgnoreSelectionChange) {
           return;
         }
+
         this.#syncTextareaState();
       }),
     ];
@@ -309,13 +289,13 @@ export class Editor<LAnnotation> {
       this.#renderSelections(this.#selections);
       this.#textareaEl.focus();
     }
+
+    this.#getCSSProperites();
   }
 
   #computeMouseSelectionDirection(): SelectionDirection {
-    const startLine = Math.ceil(
-      this.#selectionStartY / this.#selectionLineHeight
-    );
-    const endLine = Math.ceil(this.#selectionEndY / this.#selectionLineHeight);
+    const startLine = Math.ceil(this.#selectionStartY / this.#lineHeight);
+    const endLine = Math.ceil(this.#selectionEndY / this.#lineHeight);
     if (endLine !== startLine) {
       return endLine > startLine
         ? SelectionDirection.Forward
@@ -675,7 +655,7 @@ export class Editor<LAnnotation> {
   }
 
   #renderSelections(selections: EditorSelection[]) {
-    const primarySelection = getPrimarySelection(selections);
+    const primarySelection = selections.at(-1);
     if (primarySelection === undefined) {
       return;
     }
@@ -685,12 +665,11 @@ export class Editor<LAnnotation> {
     if (isCollapsedSelection(primarySelection)) {
       this.#renderLineHighlight(primarySelection, selectionEls);
     }
-    const ch = this.#chToPx();
     selections.forEach((selection) => {
       if (selections.length > 1 || !isCollapsedSelection(selection)) {
-        this.#renderSelectionRange(selection, ch, selectionEls);
+        this.#renderSelectionRange(selection, selectionEls);
       }
-      this.#renderCaret(selection, ch, selectionEls);
+      this.#renderCaret(selection, selectionEls);
     });
     this.#selectionEls?.forEach((el) => el.remove());
     this.#selectionEls?.clear();
@@ -710,9 +689,6 @@ export class Editor<LAnnotation> {
     );
     const textareaSelectionDirection =
       getTextareaSelectionDirection(primarySelection);
-    this.#textareaSelectionStart = textareaSnapshot.selectionStart;
-    this.#textareaSelectionEnd = textareaSnapshot.selectionEnd;
-    this.#textareaSelectionDirection = textareaSelectionDirection;
     this.#textareaSnapshot = textareaSnapshot;
     this.#shouldIgnoreSelectionChange = true;
     textareaEl.style.top = this.#getLineY(primarySelection.start.line) + 'px';
@@ -770,7 +746,6 @@ export class Editor<LAnnotation> {
 
   #renderSelectionRange(
     selection: EditorSelection,
-    ch: number,
     markMap: Map<string, HTMLElement>
   ) {
     if (!this.#isSelectionVisible(selection)) {
@@ -790,7 +765,8 @@ export class Editor<LAnnotation> {
       const lineLength = lineText.length;
       const startChar = ln === start.line ? start.character : 0;
       const endChar = ln === end.line ? end.character : lineLength;
-      const spacing = ln === end.line || startChar === endChar ? 0 : ch;
+      const spacing =
+        ln === end.line || startChar === endChar ? 0 : this.#charWidth;
       const cacheKey = `selection-${ln}-${startChar}-${endChar}`;
 
       let rangeEl: HTMLElement | undefined;
@@ -801,8 +777,8 @@ export class Editor<LAnnotation> {
         let left = 0;
         let width = 0;
         if (startChar === endChar && startChar === 0) {
-          left = ch;
-          width = ch;
+          left = this.#charWidth;
+          width = this.#charWidth;
         } else {
           const startX = this.#getCharacterX(ln, startChar);
           const endX =
@@ -836,11 +812,7 @@ export class Editor<LAnnotation> {
     }
   }
 
-  #renderCaret(
-    selection: EditorSelection,
-    ch: number,
-    markMap: Map<string, HTMLElement>
-  ) {
+  #renderCaret(selection: EditorSelection, markMap: Map<string, HTMLElement>) {
     if (!this.#isSelectionVisible(selection)) {
       return;
     }
@@ -849,7 +821,10 @@ export class Editor<LAnnotation> {
     const isBackward = direction === SelectionDirection.Backward;
     const line = isBackward ? start.line : end.line;
     const character = isBackward ? start.character : end.character;
-    const left = Math.max(ch, this.#getCharacterX(line, character));
+    const left = Math.max(
+      this.#charWidth,
+      this.#getCharacterX(line, character)
+    );
     const caretEl = createElement(
       'div',
       {
@@ -910,7 +885,6 @@ export class Editor<LAnnotation> {
         ) {
           const edits: TextEdit[] = [];
           const nextSelections: EditorSelection[] = [];
-          const tabSize = this.#getTabSize();
           for (const selection of this.#selections) {
             const startLine = selection.start.line;
             const lineText = this.#textDocument.getLineText(startLine);
@@ -920,13 +894,16 @@ export class Editor<LAnnotation> {
                 const ret = resolveIndentEdits(
                   this.#textDocument,
                   selection,
-                  tabSize,
+                  this.#tabSize,
                   outdent
                 );
                 edits.push(...ret[0]);
                 nextSelections.push(ret[1]);
               } else {
-                const indentUnit = getLineIndentationUnit(lineText, tabSize);
+                const indentUnit = getLineIndentationUnit(
+                  lineText,
+                  this.#tabSize
+                );
                 this.#replaceSelectionText(indentUnit);
               }
             }
@@ -1020,8 +997,8 @@ export class Editor<LAnnotation> {
       return;
     }
     const textDocument = this.#textDocument;
-    const selection = getPrimarySelection(selections);
-    if (textDocument == null || selection == null) {
+    const primarySelection = selections.at(-1);
+    if (textDocument == null || primarySelection == null) {
       return;
     }
     const normalizedText = Array.isArray(text)
@@ -1030,8 +1007,8 @@ export class Editor<LAnnotation> {
     const nextSelections = Array.isArray(normalizedText)
       ? applyTextReplaceToSelections(textDocument, selections, normalizedText)
       : applyTextChangeToSelections(textDocument, selections, {
-          start: textDocument.offsetAt(selection.start),
-          end: textDocument.offsetAt(selection.end),
+          start: textDocument.offsetAt(primarySelection.start),
+          end: textDocument.offsetAt(primarySelection.end),
           text: normalizedText,
         });
     this.#rerender(textDocument, nextSelections);
@@ -1043,44 +1020,6 @@ export class Editor<LAnnotation> {
         `[data-line-index="${line}"]`
       ) ?? undefined
     );
-  }
-
-  #getTabSize(): number {
-    const tabSize = this.#contentEl?.computedStyleMap().get('tab-size');
-    if (
-      tabSize !== undefined &&
-      tabSize instanceof CSSUnitValue &&
-      tabSize.unit === 'number'
-    ) {
-      return tabSize.value;
-    }
-    return 2;
-  }
-
-  #getLineHeight(): number {
-    const lineHeight = this.#contentEl?.computedStyleMap().get('line-height');
-    if (
-      lineHeight !== undefined &&
-      lineHeight instanceof CSSUnitValue &&
-      lineHeight.unit === 'px'
-    ) {
-      return Number(lineHeight.value);
-    }
-    return 20;
-  }
-
-  #chToPx(): number {
-    if (this.#contentEl !== undefined) {
-      const el = document.createElement('div');
-      el.style.width = '1ch';
-      el.style.position = 'absolute';
-      el.style.visibility = 'hidden';
-      this.#contentEl.appendChild(el);
-      const px = el.offsetWidth;
-      el.remove();
-      return px;
-    }
-    return 0;
   }
 
   // get line Y position
@@ -1156,6 +1095,39 @@ export class Editor<LAnnotation> {
     const editorRect = contentEl.getBoundingClientRect();
     const pointRect = range.getBoundingClientRect();
     return pointRect.left - editorRect.left;
+  }
+
+  #getCSSProperites() {
+    if (this.#contentEl === undefined) {
+      return;
+    }
+
+    const styleMap = this.#contentEl.computedStyleMap();
+    const tabSize = styleMap.get('tab-size');
+    if (
+      tabSize !== undefined &&
+      tabSize instanceof CSSUnitValue &&
+      tabSize.unit === 'number'
+    ) {
+      this.#tabSize = tabSize.value;
+    }
+
+    const lineHeight = styleMap.get('line-height');
+    if (
+      lineHeight !== undefined &&
+      lineHeight instanceof CSSUnitValue &&
+      lineHeight.unit === 'px'
+    ) {
+      this.#lineHeight = Number(lineHeight.value);
+    }
+
+    const el = document.createElement('div');
+    el.style.width = '1ch';
+    el.style.position = 'absolute';
+    el.style.visibility = 'hidden';
+    this.#contentEl.appendChild(el);
+    this.#charWidth = el.offsetWidth;
+    el.remove();
   }
 
   // check if the web selection belongs to editor

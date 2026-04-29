@@ -134,14 +134,6 @@ export function selectionIntersects(
   );
 }
 
-/** Get the primary(last) selection from the list of selections */
-export function getPrimarySelection(
-  selections: readonly EditorSelection[]
-): EditorSelection | undefined {
-  const selection = selections[selections.length - 1];
-  return selection !== undefined ? { ...selection } : undefined;
-}
-
 export function comparePosition(a: Position, b: Position): number {
   if (a.line !== b.line) {
     return a.line - b.line;
