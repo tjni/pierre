@@ -1,0 +1,756 @@
+import type { Position, Range } from './textDocument';
+
+type Piece = {
+  readonly source: PieceSourceType;
+  readonly offset: number;
+  readonly length: number;
+};
+
+type PieceSegment = {
+  readonly start: number;
+  readonly end: number;
+  readonly text: string;
+  readonly lineOffsets: number[];
+};
+
+type LineOffset = {
+  readonly start: number;
+  readonly end: number;
+  readonly endBeforeEOL: number;
+};
+
+enum PieceSourceType {
+  Original = 0,
+  Added = 1,
+}
+
+// A text buffer is a string with its line offsets.
+class TextBuffer {
+  lineOffsets: number[];
+
+  constructor(public text: string) {
+    this.lineOffsets = createLineOffsets(text);
+  }
+
+  // the append operation is efficient because it only appends
+  // elements to the lineOffsets array in the end
+  append(text: string): number {
+    const offset = this.text.length;
+    const appendedLineOffsets = createLineOffsets(text);
+    for (let i = 1; i < appendedLineOffsets.length; i++) {
+      this.lineOffsets.push(offset + appendedLineOffsets[i]);
+    }
+    this.text += text;
+    return offset;
+  }
+}
+
+// A node in the piece tree, which is a red-black tree
+class PieceNode {
+  static Red = 0;
+  static Black = 1;
+
+  left: PieceNode | null = null;
+  right: PieceNode | null = null;
+  parent: PieceNode | null = null;
+
+  constructor(
+    public piece: Piece,
+    public color: number = PieceNode.Red,
+    public subtreeLength: number = piece.length
+  ) {}
+
+  updateSubtreeLength(): void {
+    this.subtreeLength =
+      (this.left?.subtreeLength ?? 0) +
+      this.piece.length +
+      (this.right?.subtreeLength ?? 0);
+  }
+}
+
+/**
+ * A piece table is a data structure that allows for efficient insertion and deletion of text.
+ * It is a tree of pieces, where each piece is a segment of text that is either original or added.
+ * The tree is balanced to ensure that the operations are efficient.
+ * Inspired by https://code.visualstudio.com/blogs/2018/03/23/text-buffer-reimplementation
+ */
+export class PieceTable {
+  #original: TextBuffer;
+  #add = new TextBuffer('');
+  #root: PieceNode | null = null;
+  #length = 0;
+  #lineCount = 0;
+
+  constructor(originalText: string) {
+    this.#original = new TextBuffer(originalText);
+    this.#setPieces([
+      {
+        source: PieceSourceType.Original,
+        offset: 0,
+        length: originalText.length,
+      },
+    ]);
+  }
+
+  get lineCount(): number {
+    return this.#lineCount;
+  }
+
+  getText(range?: Range): string {
+    if (range === undefined) {
+      return this.#textFromPieces();
+    }
+    const start = this.offsetAt(range.start);
+    const end = this.offsetAt(range.end);
+    return this.#sliceText(start, end);
+  }
+
+  getLineText(line: number, trimEOL = true): string | undefined {
+    const info = this.#getLineOffset(line);
+    if (info === undefined) {
+      return undefined;
+    }
+    return this.#sliceText(info.start, trimEOL ? info.endBeforeEOL : info.end);
+  }
+
+  includes(needle: string): boolean {
+    if (needle.length === 0) {
+      return true;
+    }
+
+    const prefixTable = createPrefixTable(needle);
+    let matched = 0;
+    let found = false;
+    this.#forEachPieceSegment((segment) => {
+      for (let offset = segment.start; offset < segment.end; offset++) {
+        const charCode = segment.text.charCodeAt(offset);
+        while (matched > 0 && charCode !== needle.charCodeAt(matched)) {
+          matched = prefixTable[matched - 1];
+        }
+        if (charCode === needle.charCodeAt(matched)) {
+          matched++;
+        }
+        if (matched === needle.length) {
+          found = true;
+          return false;
+        }
+      }
+      return true;
+    });
+    return found;
+  }
+
+  insert(text: string, offset: number): void {
+    if (text.length === 0) {
+      return;
+    }
+
+    const insertOffset = clamp(offset, 0, this.#length);
+    const addOffset = this.#add.append(text);
+    const insertedPiece = {
+      source: PieceSourceType.Added,
+      offset: addOffset,
+      length: text.length,
+    };
+    const pieces = this.#pieces();
+    const nextPieces: Piece[] = [];
+
+    let cursor = 0;
+    let inserted = false;
+
+    for (const piece of pieces) {
+      const pieceEnd = cursor + piece.length;
+      if (!inserted && insertOffset <= pieceEnd) {
+        const splitOffset = insertOffset - cursor;
+        if (splitOffset > 0) {
+          nextPieces.push({ ...piece, length: splitOffset });
+        }
+        nextPieces.push(insertedPiece);
+        if (splitOffset < piece.length) {
+          nextPieces.push({
+            ...piece,
+            offset: piece.offset + splitOffset,
+            length: piece.length - splitOffset,
+          });
+        }
+        inserted = true;
+      } else {
+        nextPieces.push(piece);
+      }
+      cursor = pieceEnd;
+    }
+
+    if (!inserted) {
+      nextPieces.push(insertedPiece);
+    }
+
+    this.#setPieces(nextPieces);
+  }
+
+  delete(offset: number, length: number): void {
+    if (length <= 0 || this.#length === 0) {
+      return;
+    }
+
+    const start = clamp(offset, 0, this.#length);
+    const end = clamp(start + length, start, this.#length);
+    if (start === end) {
+      return;
+    }
+
+    const nextPieces: Piece[] = [];
+    let cursor = 0;
+    for (const piece of this.#pieces()) {
+      const pieceStart = cursor;
+      const pieceEnd = cursor + piece.length;
+      const keepBefore = clamp(start - pieceStart, 0, piece.length);
+      const keepAfter = clamp(pieceEnd - end, 0, piece.length);
+
+      if (keepBefore > 0) {
+        nextPieces.push({ ...piece, length: keepBefore });
+      }
+      if (keepAfter > 0) {
+        nextPieces.push({
+          ...piece,
+          offset: piece.offset + piece.length - keepAfter,
+          length: keepAfter,
+        });
+      }
+      cursor = pieceEnd;
+    }
+
+    this.#setPieces(nextPieces);
+  }
+
+  positionAt(offset: number): Position {
+    const clampedOffset = clamp(offset, 0, this.#length);
+    if (this.#length === 0) {
+      return { line: 0, character: 0 };
+    }
+
+    let position: Position | undefined;
+    const scan = this.#forEachLineBreak((lineBreak, line) => {
+      if (clampedOffset <= lineBreak.endBeforeEOL) {
+        position = {
+          line,
+          character: clampedOffset - lineBreak.start,
+        };
+        return false;
+      }
+
+      if (clampedOffset < lineBreak.end) {
+        position = {
+          line,
+          character: lineBreak.endBeforeEOL - lineBreak.start,
+        };
+        return false;
+      }
+      return true;
+    });
+
+    if (position !== undefined) {
+      return position;
+    }
+
+    return {
+      line: scan.nextLine,
+      character:
+        Math.min(clampedOffset, this.#length - scan.trailingEOLLength) -
+        scan.nextLineStart,
+    };
+  }
+
+  offsetAt(position: Position): number {
+    if (position.line < 0 || this.#length === 0) {
+      return 0;
+    }
+    const info = this.#getLineOffset(position.line);
+    if (info === undefined) {
+      return this.#length;
+    }
+    const character = clamp(
+      position.character,
+      0,
+      info.endBeforeEOL - info.start
+    );
+    return info.start + character;
+  }
+
+  #sliceText(start: number, end: number): string {
+    if (start >= end) {
+      return '';
+    }
+
+    const chunks: string[] = [];
+    this.#appendSliceFromNode(this.#root, start, end, 0, chunks);
+    return chunks.join('');
+  }
+
+  #appendSliceFromNode(
+    node: PieceNode | null,
+    start: number,
+    end: number,
+    subtreeStart: number,
+    chunks: string[]
+  ): void {
+    if (node === null || start >= end) {
+      return;
+    }
+
+    const subtreeEnd = subtreeStart + node.subtreeLength;
+    if (end <= subtreeStart || start >= subtreeEnd) {
+      return;
+    }
+
+    const leftLength = node.left?.subtreeLength ?? 0;
+    const pieceStart = subtreeStart + leftLength;
+    const pieceEnd = pieceStart + node.piece.length;
+
+    if (start < pieceStart) {
+      this.#appendSliceFromNode(node.left, start, end, subtreeStart, chunks);
+    }
+
+    if (start < pieceEnd && end > pieceStart) {
+      const localStart = Math.max(start - pieceStart, 0);
+      const localEnd = Math.min(end - pieceStart, node.piece.length);
+      const buffer = this.#bufferFor(node.piece.source);
+      chunks.push(
+        buffer.text.slice(
+          node.piece.offset + localStart,
+          node.piece.offset + localEnd
+        )
+      );
+    }
+
+    if (end > pieceEnd) {
+      this.#appendSliceFromNode(node.right, start, end, pieceEnd, chunks);
+    }
+  }
+
+  #getLineOffset(line: number): LineOffset | undefined {
+    if (line < 0 || this.#length === 0) {
+      return undefined;
+    }
+
+    let offset: LineOffset | undefined;
+    const scan = this.#forEachLineBreak((lineBreak, ln) => {
+      if (ln === line) {
+        offset = lineBreak;
+        return false;
+      }
+      return true;
+    });
+
+    if (offset !== undefined) {
+      return offset;
+    }
+    if (scan.nextLine !== line) {
+      return undefined;
+    }
+    return {
+      start: scan.nextLineStart,
+      end: this.#length,
+      endBeforeEOL: this.#length - scan.trailingEOLLength,
+    };
+  }
+
+  #textFromPieces(): string {
+    const chunks: string[] = [];
+    this.#forEachPieceSegment((segment) => {
+      chunks.push(segment.text.slice(segment.start, segment.end));
+    });
+    return chunks.join('');
+  }
+
+  #forEachPieceSegment(
+    callback: (segment: PieceSegment) => boolean | void
+  ): void {
+    this.#walk(this.#root, (node) => {
+      const buffer = this.#bufferFor(node.piece.source);
+      return callback({
+        text: buffer.text,
+        lineOffsets: buffer.lineOffsets,
+        start: node.piece.offset,
+        end: node.piece.offset + node.piece.length,
+      });
+    });
+  }
+
+  #forEachLineBreak(
+    callback: (lineBreak: LineOffset, line: number) => boolean | void
+  ): {
+    nextLine: number;
+    nextLineStart: number;
+    trailingEOLLength: number;
+  } {
+    let line = 0;
+    let lineStart = 0;
+    let documentOffset = 0;
+    let trailingEOLLength = 0;
+
+    this.#forEachPieceSegment((segment) => {
+      const segmentDocumentOffset = documentOffset;
+      const lineOffsetStart = upperBound(segment.lineOffsets, segment.start);
+      const lineOffsetEnd = upperBound(segment.lineOffsets, segment.end);
+      for (let i = lineOffsetStart; i < lineOffsetEnd; i++) {
+        const bufferLineOffset = segment.lineOffsets[i];
+        const endWithEOL = documentOffset + (bufferLineOffset - segment.start);
+        const eolLength = trailingEOLLengthBeforeOffset(
+          segment,
+          segmentDocumentOffset,
+          bufferLineOffset,
+          lineStart,
+          trailingEOLLength
+        );
+
+        if (
+          callback(
+            {
+              start: lineStart,
+              end: endWithEOL,
+              endBeforeEOL: endWithEOL - eolLength,
+            },
+            line
+          ) === false
+        ) {
+          return false;
+        }
+
+        line++;
+        lineStart = endWithEOL;
+        trailingEOLLength = 0;
+      }
+
+      documentOffset += segment.end - segment.start;
+      if (segment.end > segment.start) {
+        trailingEOLLength = trailingEOLLengthAtSegmentEnd(
+          segment,
+          segmentDocumentOffset,
+          lineStart,
+          trailingEOLLength
+        );
+      }
+      return true;
+    });
+
+    return { nextLine: line, nextLineStart: lineStart, trailingEOLLength };
+  }
+
+  #bufferFor(source: PieceSourceType): TextBuffer {
+    return source === PieceSourceType.Original ? this.#original : this.#add;
+  }
+
+  #pieces(): Piece[] {
+    const pieces: Piece[] = [];
+    this.#walk(this.#root, (node) => {
+      pieces.push(node.piece);
+    });
+    return pieces;
+  }
+
+  #setPieces(pieces: Piece[]): void {
+    const coalescedPieces = coalescePieces(pieces);
+    this.#root = null;
+    for (const piece of coalescedPieces) {
+      this.#insertRightmost(piece);
+    }
+    this.#recomputeSubtreeLength(this.#root);
+    this.#computeBufferMetadata();
+  }
+
+  #computeBufferMetadata(): void {
+    let length = 0;
+    let lineCount = 0;
+
+    this.#forEachPieceSegment((segment) => {
+      length += segment.end - segment.start;
+      lineCount += lineFeedCount(segment);
+    });
+
+    this.#length = length;
+    this.#lineCount = length === 0 ? 0 : lineCount + 1;
+  }
+
+  #recomputeSubtreeLength(node: PieceNode | null): number {
+    if (node === null) {
+      return 0;
+    }
+
+    node.subtreeLength =
+      this.#recomputeSubtreeLength(node.left) +
+      node.piece.length +
+      this.#recomputeSubtreeLength(node.right);
+    return node.subtreeLength;
+  }
+
+  #walk(
+    node: PieceNode | null,
+    visit: (node: PieceNode) => boolean | void
+  ): boolean {
+    if (node === null) {
+      return true;
+    }
+    if (!this.#walk(node.left, visit)) {
+      return false;
+    }
+    if (visit(node) === false) {
+      return false;
+    }
+    return this.#walk(node.right, visit);
+  }
+
+  #insertRightmost(piece: Piece): void {
+    const node = new PieceNode(piece);
+    if (this.#root === null) {
+      node.color = PieceNode.Black;
+      this.#root = node;
+      return;
+    }
+
+    let parent = this.#root;
+    while (parent.right !== null) {
+      parent = parent.right;
+    }
+    parent.right = node;
+    node.parent = parent;
+
+    let current = node;
+    while (current.parent?.color === PieceNode.Red) {
+      const parent = current.parent;
+      const grandparent = parent.parent;
+      if (grandparent === null) {
+        break;
+      }
+
+      if (parent === grandparent.left) {
+        const uncle = grandparent.right;
+        if (uncle?.color === PieceNode.Red) {
+          parent.color = PieceNode.Black;
+          uncle.color = PieceNode.Black;
+          grandparent.color = PieceNode.Red;
+          current = grandparent;
+        } else {
+          if (current === parent.right) {
+            current = parent;
+            this.#rotateLeft(current);
+          }
+          current.parent!.color = PieceNode.Black;
+          grandparent.color = PieceNode.Red;
+          this.#rotateRight(grandparent);
+        }
+      } else {
+        const uncle = grandparent.left;
+        if (uncle?.color === PieceNode.Red) {
+          parent.color = PieceNode.Black;
+          uncle.color = PieceNode.Black;
+          grandparent.color = PieceNode.Red;
+          current = grandparent;
+        } else {
+          if (current === parent.left) {
+            current = parent;
+            this.#rotateRight(current);
+          }
+          current.parent!.color = PieceNode.Black;
+          grandparent.color = PieceNode.Red;
+          this.#rotateLeft(grandparent);
+        }
+      }
+    }
+
+    if (this.#root !== null) {
+      this.#root.color = PieceNode.Black;
+    }
+  }
+
+  #rotateLeft(node: PieceNode): void {
+    const right = node.right;
+    if (right === null) {
+      return;
+    }
+
+    node.right = right.left;
+    if (right.left !== null) {
+      right.left.parent = node;
+    }
+    right.parent = node.parent;
+    if (node.parent === null) {
+      this.#root = right;
+    } else if (node === node.parent.left) {
+      node.parent.left = right;
+    } else {
+      node.parent.right = right;
+    }
+    right.left = node;
+    node.parent = right;
+    node.updateSubtreeLength();
+    right.updateSubtreeLength();
+  }
+
+  #rotateRight(node: PieceNode): void {
+    const left = node.left;
+    if (left === null) {
+      return;
+    }
+
+    node.left = left.right;
+    if (left.right !== null) {
+      left.right.parent = node;
+    }
+    left.parent = node.parent;
+    if (node.parent === null) {
+      this.#root = left;
+    } else if (node === node.parent.right) {
+      node.parent.right = left;
+    } else {
+      node.parent.left = left;
+    }
+    left.right = node;
+    node.parent = left;
+    node.updateSubtreeLength();
+    left.updateSubtreeLength();
+  }
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+function createLineOffsets(text: string): number[] {
+  const offsets = [0];
+  for (let i = 0; i < text.length; i++) {
+    if (text.charCodeAt(i) === 10) {
+      offsets.push(i + 1);
+    }
+  }
+  return offsets;
+}
+
+function createPrefixTable(text: string): number[] {
+  const table = Array.from<number>({ length: text.length }).fill(0);
+  let matched = 0;
+  for (let i = 1; i < text.length; i++) {
+    const charCode = text.charCodeAt(i);
+    while (matched > 0 && charCode !== text.charCodeAt(matched)) {
+      matched = table[matched - 1];
+    }
+    if (charCode === text.charCodeAt(matched)) {
+      matched++;
+    }
+    table[i] = matched;
+  }
+  return table;
+}
+
+// Keeps the table compact after repeated edits by joining neighboring pieces
+// that already point at contiguous text in the same backing buffer.
+function coalescePieces(pieces: Piece[]): Piece[] {
+  const coalescedPieces: Piece[] = [];
+  for (const piece of pieces) {
+    if (piece.length === 0) {
+      continue;
+    }
+
+    const previous = coalescedPieces[coalescedPieces.length - 1];
+    if (
+      previous !== undefined &&
+      previous.source === piece.source &&
+      previous.offset + previous.length === piece.offset
+    ) {
+      coalescedPieces[coalescedPieces.length - 1] = {
+        ...previous,
+        length: previous.length + piece.length,
+      };
+      continue;
+    }
+
+    coalescedPieces.push(piece);
+  }
+  return coalescedPieces;
+}
+
+function lineFeedCount(segment: PieceSegment): number {
+  return (
+    upperBound(segment.lineOffsets, segment.end) -
+    upperBound(segment.lineOffsets, segment.start)
+  );
+}
+
+function trailingEOLLengthBeforeOffset(
+  segment: PieceSegment,
+  segmentDocumentOffset: number,
+  bufferOffset: number,
+  lineStart: number,
+  trailingBeforeSegment: number
+): number {
+  const lineStartInSegment = Math.max(
+    segment.start,
+    segment.start + (lineStart - segmentDocumentOffset)
+  );
+  let length = 0;
+  for (let offset = bufferOffset - 1; offset >= lineStartInSegment; offset--) {
+    if (!isEOL(segment.text.charCodeAt(offset))) {
+      return length;
+    }
+    length++;
+  }
+
+  if (
+    lineStart < segmentDocumentOffset &&
+    lineStartInSegment === segment.start
+  ) {
+    return (
+      length +
+      Math.min(trailingBeforeSegment, segmentDocumentOffset - lineStart)
+    );
+  }
+  return length;
+}
+
+function trailingEOLLengthAtSegmentEnd(
+  segment: PieceSegment,
+  segmentDocumentOffset: number,
+  lineStart: number,
+  trailingBeforeSegment: number
+): number {
+  const lineStartInSegment = Math.max(
+    segment.start,
+    segment.start + (lineStart - segmentDocumentOffset)
+  );
+  let length = 0;
+  for (let offset = segment.end - 1; offset >= lineStartInSegment; offset--) {
+    if (!isEOL(segment.text.charCodeAt(offset))) {
+      return length;
+    }
+    length++;
+  }
+
+  if (
+    lineStart < segmentDocumentOffset &&
+    lineStartInSegment === segment.start
+  ) {
+    return (
+      length +
+      Math.min(trailingBeforeSegment, segmentDocumentOffset - lineStart)
+    );
+  }
+  return length;
+}
+
+function isEOL(charCode: number): boolean {
+  return charCode === 10 || charCode === 13;
+}
+
+// Returns the index of the first element in the array that is greater than the target.
+function upperBound(values: number[], target: number): number {
+  let lo = 0;
+  let hi = values.length;
+  while (lo < hi) {
+    const mid = lo + Math.floor((hi - lo) / 2);
+    if (values[mid] <= target) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
+    }
+  }
+  return lo;
+}

@@ -6,6 +6,10 @@ export type HistoryEntry = {
   forwardEdits: ResolvedTextEdit[];
   /** Inverse offset edits from the entry's final text back to its base text. */
   inverseEdits: ResolvedTextEdit[];
+  /** Document version before the entry is applied. */
+  versionBefore: number;
+  /** Document version after the entry is applied. */
+  versionAfter: number;
   /** Base text length before the entry is applied. */
   textLengthBefore: number;
   /** Final text length after the entry is applied. */
@@ -36,6 +40,8 @@ export class EditHistory {
   push(
     textBefore: string,
     resolvedEdits: ResolvedTextEdit[],
+    versionBefore: number,
+    versionAfter: number,
     selectionsBefore: EditorSelection[],
     selectionsAfter?: EditorSelection[]
   ): void {
@@ -51,6 +57,8 @@ export class EditHistory {
     this.#undo.push({
       forwardEdits: forwardEdits.map((edit) => ({ ...edit })),
       inverseEdits: inverseEdits,
+      versionBefore,
+      versionAfter,
       textLengthBefore,
       textLengthAfter,
       selectionsBefore: selectionsBefore?.map((selection) => ({

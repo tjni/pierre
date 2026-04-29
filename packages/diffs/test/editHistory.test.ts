@@ -31,6 +31,8 @@ describe('EditHistory', () => {
     history.push(
       'ab',
       [{ start: 1, end: 1, text: 'X' }],
+      4,
+      5,
       selectionBefore,
       selectionAfter
     );
@@ -46,6 +48,8 @@ describe('EditHistory', () => {
     expect(entry).toEqual({
       forwardEdits: [{ start: 1, end: 1, text: 'X' }],
       inverseEdits: [{ start: 1, end: 2, text: '' }],
+      versionBefore: 4,
+      versionAfter: 5,
       textLengthBefore: 2,
       textLengthAfter: 3,
       selectionsBefore: [caret(0), caret(1)],
@@ -66,6 +70,8 @@ describe('EditHistory', () => {
     history.push(
       'a',
       [{ start: 1, end: 1, text: 'b' }],
+      1,
+      2,
       [caret(1)],
       [selectionAfter]
     );
@@ -79,15 +85,36 @@ describe('EditHistory', () => {
   test('push clears redo history when recording a new undo entry', () => {
     const history = new EditHistory();
 
-    history.push('', [{ start: 0, end: 0, text: 'a' }], [caret(0)], undefined);
-    history.push('a', [{ start: 1, end: 1, text: 'b' }], [caret(1)], undefined);
+    history.push(
+      '',
+      [{ start: 0, end: 0, text: 'a' }],
+      0,
+      1,
+      [caret(0)],
+      undefined
+    );
+    history.push(
+      'a',
+      [{ start: 1, end: 1, text: 'b' }],
+      1,
+      2,
+      [caret(1)],
+      undefined
+    );
 
     expect(history.popUndoToRedo()).toMatchObject({
       forwardEdits: [{ start: 1, end: 1, text: 'b' }],
     });
     expect(history.canRedo).toBe(true);
 
-    history.push('a', [{ start: 1, end: 1, text: 'c' }], [caret(1)], undefined);
+    history.push(
+      'a',
+      [{ start: 1, end: 1, text: 'c' }],
+      1,
+      2,
+      [caret(1)],
+      undefined
+    );
 
     expect(history.canRedo).toBe(false);
     expect(history.popUndoToRedo()).toMatchObject({
@@ -101,7 +128,14 @@ describe('EditHistory', () => {
   test('clear resets both undo and redo stacks', () => {
     const history = new EditHistory();
 
-    history.push('', [{ start: 0, end: 0, text: 'a' }], [caret(0)], undefined);
+    history.push(
+      '',
+      [{ start: 0, end: 0, text: 'a' }],
+      0,
+      1,
+      [caret(0)],
+      undefined
+    );
     history.popUndoToRedo();
     history.clear();
 

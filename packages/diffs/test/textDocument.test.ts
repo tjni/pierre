@@ -42,8 +42,8 @@ describe('TextDocument', () => {
     const d = doc('first\nsecond');
     expect(d.getLineText(0)).toBe('first');
     expect(d.getLineText(1)).toBe('second');
-    expect(d.getLineText(-1)).toBeUndefined();
-    expect(d.getLineText(99)).toBeUndefined();
+    expect(() => d.getLineText(-1)).toThrow('Line index out of range: -1');
+    expect(() => d.getLineText(99)).toThrow('Line index out of range: 99');
   });
 
   test('EOF is LF for Unix newlines', () => {
@@ -225,7 +225,7 @@ describe('TextDocument', () => {
   });
 
   test('undo stack depth for sequential edits', () => {
-    const d = doc('');
+    const d = doc('x');
     const originalNow = Date.now;
     let now = 1000;
     Object.defineProperty(Date, 'now', {
@@ -261,9 +261,9 @@ describe('TextDocument', () => {
         [caret(0, 1)]
       );
       d.undo();
-      expect(d.getText()).toBe('a');
+      expect(d.getText()).toBe('ax');
       d.undo();
-      expect(d.getText()).toBe('');
+      expect(d.getText()).toBe('x');
     } finally {
       Object.defineProperty(Date, 'now', {
         configurable: true,
@@ -344,6 +344,34 @@ describe('TextDocument', () => {
     expect(d.getText()).toBe('ab');
     expect(d.canUndo).toBe(true);
     expect(d.canRedo).toBe(false);
+  });
+
+  test('undo and redo restore history entry versions', () => {
+    const d = new TextDocument('inmemory://1', 'a', 'plain', 7);
+    expect(d.version).toBe(7);
+
+    d.applyEdits(
+      [
+        {
+          range: {
+            start: { line: 0, character: 1 },
+            end: { line: 0, character: 1 },
+          },
+          newText: 'b',
+        },
+      ],
+      true,
+      [caret(0, 1)]
+    );
+    expect(d.version).toBe(8);
+
+    d.undo();
+    expect(d.getText()).toBe('a');
+    expect(d.version).toBe(7);
+
+    d.redo();
+    expect(d.getText()).toBe('ab');
+    expect(d.version).toBe(8);
   });
 
   test('new edit after undo clears redo stack', () => {
