@@ -386,6 +386,13 @@ export class File<LAnnotation = undefined> {
       : EMPTY_FILE;
   }
 
+  public updateRenderCacheAt(
+    line: number,
+    tokens: Array<[char: number, style: string, text: string]>
+  ): void {
+    this.fileRenderer.updateRenderCacheAt(line, tokens);
+  }
+
   public render({
     file,
     fileContainer,

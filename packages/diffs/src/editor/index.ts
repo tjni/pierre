@@ -366,7 +366,6 @@ export class Editor<LAnnotation> {
 
     if (this.#highlighter !== undefined) {
       const t = performance.now();
-      const { theme = DEFAULT_THEMES } = file.options;
 
       const prevLines = this.#textLinesCache ?? [];
       const { startingLine = 0, totalLines = Infinity } =
@@ -382,6 +381,7 @@ export class Editor<LAnnotation> {
       const compareEndLine = Math.max(endLine, prevEndLine);
       const dirtyLines = new Set<number>();
       const linesChange = textDocument.lineCount - prevLines.length;
+
       let dirtyLineStart = -1;
       let dirtyLineEnd = -1;
       for (let line = startingLine; line < compareEndLine; line++) {
@@ -400,30 +400,9 @@ export class Editor<LAnnotation> {
           }
         }
       }
+
       for (let line = endLine; line < prevEndLine; line++) {
         this.#getLineElement(line)?.remove();
-      }
-
-      let themeName: string;
-      let themeType = file.options.themeType ?? 'system';
-      if (themeType === 'system') {
-        themeType = window.matchMedia('(prefers-color-scheme: dark)').matches
-          ? 'dark'
-          : 'light';
-      }
-      if (typeof theme === 'string') {
-        themeName = theme;
-      } else {
-        themeName = theme[themeType];
-      }
-      let colorMap = this.#colorMap?.get(themeName);
-      if (colorMap === undefined) {
-        const ret = this.#highlighter.setTheme(themeName);
-        colorMap = ret.colorMap;
-        (this.#colorMap ?? (this.#colorMap = new Map())).set(
-          themeName,
-          ret.colorMap ?? []
-        );
       }
 
       const grammar = this.#highlighter.getLanguage(textDocument.languageId);
@@ -452,6 +431,11 @@ export class Editor<LAnnotation> {
         } else {
           contentEl.insertBefore(lineEl, this.#textareaEl ?? null);
         }
+      };
+
+      const colorMap = {
+        dark: this.#getThemeColorMap('dark'),
+        light: this.#getThemeColorMap('light'),
       };
 
       let state =
@@ -520,30 +504,36 @@ export class Editor<LAnnotation> {
           );
         }
         if (shouldUpdateLineEl) {
-          const tokens = result.tokens;
+          const rawTokens = result.tokens;
           const lineLength = lineText.length;
-          const tokensLength = tokens.length / 2;
+          const tokensLength = rawTokens.length / 2;
+          const tokens: [char: number, style: string, text: string][] = [];
           const spans: Element[] = [];
           for (let j = 0; j < tokensLength; j++) {
-            const offset = tokens[2 * j];
+            const offset = rawTokens[2 * j];
             const nextOffset =
-              j + 1 < tokensLength ? tokens[2 * j + 2] : lineLength;
+              j + 1 < tokensLength ? rawTokens[2 * j + 2] : lineLength;
             if (offset === nextOffset) {
-              // empty token ?
+              // should never reach here, skip if happens anyway
               continue;
             }
-            const metadata = tokens[2 * j + 1];
-            const fg = colorMap[EncodedTokenMetadata.getForeground(metadata)];
+            const metadata = rawTokens[2 * j + 1];
+            const bg = EncodedTokenMetadata.getForeground(metadata);
+            const darkFG = colorMap.dark[bg];
+            const lightFG = colorMap.light[bg];
+            const cssText = `--diffs-token-dark:${darkFG};--diffs-token-light:${lightFG}`;
             const tokenText = lineText.slice(offset, nextOffset);
+            tokens.push([offset, cssText, tokenText]);
             spans.push(
               createElement('span', {
                 dataset: { char: String(offset) },
-                style: { cssText: `--diffs-token-${themeType}:${fg}` },
+                style: { cssText },
                 textContent: tokenText,
               })
             );
           }
           updateLineEl(line, spans);
+          this.#file?.updateRenderCacheAt(line, tokens);
         }
         state = result.ruleStack;
         this.#stateStackCache[line + 1] = state;
@@ -572,6 +562,27 @@ export class Editor<LAnnotation> {
     if (this.#onChange !== undefined) {
       this.#onChange({ ...fileContents, contents: textDocument.getText() });
     }
+  }
+
+  #getThemeColorMap(themeType: 'dark' | 'light'): string[] {
+    if (this.#highlighter === undefined || this.#file === undefined) {
+      throw new Error('editor not initialized');
+    }
+    let themeName: string;
+    const { theme = DEFAULT_THEMES } = this.#file.options;
+    if (typeof theme === 'string') {
+      themeName = theme;
+    } else {
+      themeName = theme[themeType];
+    }
+    this.#colorMap ??= new Map();
+    let colorMap = this.#colorMap.get(themeName);
+    if (colorMap === undefined) {
+      const ret = this.#highlighter.setTheme(themeName);
+      colorMap = ret.colorMap;
+      this.#colorMap.set(themeName, ret.colorMap ?? []);
+    }
+    return colorMap;
   }
 
   #buildStateStackCache(

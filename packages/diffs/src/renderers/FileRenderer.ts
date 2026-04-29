@@ -193,6 +193,40 @@ export class FileRenderer<LAnnotation = undefined> {
     return lineCache;
   }
 
+  public updateRenderCacheAt(
+    line: number,
+    tokens: Array<[char: number, style: string, text: string]>
+  ): void {
+    console.log('updateRenderCacheAt', line, tokens);
+    if (this.renderCache != null && this.renderCache.result != null) {
+      this.renderCache.result.code[line] = {
+        type: 'element',
+        tagName: 'div',
+        properties: {
+          'data-line': line + 1,
+          'data-line-index': line,
+          'data-line-type': 'context',
+        },
+        children: tokens.map(([char, style, text]) => {
+          return {
+            type: 'element',
+            tagName: 'span',
+            properties: {
+              'data-char': char,
+              style,
+            },
+            children: [
+              {
+                type: 'text',
+                value: text,
+              },
+            ],
+          };
+        }),
+      };
+    }
+  }
+
   public renderFile(
     file: FileContents | undefined = this.renderCache?.file,
     renderRange: RenderRange = DEFAULT_RENDER_RANGE
