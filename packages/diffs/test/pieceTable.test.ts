@@ -140,7 +140,7 @@ describe('PieceTable', () => {
     expect(table.getLineText(0)).toBe('first');
     expect(table.getLineText(0, false)).toBe('first\r\n');
     expect(table.getLineText(1)).toBe('second');
-    expect(table.getLineText(99)).toBeUndefined();
+    expect(() => table.getLineText(99)).toThrow('Line index out of range: 99');
   });
 
   test('maps between offsets and positions', () => {
@@ -225,7 +225,7 @@ describe('PieceTable', () => {
     const table = new PieceTable('');
 
     expectTableToMatchText(table, '');
-    expect(table.getLineText(0)).toBeUndefined();
+    expect(table.getLineText(0)).toBe('');
     expect(table.positionAt(99)).toEqual({ line: 0, character: 0 });
     expect(table.offsetAt({ line: 99, character: 99 })).toBe(0);
   });
@@ -299,7 +299,7 @@ describe('PieceTable', () => {
     table.delete(0, table.getText().length);
 
     expectTableToMatchText(table, '');
-    expect(table.getLineText(0)).toBeUndefined();
+    expect(table.getLineText(0)).toBe('');
   });
 
   test('matches plain string edits across many insertions and deletions', () => {

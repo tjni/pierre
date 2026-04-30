@@ -1,7 +1,11 @@
 import type { EditorSelection } from './editorSelection';
 import type { ResolvedTextEdit } from './textDocument';
 
-export type EditStackEntry = {
+interface EditSource {
+  getTextSlice(start: number, end: number): string;
+}
+
+interface EditStackEntry {
   /** Forward offset edits from the entry's base text to its final text. */
   forwardEdits: ResolvedTextEdit[];
   /** Inverse offset edits from the entry's final text back to its base text. */
@@ -14,7 +18,7 @@ export type EditStackEntry = {
   selectionsBefore: EditorSelection[];
   /** Selection after the transaction (restored on redo). */
   selectionsAfter?: EditorSelection[];
-};
+}
 
 export class EditStack {
   #undoStack: EditStackEntry[] = [];
@@ -34,7 +38,7 @@ export class EditStack {
   }
 
   push(
-    textBefore: string,
+    source: EditSource,
     resolvedEdits: ResolvedTextEdit[],
     versionBefore: number,
     versionAfter: number,
@@ -42,7 +46,7 @@ export class EditStack {
     selectionsAfter?: EditorSelection[]
   ): void {
     const forwardEdits = [...resolvedEdits].sort((a, b) => a.start - b.start);
-    const inverseEdits = buildInverseOffsetEdits(textBefore, forwardEdits);
+    const inverseEdits = buildInverseOffsetEdits(source, forwardEdits);
     this.#undoStack.push({
       forwardEdits: forwardEdits.map((edit) => ({ ...edit })),
       inverseEdits: inverseEdits,
@@ -85,13 +89,13 @@ export class EditStack {
 }
 
 function buildInverseOffsetEdits(
-  textBefore: string,
+  source: EditSource,
   ascending: ResolvedTextEdit[]
 ): ResolvedTextEdit[] {
   const inverse: ResolvedTextEdit[] = [];
   for (let i = 0, offsetDelta = 0; i < ascending.length; i++) {
     const edit = ascending[i];
-    const replacedText = textBefore.slice(edit.start, edit.end);
+    const replacedText = source.getTextSlice(edit.start, edit.end);
     const startAfterEdit = edit.start + offsetDelta;
     inverse.push({
       start: startAfterEdit,

@@ -51,7 +51,9 @@ describe('TextDocument', () => {
     expect(d.offsetAt({ line: 0, character: 0 })).toBe(0);
     expect(d.offsetAt({ line: 0, character: 99 })).toBe(2);
     expect(d.offsetAt({ line: 1, character: 0 })).toBe(3);
-    expect(d.offsetAt({ line: 99, character: 0 })).toBe(d.getText().length);
+    expect(() => d.offsetAt({ line: 99, character: 0 })).toThrow(
+      'Line index out of range: 99'
+    );
   });
 
   test('positionAt is inverse of offsetAt for in-range columns', () => {

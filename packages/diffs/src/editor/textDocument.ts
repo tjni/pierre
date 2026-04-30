@@ -155,11 +155,11 @@ export class TextDocument {
   }
 
   getLineText(line: number, trimEOL = true): string {
-    const text = this.#pieceTable.getLineText(line, trimEOL);
-    if (text === undefined) {
-      throw new Error(`Line index out of range: ${line}`);
-    }
-    return text;
+    return this.#pieceTable.getLineText(line, trimEOL);
+  }
+
+  getTextSlice(start: number, end: number): string {
+    return this.#pieceTable.getTextSlice(start, end);
   }
 
   applyEdits(
@@ -173,9 +173,8 @@ export class TextDocument {
     }
     const resolvedEdits = edits.map((edit) => this.#resolveEdit(edit));
     if (updateHistory && selectionsBefore !== undefined) {
-      const textBefore = this.getText();
       this.#editStack.push(
-        textBefore,
+        this,
         resolvedEdits,
         this.#version,
         this.#version + 1,

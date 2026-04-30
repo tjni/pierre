@@ -102,15 +102,28 @@ export class PieceTable {
     }
     const start = this.offsetAt(range.start);
     const end = this.offsetAt(range.end);
-    return this.#sliceText(start, end);
+    return this.getTextSlice(start, end);
   }
 
-  getLineText(line: number, trimEOL = true): string | undefined {
-    const info = this.#getLineOffset(line);
-    if (info === undefined) {
-      return undefined;
+  getLineText(line: number, trimEOL = true): string {
+    const offset = this.#getLineOffset(line);
+    if (offset === undefined) {
+      throw new Error(`Line index out of range: ${line}`);
     }
-    return this.#sliceText(info.start, trimEOL ? info.endBeforeEOL : info.end);
+    return this.getTextSlice(
+      offset.start,
+      trimEOL ? offset.endBeforeEOL : offset.end
+    );
+  }
+
+  getTextSlice(start: number, end: number): string {
+    if (start >= end) {
+      return '';
+    }
+
+    const chunks: string[] = [];
+    this.#appendSliceFromNode(this.#root, start, end, 0, chunks);
+    return chunks.join('');
   }
 
   includes(needle: string): boolean {
@@ -264,26 +277,19 @@ export class PieceTable {
     if (position.line < 0 || this.#length === 0) {
       return 0;
     }
-    const info = this.#getLineOffset(position.line);
-    if (info === undefined) {
-      return this.#length;
+    if (position.line >= this.#lineCount) {
+      throw new Error(`Line index out of range: ${position.line}`);
+    }
+    const offset = this.#getLineOffset(position.line);
+    if (offset === undefined) {
+      throw new Error(`Line index out of range: ${position.line}`);
     }
     const character = clamp(
       position.character,
       0,
-      info.endBeforeEOL - info.start
+      offset.endBeforeEOL - offset.start
     );
-    return info.start + character;
-  }
-
-  #sliceText(start: number, end: number): string {
-    if (start >= end) {
-      return '';
-    }
-
-    const chunks: string[] = [];
-    this.#appendSliceFromNode(this.#root, start, end, 0, chunks);
-    return chunks.join('');
+    return offset.start + character;
   }
 
   #appendSliceFromNode(
@@ -328,8 +334,14 @@ export class PieceTable {
   }
 
   #getLineOffset(line: number): LineOffset | undefined {
-    if (line < 0 || this.#length === 0) {
-      return undefined;
+    if (line < 0) {
+      throw new Error(`Line index out of range: ${line}`);
+    }
+    if (this.#length === 0) {
+      if (line === 0) {
+        return { start: 0, end: 0, endBeforeEOL: 0 };
+      }
+      throw new Error(`Line index out of range: ${line}`);
     }
 
     let offset: LineOffset | undefined;
@@ -345,7 +357,7 @@ export class PieceTable {
       return offset;
     }
     if (scan.nextLine !== line) {
-      return undefined;
+      throw new Error(`Line index out of range: ${line}`);
     }
     return {
       start: scan.nextLineStart,

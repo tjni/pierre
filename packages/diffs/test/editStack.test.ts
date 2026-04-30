@@ -22,6 +22,14 @@ function caret(character: number) {
   return createSelection(0, character, 0, character, SelectionDirection.None);
 }
 
+function source(text: string) {
+  return {
+    getTextSlice(start: number, end: number): string {
+      return text.slice(start, end);
+    },
+  };
+}
+
 describe('EditHistory', () => {
   test('push stores cloned selections and pop methods move entries between stacks', () => {
     const editStack = new EditStack();
@@ -29,7 +37,7 @@ describe('EditHistory', () => {
     const selectionAfter = [caret(2), caret(3)];
 
     editStack.push(
-      'ab',
+      source('ab'),
       [{ start: 1, end: 1, text: 'X' }],
       4,
       5,
@@ -66,7 +74,7 @@ describe('EditHistory', () => {
     let selectionAfter = caret(2);
 
     editStack.push(
-      'a',
+      source('a'),
       [{ start: 1, end: 1, text: 'b' }],
       1,
       2,
@@ -84,7 +92,7 @@ describe('EditHistory', () => {
     const editStack = new EditStack();
 
     editStack.push(
-      '',
+      source(''),
       [{ start: 0, end: 0, text: 'a' }],
       0,
       1,
@@ -92,7 +100,7 @@ describe('EditHistory', () => {
       undefined
     );
     editStack.push(
-      'a',
+      source('a'),
       [{ start: 1, end: 1, text: 'b' }],
       1,
       2,
@@ -106,7 +114,7 @@ describe('EditHistory', () => {
     expect(editStack.canRedo).toBe(true);
 
     editStack.push(
-      'a',
+      source('a'),
       [{ start: 1, end: 1, text: 'c' }],
       1,
       2,
@@ -127,7 +135,7 @@ describe('EditHistory', () => {
     const editStack = new EditStack();
 
     editStack.push(
-      '',
+      source(''),
       [{ start: 0, end: 0, text: 'a' }],
       0,
       1,
