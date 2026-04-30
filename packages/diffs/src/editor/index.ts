@@ -1038,7 +1038,7 @@ export class Editor<LAnnotation> {
         return comparePosition(a.end, b.end);
       })
       .map((selection) => this.#textDocument!.getText(selection))
-      .join(this.#textDocument.EOF);
+      .join('\n');
   }
 
   // replace the selection text
@@ -1052,15 +1052,13 @@ export class Editor<LAnnotation> {
     if (textDocument == null || primarySelection == null) {
       return;
     }
-    const normalizedText = Array.isArray(text)
-      ? text.map((value) => value.replace(/\r\n?|\n/g, textDocument.EOF))
-      : text.replace(/\r\n?|\n/g, textDocument.EOF);
-    const nextSelections = Array.isArray(normalizedText)
-      ? applyTextReplaceToSelections(textDocument, selections, normalizedText)
+    // todo: normalize text with textDocument.EOF
+    const nextSelections = Array.isArray(text)
+      ? applyTextReplaceToSelections(textDocument, selections, text)
       : applyTextChangeToSelections(textDocument, selections, {
           start: textDocument.offsetAt(primarySelection.start),
           end: textDocument.offsetAt(primarySelection.end),
-          text: normalizedText,
+          text: text,
         });
     this.#rerender(textDocument, nextSelections);
   }

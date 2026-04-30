@@ -46,14 +46,6 @@ describe('TextDocument', () => {
     expect(() => d.getLineText(99)).toThrow('Line index out of range: 99');
   });
 
-  test('EOF is LF for Unix newlines', () => {
-    expect(doc('a\nb').EOF).toBe('\n');
-  });
-
-  test('EOF is CRLF when text uses CRLF', () => {
-    expect(doc('a\r\nb').EOF).toBe('\r\n');
-  });
-
   test('offsetAt clamps to line and document bounds', () => {
     const d = doc('ab\nc');
     expect(d.offsetAt({ line: 0, character: 0 })).toBe(0);
@@ -156,7 +148,6 @@ describe('TextDocument', () => {
       },
     ]);
     expect(d.getText()).toBe('a\r\nB\r\nc');
-    expect(d.EOF).toBe('\r\n');
   });
 
   test('getText(range) spans multiple lines correctly after edits', () => {

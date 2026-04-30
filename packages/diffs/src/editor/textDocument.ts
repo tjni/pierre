@@ -96,7 +96,6 @@ export class TextDocument {
   #languageId: string;
   #version: number;
   #pieceTable: PieceTable;
-  #hasCRLF = false;
   #history = new EditHistory();
 
   constructor(
@@ -109,7 +108,6 @@ export class TextDocument {
     this.#languageId = languageId;
     this.#version = version;
     this.#pieceTable = new PieceTable(text);
-    this.#hasCRLF = this.#pieceTable.includes('\r\n');
   }
 
   get uri(): string {
@@ -142,10 +140,6 @@ export class TextDocument {
 
   get canRedo(): boolean {
     return this.#history.canRedo;
-  }
-
-  get EOF(): string {
-    return this.#hasCRLF ? '\r\n' : '\n';
   }
 
   getText(range?: Range): string {
@@ -243,6 +237,5 @@ export class TextDocument {
       this.#pieceTable.delete(edit.start, edit.end - edit.start);
       this.#pieceTable.insert(edit.text, edit.start);
     }
-    this.#hasCRLF = this.#pieceTable.includes('\r\n');
   }
 }
