@@ -10,10 +10,6 @@ export type HistoryEntry = {
   versionBefore: number;
   /** Document version after the entry is applied. */
   versionAfter: number;
-  /** Base text length before the entry is applied. */
-  textLengthBefore: number;
-  /** Final text length after the entry is applied. */
-  textLengthAfter: number;
   /** Selection before the transaction (restored on undo). */
   selectionsBefore: EditorSelection[];
   /** Selection after the transaction (restored on redo). */
@@ -47,20 +43,11 @@ export class EditHistory {
   ): void {
     const forwardEdits = [...resolvedEdits].sort((a, b) => a.start - b.start);
     const inverseEdits = buildInverseOffsetEdits(textBefore, forwardEdits);
-    const textLengthBefore = textBefore.length;
-    const textLengthAfter =
-      textLengthBefore +
-      forwardEdits.reduce(
-        (sum, edit) => sum + edit.text.length - (edit.end - edit.start),
-        0
-      );
     this.#undo.push({
       forwardEdits: forwardEdits.map((edit) => ({ ...edit })),
       inverseEdits: inverseEdits,
       versionBefore,
       versionAfter,
-      textLengthBefore,
-      textLengthAfter,
       selectionsBefore: selectionsBefore?.map((selection) => ({
         ...selection,
       })),

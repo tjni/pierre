@@ -50,8 +50,6 @@ describe('EditHistory', () => {
       inverseEdits: [{ start: 1, end: 2, text: '' }],
       versionBefore: 4,
       versionAfter: 5,
-      textLengthBefore: 2,
-      textLengthAfter: 3,
       selectionsBefore: [caret(0), caret(1)],
       selectionsAfter: [caret(2), caret(3)],
     });
