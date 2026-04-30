@@ -1,5 +1,5 @@
-import { EditHistory } from './editHistory';
 import { type EditorSelection } from './editorSelection';
+import { EditStack } from './editStack';
 import { PieceTable } from './pieceTable';
 
 /**
@@ -96,7 +96,7 @@ export class TextDocument {
   #languageId: string;
   #version: number;
   #pieceTable: PieceTable;
-  #history = new EditHistory();
+  #editStack = new EditStack();
 
   constructor(
     uri: string,
@@ -135,11 +135,19 @@ export class TextDocument {
   }
 
   get canUndo(): boolean {
-    return this.#history.canUndo;
+    return this.#editStack.canUndo;
   }
 
   get canRedo(): boolean {
-    return this.#history.canRedo;
+    return this.#editStack.canRedo;
+  }
+
+  positionAt(offset: number): Position {
+    return this.#pieceTable.positionAt(offset);
+  }
+
+  offsetAt(position: Position): number {
+    return this.#pieceTable.offsetAt(position);
   }
 
   getText(range?: Range): string {
@@ -166,7 +174,7 @@ export class TextDocument {
     const resolvedEdits = edits.map((edit) => this.#resolveEdit(edit));
     if (updateHistory && selectionsBefore !== undefined) {
       const textBefore = this.getText();
-      this.#history.push(
+      this.#editStack.push(
         textBefore,
         resolvedEdits,
         this.#version,
@@ -180,11 +188,11 @@ export class TextDocument {
   }
 
   setLastUndoSelectionsAfter(selections: EditorSelection[]): void {
-    this.#history.setLastUndoSelectionsAfter(selections);
+    this.#editStack.setLastUndoSelectionsAfter(selections);
   }
 
   undo(): EditorSelection[] | undefined {
-    const entry = this.#history.popUndoToRedo();
+    const entry = this.#editStack.popUndoToRedo();
     if (entry === undefined) {
       return undefined;
     }
@@ -196,7 +204,7 @@ export class TextDocument {
   }
 
   redo(): EditorSelection[] | undefined {
-    const entry = this.#history.popRedoToUndo();
+    const entry = this.#editStack.popRedoToUndo();
     if (entry === undefined) {
       return undefined;
     }
@@ -205,14 +213,6 @@ export class TextDocument {
     return entry.selectionsAfter !== undefined
       ? entry.selectionsAfter.map((selection) => ({ ...selection }))
       : undefined;
-  }
-
-  positionAt(offset: number): Position {
-    return this.#pieceTable.positionAt(offset);
-  }
-
-  offsetAt(position: Position): number {
-    return this.#pieceTable.offsetAt(position);
   }
 
   #resolveEdit(edit: TextEdit): ResolvedTextEdit {

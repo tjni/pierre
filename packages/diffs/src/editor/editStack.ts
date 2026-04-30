@@ -1,7 +1,7 @@
 import type { EditorSelection } from './editorSelection';
 import type { ResolvedTextEdit } from './textDocument';
 
-export type HistoryEntry = {
+export type EditStackEntry = {
   /** Forward offset edits from the entry's base text to its final text. */
   forwardEdits: ResolvedTextEdit[];
   /** Inverse offset edits from the entry's final text back to its base text. */
@@ -16,21 +16,21 @@ export type HistoryEntry = {
   selectionsAfter?: EditorSelection[];
 };
 
-export class EditHistory {
-  #undo: HistoryEntry[] = [];
-  #redo: HistoryEntry[] = [];
+export class EditStack {
+  #undoStack: EditStackEntry[] = [];
+  #redoStack: EditStackEntry[] = [];
 
   get canUndo(): boolean {
-    return this.#undo.length > 0;
+    return this.#undoStack.length > 0;
   }
 
   get canRedo(): boolean {
-    return this.#redo.length > 0;
+    return this.#redoStack.length > 0;
   }
 
   clear(): void {
-    this.#undo.length = 0;
-    this.#redo.length = 0;
+    this.#undoStack.length = 0;
+    this.#redoStack.length = 0;
   }
 
   push(
@@ -43,7 +43,7 @@ export class EditHistory {
   ): void {
     const forwardEdits = [...resolvedEdits].sort((a, b) => a.start - b.start);
     const inverseEdits = buildInverseOffsetEdits(textBefore, forwardEdits);
-    this.#undo.push({
+    this.#undoStack.push({
       forwardEdits: forwardEdits.map((edit) => ({ ...edit })),
       inverseEdits: inverseEdits,
       versionBefore,
@@ -53,11 +53,11 @@ export class EditHistory {
       })),
       selectionsAfter: selectionsAfter?.map((selection) => ({ ...selection })),
     });
-    this.#redo.length = 0;
+    this.#redoStack.length = 0;
   }
 
   setLastUndoSelectionsAfter(selections: EditorSelection[]): void {
-    const lastEntry = this.#undo[this.#undo.length - 1];
+    const lastEntry = this.#undoStack[this.#undoStack.length - 1];
     if (lastEntry !== undefined) {
       lastEntry.selectionsAfter = selections.map((selection) => ({
         ...selection,
@@ -66,19 +66,19 @@ export class EditHistory {
   }
 
   /** Moves the latest undo entry to the redo stack and returns it, or `undefined` if empty. */
-  popUndoToRedo(): HistoryEntry | void {
-    const entry = this.#undo.pop();
+  popUndoToRedo(): EditStackEntry | void {
+    const entry = this.#undoStack.pop();
     if (entry !== undefined) {
-      this.#redo.push(entry);
+      this.#redoStack.push(entry);
       return entry;
     }
   }
 
   /** Moves the latest redo entry back to the undo stack and returns it, or `undefined` if empty. */
-  popRedoToUndo(): HistoryEntry | void {
-    const entry = this.#redo.pop();
+  popRedoToUndo(): EditStackEntry | void {
+    const entry = this.#redoStack.pop();
     if (entry !== undefined) {
-      this.#undo.push(entry);
+      this.#undoStack.push(entry);
       return entry;
     }
   }

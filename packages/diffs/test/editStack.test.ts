@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
-import { EditHistory } from '../src/editor/editHistory';
 import type { EditorSelection } from '../src/editor/editorSelection';
 import { SelectionDirection } from '../src/editor/editorSelection';
+import { EditStack } from '../src/editor/editStack';
 
 function createSelection(
   startLine: number,
@@ -24,11 +24,11 @@ function caret(character: number) {
 
 describe('EditHistory', () => {
   test('push stores cloned selections and pop methods move entries between stacks', () => {
-    const history = new EditHistory();
+    const editStack = new EditStack();
     const selectionBefore = [caret(0), caret(1)];
     const selectionAfter = [caret(2), caret(3)];
 
-    history.push(
+    editStack.push(
       'ab',
       [{ start: 1, end: 1, text: 'X' }],
       4,
@@ -40,10 +40,10 @@ describe('EditHistory', () => {
     selectionBefore[0] = caret(99);
     selectionAfter[0] = caret(99);
 
-    expect(history.canUndo).toBe(true);
-    expect(history.canRedo).toBe(false);
+    expect(editStack.canUndo).toBe(true);
+    expect(editStack.canRedo).toBe(false);
 
-    const entry = history.popUndoToRedo();
+    const entry = editStack.popUndoToRedo();
 
     expect(entry).toEqual({
       forwardEdits: [{ start: 1, end: 1, text: 'X' }],
@@ -53,19 +53,19 @@ describe('EditHistory', () => {
       selectionsBefore: [caret(0), caret(1)],
       selectionsAfter: [caret(2), caret(3)],
     });
-    expect(history.canUndo).toBe(false);
-    expect(history.canRedo).toBe(true);
+    expect(editStack.canUndo).toBe(false);
+    expect(editStack.canRedo).toBe(true);
 
-    expect(history.popRedoToUndo()).toEqual(entry);
-    expect(history.canUndo).toBe(true);
-    expect(history.canRedo).toBe(false);
+    expect(editStack.popRedoToUndo()).toEqual(entry);
+    expect(editStack.canUndo).toBe(true);
+    expect(editStack.canRedo).toBe(false);
   });
 
   test('setLastUndoSelectionsAfter stores cloned redo selections', () => {
-    const history = new EditHistory();
+    const editStack = new EditStack();
     let selectionAfter = caret(2);
 
-    history.push(
+    editStack.push(
       'a',
       [{ start: 1, end: 1, text: 'b' }],
       1,
@@ -75,15 +75,15 @@ describe('EditHistory', () => {
     );
     selectionAfter = caret(99);
 
-    expect(history.popUndoToRedo()).toMatchObject({
+    expect(editStack.popUndoToRedo()).toMatchObject({
       selectionsAfter: [caret(2)],
     });
   });
 
   test('push clears redo history when recording a new undo entry', () => {
-    const history = new EditHistory();
+    const editStack = new EditStack();
 
-    history.push(
+    editStack.push(
       '',
       [{ start: 0, end: 0, text: 'a' }],
       0,
@@ -91,7 +91,7 @@ describe('EditHistory', () => {
       [caret(0)],
       undefined
     );
-    history.push(
+    editStack.push(
       'a',
       [{ start: 1, end: 1, text: 'b' }],
       1,
@@ -100,12 +100,12 @@ describe('EditHistory', () => {
       undefined
     );
 
-    expect(history.popUndoToRedo()).toMatchObject({
+    expect(editStack.popUndoToRedo()).toMatchObject({
       forwardEdits: [{ start: 1, end: 1, text: 'b' }],
     });
-    expect(history.canRedo).toBe(true);
+    expect(editStack.canRedo).toBe(true);
 
-    history.push(
+    editStack.push(
       'a',
       [{ start: 1, end: 1, text: 'c' }],
       1,
@@ -114,19 +114,19 @@ describe('EditHistory', () => {
       undefined
     );
 
-    expect(history.canRedo).toBe(false);
-    expect(history.popUndoToRedo()).toMatchObject({
+    expect(editStack.canRedo).toBe(false);
+    expect(editStack.popUndoToRedo()).toMatchObject({
       forwardEdits: [{ start: 1, end: 1, text: 'c' }],
     });
-    expect(history.popUndoToRedo()).toMatchObject({
+    expect(editStack.popUndoToRedo()).toMatchObject({
       forwardEdits: [{ start: 0, end: 0, text: 'a' }],
     });
   });
 
   test('clear resets both undo and redo stacks', () => {
-    const history = new EditHistory();
+    const editStack = new EditStack();
 
-    history.push(
+    editStack.push(
       '',
       [{ start: 0, end: 0, text: 'a' }],
       0,
@@ -134,12 +134,12 @@ describe('EditHistory', () => {
       [caret(0)],
       undefined
     );
-    history.popUndoToRedo();
-    history.clear();
+    editStack.popUndoToRedo();
+    editStack.clear();
 
-    expect(history.canUndo).toBe(false);
-    expect(history.canRedo).toBe(false);
-    expect(history.popUndoToRedo()).toBeUndefined();
-    expect(history.popRedoToUndo()).toBeUndefined();
+    expect(editStack.canUndo).toBe(false);
+    expect(editStack.canRedo).toBe(false);
+    expect(editStack.popUndoToRedo()).toBeUndefined();
+    expect(editStack.popRedoToUndo()).toBeUndefined();
   });
 });
