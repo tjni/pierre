@@ -122,10 +122,23 @@ export class Editor<LAnnotation> {
       this.#updateTextarea(primarySelection);
     } else if (
       this.#textareaEl !== undefined &&
-      this.#textareaSnapshot !== undefined &&
-      this.#textareaSnapshot.text !== this.#textareaEl.value
+      this.#textDocument !== undefined &&
+      this.#textareaSnapshot !== undefined
     ) {
-      this.#textareaSnapshot.text = this.#textareaEl.value;
+      const nextTextareaSnapshot = createTextareaSnapshot(
+        this.#textDocument,
+        primarySelection
+      );
+      const shouldSyncTextarea =
+        nextTextareaSnapshot.text !== this.#textareaEl.value ||
+        nextTextareaSnapshot.selectionStart !==
+          this.#textareaEl.selectionStart ||
+        nextTextareaSnapshot.selectionEnd !== this.#textareaEl.selectionEnd;
+      if (shouldSyncTextarea) {
+        this.#updateTextarea(primarySelection);
+      } else {
+        this.#textareaSnapshot = nextTextareaSnapshot;
+      }
     }
   }
 
