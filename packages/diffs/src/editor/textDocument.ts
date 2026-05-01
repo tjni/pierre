@@ -88,6 +88,19 @@ export type ResolvedTextEdit = {
   readonly text: string;
 };
 
+export type TextDocumentChange = {
+  /** First line whose rendered content or tokenizer state may have changed. */
+  readonly startLine: number;
+  /** Last line whose rendered content may have changed after the edit. */
+  readonly endLine: number;
+  /** Line count before the edit was applied. */
+  readonly previousLineCount: number;
+  /** Line count after the edit was applied. */
+  readonly lineCount: number;
+  /** Difference between the old and new line counts. */
+  readonly lineDelta: number;
+};
+
 /**
  * A vscode-languageserver-textdocument compatible text document.
  */
@@ -97,6 +110,7 @@ export class TextDocument {
   #version: number;
   #pieceTable: PieceTable;
   #editStack = new EditStack();
+  #lastChange?: TextDocumentChange;
 
   constructor(
     uri: string,
@@ -126,12 +140,8 @@ export class TextDocument {
     return this.#pieceTable.lineCount;
   }
 
-  get lines(): string[] {
-    const lines: string[] = [];
-    for (let line = 0; line < this.#pieceTable.lineCount; line++) {
-      lines.push(this.getLineText(line, false));
-    }
-    return lines;
+  get lastChange(): TextDocumentChange | undefined {
+    return this.#lastChange;
   }
 
   get canUndo(): boolean {
@@ -173,11 +183,14 @@ export class TextDocument {
     updateHistory = false,
     selectionsBefore?: EditorSelection[],
     selectionsAfter?: EditorSelection[]
-  ): void {
+  ): TextDocumentChange | undefined {
     if (edits.length === 0) {
-      return;
+      this.#lastChange = undefined;
+      return undefined;
     }
-    const resolvedEdits = edits.map((edit) => this.#resolveEdit(edit));
+    const resolvedEdits = this.#sortAndValidateResolvedEdits(
+      edits.map((edit) => this.#resolveEdit(edit))
+    );
     if (updateHistory && selectionsBefore !== undefined) {
       this.#editStack.push(
         this,
@@ -188,8 +201,9 @@ export class TextDocument {
         selectionsAfter
       );
     }
-    this.#applyResolvedEdits(resolvedEdits);
+    this.#lastChange = this.#applyResolvedEdits(resolvedEdits);
     this.#version++;
+    return this.#lastChange;
   }
 
   setLastUndoSelectionsAfter(selections: EditorSelection[]): void {
@@ -199,9 +213,10 @@ export class TextDocument {
   undo(): EditorSelection[] | undefined {
     const entry = this.#editStack.popUndoToRedo();
     if (entry === undefined) {
+      this.#lastChange = undefined;
       return undefined;
     }
-    this.#applyResolvedEdits(entry.inverseEdits);
+    this.#lastChange = this.#applyResolvedEdits(entry.inverseEdits);
     this.#version = entry.versionBefore;
     return entry.selectionsBefore !== undefined
       ? entry.selectionsBefore.map((selection) => ({ ...selection }))
@@ -211,9 +226,10 @@ export class TextDocument {
   redo(): EditorSelection[] | undefined {
     const entry = this.#editStack.popRedoToUndo();
     if (entry === undefined) {
+      this.#lastChange = undefined;
       return undefined;
     }
-    this.#applyResolvedEdits(entry.forwardEdits);
+    this.#lastChange = this.#applyResolvedEdits(entry.forwardEdits);
     this.#version = entry.versionAfter;
     return entry.selectionsAfter !== undefined
       ? entry.selectionsAfter.map((selection) => ({ ...selection }))
@@ -231,17 +247,56 @@ export class TextDocument {
     return { start, end, text: edit.newText };
   }
 
-  #applyResolvedEdits(edits: ResolvedTextEdit[]): void {
-    const sortedEdits = [...edits].sort((a, b) => b.start - a.start);
+  #sortAndValidateResolvedEdits(edits: ResolvedTextEdit[]): ResolvedTextEdit[] {
+    const sortedEdits = [...edits].sort((a, b) => a.start - b.start);
     for (let i = 0; i < sortedEdits.length - 1; i++) {
-      if (sortedEdits[i + 1].end > sortedEdits[i].start) {
+      if (sortedEdits[i].end > sortedEdits[i + 1].start) {
         throw new Error('Overlapping text edits are not supported');
       }
     }
-    for (const edit of sortedEdits) {
+    return sortedEdits;
+  }
+
+  #applyResolvedEdits(edits: ResolvedTextEdit[]): TextDocumentChange {
+    const previousLineCount = this.#pieceTable.lineCount;
+    const changedLineRange = this.#computeChangedLineRange(edits);
+    for (let i = edits.length - 1; i >= 0; i--) {
+      const edit = edits[i];
       this.#pieceTable.delete(edit.start, edit.end - edit.start);
       this.#pieceTable.insert(edit.text, edit.start);
     }
+    const lineCount = this.#pieceTable.lineCount;
+    return {
+      startLine: changedLineRange.startLine,
+      endLine: Math.min(changedLineRange.endLine, Math.max(0, lineCount - 1)),
+      previousLineCount,
+      lineCount,
+      lineDelta: lineCount - previousLineCount,
+    };
+  }
+
+  #computeChangedLineRange(edits: ResolvedTextEdit[]): {
+    startLine: number;
+    endLine: number;
+  } {
+    let startLine = Infinity;
+    let endLine = 0;
+    let lineDeltaBeforeEdit = 0;
+    for (const edit of edits) {
+      const editStartLine = this.positionAt(edit.start).line;
+      const editEndLine = this.positionAt(edit.end).line;
+      const insertedLineSpan = lineFeedCount(edit.text);
+      startLine = Math.min(startLine, editStartLine);
+      endLine = Math.max(
+        endLine,
+        editStartLine + lineDeltaBeforeEdit + insertedLineSpan
+      );
+      lineDeltaBeforeEdit += insertedLineSpan - (editEndLine - editStartLine);
+    }
+    if (startLine === Infinity) {
+      return { startLine: 0, endLine: 0 };
+    }
+    return { startLine, endLine };
   }
 }
 
@@ -255,4 +310,14 @@ function stripLineEndings(text: string): string {
 
 function isEOL(charCode: number): boolean {
   return charCode === 10 || charCode === 13;
+}
+
+function lineFeedCount(text: string): number {
+  let count = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text.charCodeAt(i) === 10) {
+      count++;
+    }
+  }
+  return count;
 }

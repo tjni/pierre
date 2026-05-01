@@ -1,3 +1,5 @@
+import type { TextDocumentChange } from './textDocument';
+
 export function createElement<K extends keyof HTMLElementTagNameMap>(
   tagName: K,
   props: {
@@ -97,6 +99,79 @@ export function getLineIndentationUnit(
     return '\t';
   }
   return ' '.repeat(tabSize);
+}
+
+export function resolveDirtyLines(
+  change: TextDocumentChange | undefined,
+  startingLine: number,
+  endLine: number
+): {
+  dirtyLines: Set<number>;
+  dirtyLineStart: number;
+  dirtyLineEnd: number;
+  tokenizerStartLine: number;
+} {
+  const dirtyLines = new Set<number>();
+  if (endLine <= startingLine) {
+    return {
+      dirtyLines,
+      dirtyLineStart: -1,
+      dirtyLineEnd: -1,
+      tokenizerStartLine: startingLine,
+    };
+  }
+
+  if (change === undefined) {
+    for (let line = startingLine; line < endLine; line++) {
+      dirtyLines.add(line);
+    }
+    return {
+      dirtyLines,
+      dirtyLineStart: startingLine,
+      dirtyLineEnd: endLine - 1,
+      tokenizerStartLine: startingLine,
+    };
+  }
+
+  const tokenizerStartLine = Math.max(0, change.startLine);
+  if (change.startLine >= endLine) {
+    return {
+      dirtyLines,
+      dirtyLineStart: -1,
+      dirtyLineEnd: -1,
+      tokenizerStartLine,
+    };
+  }
+
+  let dirtyLineStart = Math.max(change.startLine, startingLine);
+  let dirtyLineEnd = Math.min(change.endLine, endLine - 1);
+  let shouldMarkDirtyLines = true;
+
+  if (change.lineDelta !== 0) {
+    dirtyLineEnd = endLine - 1;
+  } else if (change.endLine < startingLine) {
+    // No visible line text changed, but a tokenizer state change may flow in.
+    dirtyLineStart = startingLine;
+    dirtyLineEnd = startingLine;
+    shouldMarkDirtyLines = false;
+  }
+
+  if (dirtyLineEnd < dirtyLineStart) {
+    dirtyLineEnd = dirtyLineStart;
+  }
+
+  if (shouldMarkDirtyLines) {
+    for (let line = dirtyLineStart; line <= dirtyLineEnd; line++) {
+      dirtyLines.add(line);
+    }
+  }
+
+  return {
+    dirtyLines,
+    dirtyLineStart,
+    dirtyLineEnd,
+    tokenizerStartLine,
+  };
 }
 
 export function extend<T extends object>(obj: T, attrs: Partial<T>): T {

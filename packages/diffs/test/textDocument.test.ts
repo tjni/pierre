@@ -94,7 +94,7 @@ describe('TextDocument', () => {
 
   test('applyEdits single replacement', () => {
     const d = doc('hello world');
-    d.applyEdits([
+    const change = d.applyEdits([
       {
         range: {
           start: { line: 0, character: 6 },
@@ -104,6 +104,14 @@ describe('TextDocument', () => {
       },
     ]);
     expect(d.getText()).toBe('hello you');
+    expect(change).toEqual({
+      startLine: 0,
+      endLine: 0,
+      previousLineCount: 1,
+      lineCount: 1,
+      lineDelta: 0,
+    });
+    expect(d.lastChange).toBe(change);
   });
 
   test('applyEdits swaps inverted start/end', () => {
@@ -144,7 +152,7 @@ describe('TextDocument', () => {
 
   test('applyEdits preserves line breaks around edited line', () => {
     const d = doc('a\nb\nc');
-    d.applyEdits([
+    const change = d.applyEdits([
       {
         range: {
           start: { line: 1, character: 0 },
@@ -155,6 +163,55 @@ describe('TextDocument', () => {
     ]);
     expect(d.getText()).toBe('a\nB\nc');
     expect(d.lineCount).toBe(3);
+    expect(change).toEqual({
+      startLine: 1,
+      endLine: 1,
+      previousLineCount: 3,
+      lineCount: 3,
+      lineDelta: 0,
+    });
+  });
+
+  test('applyEdits reports inserted lines in lastChange', () => {
+    const d = doc('a');
+    const change = d.applyEdits([
+      {
+        range: {
+          start: { line: 0, character: 1 },
+          end: { line: 0, character: 1 },
+        },
+        newText: '\nb',
+      },
+    ]);
+    expect(d.getText()).toBe('a\nb');
+    expect(change).toEqual({
+      startLine: 0,
+      endLine: 1,
+      previousLineCount: 1,
+      lineCount: 2,
+      lineDelta: 1,
+    });
+  });
+
+  test('applyEdits reports line deletions in lastChange', () => {
+    const d = doc('a\nb\nc');
+    const change = d.applyEdits([
+      {
+        range: {
+          start: { line: 0, character: 1 },
+          end: { line: 2, character: 0 },
+        },
+        newText: '',
+      },
+    ]);
+    expect(d.getText()).toBe('ac');
+    expect(change).toEqual({
+      startLine: 0,
+      endLine: 0,
+      previousLineCount: 3,
+      lineCount: 1,
+      lineDelta: -2,
+    });
   });
 
   test('applyEdits preserves CRLF after middle-line edit', () => {
@@ -349,11 +406,25 @@ describe('TextDocument', () => {
 
     d.undo();
     expect(d.getText()).toBe('a');
+    expect(d.lastChange).toEqual({
+      startLine: 0,
+      endLine: 0,
+      previousLineCount: 1,
+      lineCount: 1,
+      lineDelta: 0,
+    });
     expect(d.canUndo).toBe(false);
     expect(d.canRedo).toBe(true);
 
     d.redo();
     expect(d.getText()).toBe('ab');
+    expect(d.lastChange).toEqual({
+      startLine: 0,
+      endLine: 0,
+      previousLineCount: 1,
+      lineCount: 1,
+      lineDelta: 0,
+    });
     expect(d.canUndo).toBe(true);
     expect(d.canRedo).toBe(false);
   });

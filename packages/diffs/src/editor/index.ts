@@ -33,6 +33,7 @@ import {
   extend,
   getLineIndentationUnit,
   isCodeLineTarget,
+  resolveDirtyLines,
 } from '../editor/editorUtils';
 import {
   type ResolvedTextEdit,
@@ -59,7 +60,6 @@ export class Editor<LAnnotation> {
   #file?: File<LAnnotation>;
   #fileContents?: FileContents;
   #textDocument?: TextDocument;
-  #textLinesCache?: string[];
   #renderRange?: RenderRange;
   #onChange?: (file: FileContents) => void;
 
@@ -136,7 +136,6 @@ export class Editor<LAnnotation> {
     this.#file = undefined;
     this.#fileContents = undefined;
     this.#textDocument = undefined;
-    this.#textLinesCache = undefined;
     this.#renderRange = undefined;
     this.#onChange = undefined;
 
@@ -178,7 +177,6 @@ export class Editor<LAnnotation> {
         fileContents.contents,
         fileContents.lang ?? getFiletypeFromFileName(fileContents.name)
       );
-      this.#textLinesCache = this.#textDocument.lines;
       this.#stateStackCache = undefined;
       this.#selections = undefined;
     }
@@ -367,39 +365,22 @@ export class Editor<LAnnotation> {
     if (this.#highlighter !== undefined) {
       const t = performance.now();
 
-      const prevLines = this.#textLinesCache ?? [];
+      const lastChange = textDocument.lastChange;
       const { startingLine = 0, totalLines = Infinity } =
         this.#renderRange ?? {};
       const endLine =
         totalLines === Infinity
           ? textDocument.lineCount
           : Math.min(startingLine + totalLines, textDocument.lineCount);
+      const previousLineCount =
+        lastChange?.previousLineCount ?? textDocument.lineCount;
       const prevEndLine =
         totalLines === Infinity
-          ? prevLines.length
-          : Math.min(startingLine + totalLines, prevLines.length);
-      const compareEndLine = Math.max(endLine, prevEndLine);
-      const dirtyLines = new Set<number>();
-      const linesChange = textDocument.lineCount - prevLines.length;
-
-      let dirtyLineStart = -1;
-      let dirtyLineEnd = -1;
-      for (let line = startingLine; line < compareEndLine; line++) {
-        const prevLine = line < prevLines.length ? prevLines[line] : undefined;
-        const nextLine =
-          line < textDocument.lineCount
-            ? textDocument.getLineText(line, false)
-            : undefined;
-        if (prevLine !== nextLine) {
-          if (dirtyLineStart === -1) {
-            dirtyLineStart = line;
-          }
-          dirtyLineEnd = line;
-          if (line < endLine) {
-            dirtyLines.add(line);
-          }
-        }
-      }
+          ? previousLineCount
+          : Math.min(startingLine + totalLines, previousLineCount);
+      const { dirtyLines, dirtyLineStart, dirtyLineEnd, tokenizerStartLine } =
+        resolveDirtyLines(lastChange, startingLine, endLine);
+      const linesChange = lastChange?.lineDelta ?? 0;
 
       for (let line = endLine; line < prevEndLine; line++) {
         this.#getLineElement(line)?.remove();
@@ -410,7 +391,7 @@ export class Editor<LAnnotation> {
       if (dirtyLineStart !== -1) {
         this.#stateStackCache = previousStateStackCache?.slice(
           0,
-          dirtyLineStart + 1
+          tokenizerStartLine + 1
         );
       }
 
@@ -558,7 +539,6 @@ export class Editor<LAnnotation> {
       }
     }
 
-    this.#textLinesCache = textDocument.lines;
     if (this.#onChange !== undefined) {
       this.#onChange({ ...fileContents, contents: textDocument.getText() });
     }
