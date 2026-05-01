@@ -22,10 +22,6 @@ function lineTexts(text: string): string[] {
   return lines;
 }
 
-function trimEOL(text: string): string {
-  return text.replace(/[\r\n]+$/, '');
-}
-
 function positionAt(text: string, offset: number): Position {
   const clampedOffset = Math.min(Math.max(offset, 0), text.length);
   let line = 0;
@@ -36,30 +32,17 @@ function positionAt(text: string, offset: number): Position {
       continue;
     }
 
-    let endWithoutEOL = i;
-    while (
-      endWithoutEOL > lineStart &&
-      /[\r\n]/.test(text[endWithoutEOL - 1])
-    ) {
-      endWithoutEOL--;
-    }
-    if (clampedOffset <= endWithoutEOL) {
+    const lineEnd = i + 1;
+    if (clampedOffset < lineEnd) {
       return { line, character: clampedOffset - lineStart };
     }
-    if (clampedOffset <= i) {
-      return { line, character: endWithoutEOL - lineStart };
-    }
     line++;
-    lineStart = i + 1;
+    lineStart = lineEnd;
   }
 
-  let endWithoutEOL = text.length;
-  while (endWithoutEOL > lineStart && /[\r\n]/.test(text[endWithoutEOL - 1])) {
-    endWithoutEOL--;
-  }
   return {
     line,
-    character: Math.min(clampedOffset, endWithoutEOL) - lineStart,
+    character: clampedOffset - lineStart,
   };
 }
 
@@ -78,7 +61,7 @@ function offsetAt(text: string, position: Position): number {
     offset += lines[i].length;
   }
 
-  const lineLength = trimEOL(lines[position.line]).length;
+  const lineLength = lines[position.line].length;
   return offset + Math.min(Math.max(position.character, 0), lineLength);
 }
 
@@ -89,8 +72,7 @@ function expectTableToMatchText(table: PieceTable, text: string): void {
   expect(table.lineCount).toBe(lines.length);
 
   for (let line = 0; line < lines.length; line++) {
-    expect(table.getLineText(line)).toBe(trimEOL(lines[line]));
-    expect(table.getLineText(line, false)).toBe(lines[line]);
+    expect(table.getLineText(line)).toBe(lines[line]);
   }
 
   for (let offset = 0; offset <= text.length; offset++) {
@@ -98,7 +80,7 @@ function expectTableToMatchText(table: PieceTable, text: string): void {
   }
 
   for (let line = 0; line < lines.length; line++) {
-    const lineLength = trimEOL(lines[line]).length;
+    const lineLength = lines[line].length;
     for (let character = 0; character <= lineLength; character++) {
       expect(table.offsetAt({ line, character })).toBe(
         offsetAt(text, { line, character })
@@ -134,12 +116,12 @@ describe('PieceTable', () => {
     ).toBe('bb');
   });
 
-  test('returns line text with optional line endings', () => {
+  test('returns raw line text', () => {
     const table = new PieceTable('first\r\nsecond\n');
 
-    expect(table.getLineText(0)).toBe('first');
-    expect(table.getLineText(0, false)).toBe('first\r\n');
-    expect(table.getLineText(1)).toBe('second');
+    expect(table.getLineText(0)).toBe('first\r\n');
+    expect(table.getLineText(1)).toBe('second\n');
+    expect(table.getLineText(2)).toBe('');
     expect(() => table.getLineText(99)).toThrow('Line index out of range: 99');
   });
 
@@ -185,7 +167,7 @@ describe('PieceTable', () => {
 
     expect(table.getText()).toBe('one zero\nTWO\nthree');
     expect(table.lineCount).toBe(3);
-    expect(table.getLineText(1)).toBe('TWO');
+    expect(table.getLineText(1)).toBe('TWO\n');
   });
 
   test('handles CRLF split across piece boundaries', () => {
@@ -196,23 +178,22 @@ describe('PieceTable', () => {
 
     expect(table.getText()).toBe('a\r\nb');
     expect(table.lineCount).toBe(2);
-    expect(table.getLineText(0)).toBe('a');
-    expect(table.getLineText(0, false)).toBe('a\r\n');
-    expect(table.positionAt(2)).toEqual({ line: 0, character: 1 });
+    expect(table.getLineText(0)).toBe('a\r\n');
+    expect(table.positionAt(2)).toEqual({ line: 0, character: 2 });
     expect(table.positionAt(3)).toEqual({ line: 1, character: 0 });
   });
 
-  test('trims repeated line ending characters before line feed', () => {
+  test('keeps repeated line ending characters in line offsets', () => {
     const table = new PieceTable('a\r\r\nb\r');
 
     expectTableToMatchText(table, 'a\r\r\nb\r');
-    expect(table.getLineText(0)).toBe('a');
-    expect(table.getLineText(1)).toBe('b');
-    expect(table.positionAt(2)).toEqual({ line: 0, character: 1 });
-    expect(table.offsetAt({ line: 1, character: 10 })).toBe(5);
+    expect(table.getLineText(0)).toBe('a\r\r\n');
+    expect(table.getLineText(1)).toBe('b\r');
+    expect(table.positionAt(2)).toEqual({ line: 0, character: 2 });
+    expect(table.offsetAt({ line: 1, character: 10 })).toBe(6);
   });
 
-  test('trims line endings split across pieces', () => {
+  test('keeps line endings split across pieces', () => {
     const table = new PieceTable('a\nb');
 
     table.insert('\r\r', 1);

@@ -147,15 +147,21 @@ export class TextDocument {
   }
 
   offsetAt(position: Position): number {
+    // todo: clamp EOL
     return this.#pieceTable.offsetAt(position);
   }
 
   getText(range?: Range): string {
+    // todo: clamp EOL
     return this.#pieceTable.getText(range);
   }
 
-  getLineText(line: number, trimEOL = true): string {
-    return this.#pieceTable.getLineText(line, trimEOL);
+  getLineText(line: number, stripEndings = true): string {
+    const text = this.#pieceTable.getLineText(line);
+    if (stripEndings) {
+      return stripLineEndings(text);
+    }
+    return text;
   }
 
   getTextSlice(start: number, end: number): string {
@@ -237,4 +243,16 @@ export class TextDocument {
       this.#pieceTable.insert(edit.text, edit.start);
     }
   }
+}
+
+function stripLineEndings(text: string): string {
+  let end = text.length;
+  while (end > 0 && isEOL(text.charCodeAt(end - 1))) {
+    end--;
+  }
+  return text.slice(0, end);
+}
+
+function isEOL(charCode: number): boolean {
+  return charCode === 10 || charCode === 13;
 }

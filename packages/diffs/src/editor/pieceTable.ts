@@ -13,12 +13,6 @@ type PieceSegment = {
   readonly lineOffsets: number[];
 };
 
-type LineOffset = {
-  readonly start: number;
-  readonly end: number;
-  readonly endBeforeEOL: number;
-};
-
 enum PieceSourceType {
   Original = 0,
   Added = 1,
@@ -105,15 +99,12 @@ export class PieceTable {
     return this.getTextSlice(start, end);
   }
 
-  getLineText(line: number, trimEOL = true): string {
+  getLineText(line: number): string {
     const offset = this.#getLineOffset(line);
     if (offset === undefined) {
       throw new Error(`Line index out of range: ${line}`);
     }
-    return this.getTextSlice(
-      offset.start,
-      trimEOL ? offset.endBeforeEOL : offset.end
-    );
+    return this.getTextSlice(offset[0], offset[1]);
   }
 
   getTextSlice(start: number, end: number): string {
@@ -243,18 +234,10 @@ export class PieceTable {
 
     let position: Position | undefined;
     const scan = this.#forEachLineBreak((lineBreak, line) => {
-      if (clampedOffset <= lineBreak.endBeforeEOL) {
+      if (clampedOffset < lineBreak[1]) {
         position = {
           line,
-          character: clampedOffset - lineBreak.start,
-        };
-        return false;
-      }
-
-      if (clampedOffset < lineBreak.end) {
-        position = {
-          line,
-          character: lineBreak.endBeforeEOL - lineBreak.start,
+          character: clampedOffset - lineBreak[0],
         };
         return false;
       }
@@ -267,9 +250,7 @@ export class PieceTable {
 
     return {
       line: scan.nextLine,
-      character:
-        Math.min(clampedOffset, this.#length - scan.trailingEOLLength) -
-        scan.nextLineStart,
+      character: clampedOffset - scan.nextLineStart,
     };
   }
 
@@ -284,12 +265,8 @@ export class PieceTable {
     if (offset === undefined) {
       throw new Error(`Line index out of range: ${position.line}`);
     }
-    const character = clamp(
-      position.character,
-      0,
-      offset.endBeforeEOL - offset.start
-    );
-    return offset.start + character;
+    const character = clamp(position.character, 0, offset[1] - offset[0]);
+    return offset[0] + character;
   }
 
   #appendSliceFromNode(
@@ -333,18 +310,18 @@ export class PieceTable {
     }
   }
 
-  #getLineOffset(line: number): LineOffset | undefined {
+  #getLineOffset(line: number): [start: number, end: number] | undefined {
     if (line < 0) {
       throw new Error(`Line index out of range: ${line}`);
     }
     if (this.#length === 0) {
       if (line === 0) {
-        return { start: 0, end: 0, endBeforeEOL: 0 };
+        return [0, 0];
       }
       throw new Error(`Line index out of range: ${line}`);
     }
 
-    let offset: LineOffset | undefined;
+    let offset: [start: number, end: number] | undefined;
     const scan = this.#forEachLineBreak((lineBreak, ln) => {
       if (ln === line) {
         offset = lineBreak;
@@ -359,11 +336,7 @@ export class PieceTable {
     if (scan.nextLine !== line) {
       throw new Error(`Line index out of range: ${line}`);
     }
-    return {
-      start: scan.nextLineStart,
-      end: this.#length,
-      endBeforeEOL: this.#length - scan.trailingEOLLength,
-    };
+    return [scan.nextLineStart, this.#length];
   }
 
   #textFromPieces(): string {
@@ -389,63 +362,38 @@ export class PieceTable {
   }
 
   #forEachLineBreak(
-    callback: (lineBreak: LineOffset, line: number) => boolean | void
+    callback: (
+      lineBreak: [start: number, end: number],
+      line: number
+    ) => boolean | void
   ): {
     nextLine: number;
     nextLineStart: number;
-    trailingEOLLength: number;
   } {
     let line = 0;
     let lineStart = 0;
     let documentOffset = 0;
-    let trailingEOLLength = 0;
 
     this.#forEachPieceSegment((segment) => {
-      const segmentDocumentOffset = documentOffset;
       const lineOffsetStart = upperBound(segment.lineOffsets, segment.start);
       const lineOffsetEnd = upperBound(segment.lineOffsets, segment.end);
       for (let i = lineOffsetStart; i < lineOffsetEnd; i++) {
         const bufferLineOffset = segment.lineOffsets[i];
         const endWithEOL = documentOffset + (bufferLineOffset - segment.start);
-        const eolLength = trailingEOLLengthBeforeOffset(
-          segment,
-          segmentDocumentOffset,
-          bufferLineOffset,
-          lineStart,
-          trailingEOLLength
-        );
 
-        if (
-          callback(
-            {
-              start: lineStart,
-              end: endWithEOL,
-              endBeforeEOL: endWithEOL - eolLength,
-            },
-            line
-          ) === false
-        ) {
+        if (callback([lineStart, endWithEOL], line) === false) {
           return false;
         }
 
         line++;
         lineStart = endWithEOL;
-        trailingEOLLength = 0;
       }
 
       documentOffset += segment.end - segment.start;
-      if (segment.end > segment.start) {
-        trailingEOLLength = trailingEOLLengthAtSegmentEnd(
-          segment,
-          segmentDocumentOffset,
-          lineStart,
-          trailingEOLLength
-        );
-      }
       return true;
     });
 
-    return { nextLine: line, nextLineStart: lineStart, trailingEOLLength };
+    return { nextLine: line, nextLineStart: lineStart };
   }
 
   #bufferFor(source: PieceSourceType): TextBuffer {
@@ -685,71 +633,6 @@ function lineFeedCount(segment: PieceSegment): number {
     upperBound(segment.lineOffsets, segment.end) -
     upperBound(segment.lineOffsets, segment.start)
   );
-}
-
-function trailingEOLLengthBeforeOffset(
-  segment: PieceSegment,
-  segmentDocumentOffset: number,
-  bufferOffset: number,
-  lineStart: number,
-  trailingBeforeSegment: number
-): number {
-  const lineStartInSegment = Math.max(
-    segment.start,
-    segment.start + (lineStart - segmentDocumentOffset)
-  );
-  let length = 0;
-  for (let offset = bufferOffset - 1; offset >= lineStartInSegment; offset--) {
-    if (!isEOL(segment.text.charCodeAt(offset))) {
-      return length;
-    }
-    length++;
-  }
-
-  if (
-    lineStart < segmentDocumentOffset &&
-    lineStartInSegment === segment.start
-  ) {
-    return (
-      length +
-      Math.min(trailingBeforeSegment, segmentDocumentOffset - lineStart)
-    );
-  }
-  return length;
-}
-
-function trailingEOLLengthAtSegmentEnd(
-  segment: PieceSegment,
-  segmentDocumentOffset: number,
-  lineStart: number,
-  trailingBeforeSegment: number
-): number {
-  const lineStartInSegment = Math.max(
-    segment.start,
-    segment.start + (lineStart - segmentDocumentOffset)
-  );
-  let length = 0;
-  for (let offset = segment.end - 1; offset >= lineStartInSegment; offset--) {
-    if (!isEOL(segment.text.charCodeAt(offset))) {
-      return length;
-    }
-    length++;
-  }
-
-  if (
-    lineStart < segmentDocumentOffset &&
-    lineStartInSegment === segment.start
-  ) {
-    return (
-      length +
-      Math.min(trailingBeforeSegment, segmentDocumentOffset - lineStart)
-    );
-  }
-  return length;
-}
-
-function isEOL(charCode: number): boolean {
-  return charCode === 10 || charCode === 13;
 }
 
 // Returns the index of the first element in the array that is greater than the target.
