@@ -3,7 +3,6 @@ import type { ResolvedTextEdit } from './textDocument';
 
 /** Largest number of undo or redo entries kept; oldest entries drop first once exceeded. */
 const DEFAULT_EDIT_STACK_MAX_ENTRIES = 100;
-const MINIMUM_EDIT_STACK_MAX_ENTRIES = 10;
 
 interface EditSource {
   getTextSlice(start: number, end: number): string;
@@ -34,8 +33,10 @@ export class EditStack {
   #maxEntries: number;
 
   constructor(options?: EditStackOptions) {
-    const maxEntries = options?.maxEntries ?? DEFAULT_EDIT_STACK_MAX_ENTRIES;
-    this.#maxEntries = Math.max(MINIMUM_EDIT_STACK_MAX_ENTRIES, maxEntries);
+    this.#maxEntries = Math.max(
+      1,
+      options?.maxEntries ?? DEFAULT_EDIT_STACK_MAX_ENTRIES
+    );
   }
 
   get canUndo(): boolean {

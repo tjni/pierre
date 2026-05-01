@@ -94,7 +94,7 @@ describe('TextDocument', () => {
 
   test('applyEdits single replacement', () => {
     const d = doc('hello world');
-    const change = d.applyEdits([
+    d.applyEdits([
       {
         range: {
           start: { line: 0, character: 6 },
@@ -103,6 +103,7 @@ describe('TextDocument', () => {
         newText: 'you',
       },
     ]);
+    const change = d.lastChange;
     expect(d.getText()).toBe('hello you');
     expect(change).toEqual({
       startLine: 0,
@@ -111,7 +112,6 @@ describe('TextDocument', () => {
       lineCount: 1,
       lineDelta: 0,
     });
-    expect(d.lastChange).toBe(change);
   });
 
   test('applyEdits swaps inverted start/end', () => {
@@ -152,7 +152,7 @@ describe('TextDocument', () => {
 
   test('applyEdits preserves line breaks around edited line', () => {
     const d = doc('a\nb\nc');
-    const change = d.applyEdits([
+    d.applyEdits([
       {
         range: {
           start: { line: 1, character: 0 },
@@ -163,7 +163,7 @@ describe('TextDocument', () => {
     ]);
     expect(d.getText()).toBe('a\nB\nc');
     expect(d.lineCount).toBe(3);
-    expect(change).toEqual({
+    expect(d.lastChange).toEqual({
       startLine: 1,
       endLine: 1,
       previousLineCount: 3,
@@ -174,7 +174,7 @@ describe('TextDocument', () => {
 
   test('applyEdits reports inserted lines in lastChange', () => {
     const d = doc('a');
-    const change = d.applyEdits([
+    d.applyEdits([
       {
         range: {
           start: { line: 0, character: 1 },
@@ -184,7 +184,7 @@ describe('TextDocument', () => {
       },
     ]);
     expect(d.getText()).toBe('a\nb');
-    expect(change).toEqual({
+    expect(d.lastChange).toEqual({
       startLine: 0,
       endLine: 1,
       previousLineCount: 1,
@@ -195,7 +195,7 @@ describe('TextDocument', () => {
 
   test('applyEdits reports line deletions in lastChange', () => {
     const d = doc('a\nb\nc');
-    const change = d.applyEdits([
+    d.applyEdits([
       {
         range: {
           start: { line: 0, character: 1 },
@@ -205,7 +205,7 @@ describe('TextDocument', () => {
       },
     ]);
     expect(d.getText()).toBe('ac');
-    expect(change).toEqual({
+    expect(d.lastChange).toEqual({
       startLine: 0,
       endLine: 0,
       previousLineCount: 3,

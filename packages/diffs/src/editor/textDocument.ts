@@ -194,10 +194,9 @@ export class TextDocument {
     updateHistory = false,
     selectionsBefore?: EditorSelection[],
     selectionsAfter?: EditorSelection[]
-  ): TextDocumentChange | undefined {
+  ): void {
     if (edits.length === 0) {
-      this.#lastChange = undefined;
-      return undefined;
+      return;
     }
     const resolvedEdits = this.#sortAndValidateResolvedEdits(
       edits.map((edit) => this.#resolveEdit(edit))
@@ -214,7 +213,6 @@ export class TextDocument {
     }
     this.#lastChange = this.#applyResolvedEdits(resolvedEdits);
     this.#version++;
-    return this.#lastChange;
   }
 
   setLastUndoSelectionsAfter(selections: EditorSelection[]): void {
