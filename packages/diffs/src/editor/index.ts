@@ -1,4 +1,9 @@
-import { EncodedTokenMetadata, INITIAL, type StateStack } from 'shiki/textmate';
+import {
+  EncodedTokenMetadata,
+  type IGrammar,
+  INITIAL,
+  type StateStack,
+} from 'shiki/textmate';
 
 import {
   areThemesAttached,
@@ -64,6 +69,7 @@ export class Editor<LAnnotation> {
   #onChange?: (file: FileContents) => void;
 
   #highlighter?: DiffsHighlighter;
+  #grammar?: IGrammar;
   #colorMap?: Map<string, string[]>;
   #stateStackCache?: StateStack[];
 
@@ -188,6 +194,7 @@ export class Editor<LAnnotation> {
         fileContents.contents,
         fileContents.lang ?? getFiletypeFromFileName(fileContents.name)
       );
+      this.#grammar = undefined;
       this.#stateStackCache = undefined;
       this.#selections = undefined;
     }
@@ -199,11 +206,12 @@ export class Editor<LAnnotation> {
 
     const shadowRoot =
       fileContainer.shadowRoot ?? fileContainer.attachShadow({ mode: 'open' });
+
+    this.#editorLeft = -1;
     this.#contentEl = shadowRoot.querySelector('[data-content]') ?? undefined;
     if (this.#contentEl === undefined) {
       throw new Error('could not edit the file.');
     }
-    this.#editorLeft = -1;
 
     this.#textareaEl ??= extend(
       createElement('textarea', { dataset: 'textarea' }),
@@ -258,6 +266,7 @@ export class Editor<LAnnotation> {
         ) {
           return;
         }
+
         const selection = convertSelection(
           composedRanges,
           this.#computeMouseSelectionDirection()
@@ -344,6 +353,7 @@ export class Editor<LAnnotation> {
     }
 
     this.#getCSSProperites();
+
     console.log('Editor initialized.', {
       renderRange,
       tabSize: this.#tabSize,
@@ -404,7 +414,9 @@ export class Editor<LAnnotation> {
         this.#getLineElement(line)?.remove();
       }
 
-      const grammar = this.#highlighter.getLanguage(textDocument.languageId);
+      const grammar = (this.#grammar ??= this.#highlighter.getLanguage(
+        textDocument.languageId
+      ));
       const previousStateStackCache = this.#stateStackCache;
       if (dirtyLineStart !== -1) {
         this.#stateStackCache = previousStateStackCache?.slice(
@@ -585,7 +597,7 @@ export class Editor<LAnnotation> {
 
   #buildStateStackCache(
     textDocument: TextDocument,
-    grammar: ReturnType<DiffsHighlighter['getLanguage']>,
+    grammar: IGrammar,
     endLine: number
   ): StateStack {
     const stateStackCache = (this.#stateStackCache ??= [INITIAL]);
