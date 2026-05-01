@@ -13,6 +13,11 @@ type PieceSegment = {
   readonly lineOffsets: number[];
 };
 
+type PieceLocation = {
+  readonly node: PieceNode;
+  readonly offsetInPiece: number;
+};
+
 enum PieceSourceType {
   Original = 0,
   Added = 1,
@@ -112,9 +117,48 @@ export class PieceTable {
       return '';
     }
 
+    const sliceStart = clamp(start, 0, this.#length);
+    const sliceEnd = clamp(end, sliceStart, this.#length);
+    if (sliceStart >= sliceEnd) {
+      return '';
+    }
+
+    const location = this.#findPieceAtOffset(sliceStart);
+    if (location === undefined) {
+      return '';
+    }
+
     const chunks: string[] = [];
-    this.#appendSliceFromNode(this.#root, start, end, 0, chunks);
+    let node: PieceNode | null = location.node;
+    let offsetInPiece = location.offsetInPiece;
+    let remaining = sliceEnd - sliceStart;
+    while (node !== null && remaining > 0) {
+      const takeLength = Math.min(node.piece.length - offsetInPiece, remaining);
+      const buffer = this.#bufferFor(node.piece.source);
+      chunks.push(
+        buffer.text.slice(
+          node.piece.offset + offsetInPiece,
+          node.piece.offset + offsetInPiece + takeLength
+        )
+      );
+      remaining -= takeLength;
+      offsetInPiece = 0;
+      node = this.#nextNode(node);
+    }
+
     return chunks.join('');
+  }
+
+  charAt(offset: number): string {
+    const location = this.#findPieceAtOffset(offset);
+    if (location === undefined) {
+      return '';
+    }
+
+    const buffer = this.#bufferFor(location.node.piece.source);
+    return buffer.text.charAt(
+      location.node.piece.offset + location.offsetInPiece
+    );
   }
 
   includes(needle: string): boolean {
@@ -269,45 +313,46 @@ export class PieceTable {
     return offset[0] + character;
   }
 
-  #appendSliceFromNode(
-    node: PieceNode | null,
-    start: number,
-    end: number,
-    subtreeStart: number,
-    chunks: string[]
-  ): void {
-    if (node === null || start >= end) {
-      return;
+  #findPieceAtOffset(offset: number): PieceLocation | undefined {
+    if (offset < 0 || offset >= this.#length) {
+      return undefined;
     }
 
-    const subtreeEnd = subtreeStart + node.subtreeLength;
-    if (end <= subtreeStart || start >= subtreeEnd) {
-      return;
+    let node = this.#root;
+    let remaining = offset;
+    while (node !== null) {
+      const leftLength = node.left?.subtreeLength ?? 0;
+      if (remaining < leftLength) {
+        node = node.left;
+        continue;
+      }
+
+      remaining -= leftLength;
+      if (remaining < node.piece.length) {
+        return { node, offsetInPiece: remaining };
+      }
+
+      remaining -= node.piece.length;
+      node = node.right;
     }
 
-    const leftLength = node.left?.subtreeLength ?? 0;
-    const pieceStart = subtreeStart + leftLength;
-    const pieceEnd = pieceStart + node.piece.length;
+    return undefined;
+  }
 
-    if (start < pieceStart) {
-      this.#appendSliceFromNode(node.left, start, end, subtreeStart, chunks);
+  #nextNode(node: PieceNode): PieceNode | null {
+    if (node.right !== null) {
+      let next = node.right;
+      while (next.left !== null) {
+        next = next.left;
+      }
+      return next;
     }
 
-    if (start < pieceEnd && end > pieceStart) {
-      const localStart = Math.max(start - pieceStart, 0);
-      const localEnd = Math.min(end - pieceStart, node.piece.length);
-      const buffer = this.#bufferFor(node.piece.source);
-      chunks.push(
-        buffer.text.slice(
-          node.piece.offset + localStart,
-          node.piece.offset + localEnd
-        )
-      );
+    let current = node;
+    while (current.parent !== null && current === current.parent.right) {
+      current = current.parent;
     }
-
-    if (end > pieceEnd) {
-      this.#appendSliceFromNode(node.right, start, end, pieceEnd, chunks);
-    }
+    return current.parent;
   }
 
   #getLineOffset(line: number): [start: number, end: number] | undefined {

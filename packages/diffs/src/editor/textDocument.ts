@@ -174,6 +174,15 @@ export class TextDocument {
     return text;
   }
 
+  charAt(offset: number): string;
+  charAt(position: Position): string;
+  charAt(positionOrOffset: Position | number): string {
+    if (typeof positionOrOffset === 'number') {
+      return this.#pieceTable.charAt(positionOrOffset);
+    }
+    return this.#pieceTable.charAt(this.offsetAt(positionOrOffset));
+  }
+
   getTextSlice(start: number, end: number): string {
     return this.#pieceTable.getTextSlice(start, end);
   }

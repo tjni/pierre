@@ -236,6 +236,21 @@ describe('PieceTable', () => {
     ).toBe('bXXc');
   });
 
+  test('reads single characters from piece boundaries', () => {
+    const table = new PieceTable('ab\nef');
+
+    table.insert('CD', 3);
+
+    expect(table.charAt(0)).toBe('a');
+    expect(table.charAt(3)).toBe('C');
+    expect(table.charAt(4)).toBe('D');
+    expect(table.charAt(5)).toBe('e');
+    expect(table.charAt(1, 0)).toBe('C');
+    expect(table.charAt(1, 2)).toBe('e');
+    expect(table.charAt(-1)).toBe('');
+    expect(table.charAt(table.getText().length)).toBe('');
+  });
+
   test('searches text across piece boundaries', () => {
     const table = new PieceTable('a\nb');
 

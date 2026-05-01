@@ -91,16 +91,6 @@ export function getLineIndentation(lineText: string): string {
   return indentation;
 }
 
-export function getLineIndentationUnit(
-  lineText: string,
-  tabSize: number
-): string {
-  if (lineText.startsWith('\t')) {
-    return '\t';
-  }
-  return ' '.repeat(tabSize);
-}
-
 export function resolveDirtyLines(
   change: TextDocumentChange | undefined,
   startingLine: number,

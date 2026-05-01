@@ -36,7 +36,6 @@ import {
   addEventListener,
   createElement,
   extend,
-  getLineIndentationUnit,
   isCodeLineTarget,
   resolveDirtyLines,
 } from '../editor/editorUtils';
@@ -970,25 +969,24 @@ export class Editor<LAnnotation> {
           const nextSelections: EditorSelection[] = [];
           for (const selection of this.#selections) {
             const startLine = selection.start.line;
-            const lineText = this.#textDocument.getLineText(startLine);
-            if (lineText !== undefined) {
-              const outdent = command === 'outdent';
-              if (startLine !== selection.end.line || outdent) {
-                const ret = resolveIndentEdits(
-                  this.#textDocument,
-                  selection,
-                  this.#tabSize,
-                  outdent
-                );
-                edits.push(...ret[0]);
-                nextSelections.push(ret[1]);
-              } else {
-                const indentUnit = getLineIndentationUnit(
-                  lineText,
-                  this.#tabSize
-                );
-                this.#replaceSelectionText(indentUnit);
-              }
+            const outdent = command === 'outdent';
+            if (startLine !== selection.end.line || outdent) {
+              const ret = resolveIndentEdits(
+                this.#textDocument,
+                selection,
+                this.#tabSize,
+                outdent
+              );
+              edits.push(...ret[0]);
+              nextSelections.push(ret[1]);
+            } else {
+              const lineChar0 = this.#textDocument.charAt({
+                line: startLine,
+                character: 0,
+              });
+              this.#replaceSelectionText(
+                lineChar0 === '\t' ? '\t' : ' '.repeat(this.#tabSize)
+              );
             }
           }
           if (edits.length > 0) {

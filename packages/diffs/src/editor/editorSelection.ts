@@ -1,4 +1,3 @@
-import { getLineIndentationUnit } from './editorUtils';
 import type { Position, Range, TextDocument, TextEdit } from './textDocument';
 
 export enum SelectionDirection {
@@ -55,7 +54,7 @@ export function resolveIndentEdits(
     if (lineText === undefined) {
       continue;
     }
-    const indentUnit = getLineIndentationUnit(lineText, tabSize);
+    const indentUnit = lineText.startsWith('\t') ? '\t' : ' '.repeat(tabSize);
     let deleteLength = 0;
     let newText = indentUnit;
     if (outdent) {
