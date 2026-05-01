@@ -36,6 +36,7 @@ import {
   addEventListener,
   createElement,
   extend,
+  isAsciiOnly,
   isCodeLineTarget,
   resolveDirtyLines,
 } from '../editor/editorUtils';
@@ -60,17 +61,26 @@ import {
 
 export class Editor<LAnnotation> {
   #disposes?: (() => void)[];
+  #onChange?: (file: FileContents) => void;
 
+  // css properties
+  #measureCtx?: CanvasRenderingContext2D;
+  #charWidth = -1;
+  #lineHeight = 20;
+  #tabSize = 2;
+
+  // file
   #file?: File<LAnnotation>;
   #fileContents?: FileContents;
   #textDocument?: TextDocument;
-  #renderRange?: RenderRange;
-  #onChange?: (file: FileContents) => void;
 
+  // highlighter
   #highlighter?: DiffsHighlighter;
-  #grammar?: IGrammar;
   #colorMap?: Map<string, string[]>;
+  #grammar?: IGrammar;
+  #renderRange?: RenderRange;
 
+  // cache
   #stateStackCache?: StateStack[];
   #lineYCache = new Map<number, number>();
 
@@ -79,11 +89,6 @@ export class Editor<LAnnotation> {
   #styleEl?: HTMLStyleElement;
   #textareaEl?: HTMLTextAreaElement;
   #selectionEls?: Map<string, HTMLElement>;
-
-  #editorLeft = -1;
-  #charWidth = -1;
-  #lineHeight = 20;
-  #tabSize = 2;
 
   // state
   #selectionStartX = 0;
@@ -97,7 +102,9 @@ export class Editor<LAnnotation> {
 
   edit(
     file: File<LAnnotation>,
-    onChange?: (file: FileContents) => void
+    options?: {
+      onChange?: (file: FileContents) => void;
+    }
   ): () => void {
     file.__addEditorHook((fileContainer, fileContents, renderRange) => {
       this.#initialize(fileContainer, fileContents, renderRange);
@@ -108,7 +115,7 @@ export class Editor<LAnnotation> {
     )
       ? getHighlighterIfLoaded()
       : undefined;
-    this.#onChange = onChange;
+    this.#onChange = options?.onChange;
     return this.cleanUp.bind(this);
   }
 
@@ -152,15 +159,19 @@ export class Editor<LAnnotation> {
   cleanUp(): void {
     this.#disposes?.forEach((dispose) => dispose());
     this.#disposes = undefined;
+    this.#onChange = undefined;
+
+    this.#measureCtx = undefined;
 
     this.#file = undefined;
     this.#fileContents = undefined;
     this.#textDocument = undefined;
-    this.#renderRange = undefined;
-    this.#onChange = undefined;
 
     this.#highlighter = undefined;
     this.#colorMap = undefined;
+    this.#grammar = undefined;
+    this.#renderRange = undefined;
+
     this.#stateStackCache = undefined;
     this.#lineYCache.clear();
 
@@ -209,7 +220,6 @@ export class Editor<LAnnotation> {
     const shadowRoot =
       fileContainer.shadowRoot ?? fileContainer.attachShadow({ mode: 'open' });
 
-    this.#editorLeft = -1;
     this.#lineYCache.clear();
     this.#contentEl = shadowRoot.querySelector('[data-content]') ?? undefined;
     if (this.#contentEl === undefined) {
@@ -241,18 +251,17 @@ export class Editor<LAnnotation> {
         }
 
         // if caret position changes in textarea, sync the textarea state.
-        if (
-          this.#textareaEl !== undefined &&
-          this.#textareaSnapshot !== undefined
-        ) {
-          const { selectionStart, selectionEnd } = this.#textareaEl;
+        const textareaEl = this.#textareaEl;
+        const textareaSnapshot = this.#textareaSnapshot;
+        if (textareaEl !== undefined && textareaSnapshot !== undefined) {
+          const { selectionStart, selectionEnd } = textareaEl;
           if (
-            (this.#textareaSnapshot.selectionStart !== selectionStart ||
-              this.#textareaSnapshot.selectionEnd !== selectionEnd) &&
-            this.#textareaSnapshot.text === this.#textareaEl.value
+            (textareaSnapshot.selectionStart !== selectionStart ||
+              textareaSnapshot.selectionEnd !== selectionEnd) &&
+            textareaSnapshot.text === textareaEl.value
           ) {
-            this.#textareaSnapshot.selectionStart = selectionStart;
-            this.#textareaSnapshot.selectionEnd = selectionEnd;
+            textareaSnapshot.selectionStart = selectionStart;
+            textareaSnapshot.selectionEnd = selectionEnd;
             this.#syncTextareaState();
             return;
           }
@@ -1115,75 +1124,46 @@ export class Editor<LAnnotation> {
 
   // get character left position in line
   #getCharacterX(line: number, character: number) {
-    const contentEl = this.#contentEl;
-    const lineEl = this.#getLineElement(line);
+    const lineText = this.#textDocument?.getLineText(line);
+    if (lineText === undefined || lineText.length === 0) {
+      return this.#charWidth; // padding-inline: 1ch
+    }
+
+    const boundedCharacter = Math.max(0, Math.min(character, lineText.length));
+    const textBeforeCharacter = lineText.slice(0, boundedCharacter);
     if (
-      contentEl === undefined ||
-      lineEl === undefined ||
-      !lineEl.hasChildNodes()
+      isAsciiOnly(textBeforeCharacter) ||
+      this.#file?.options.overflow === 'wrap'
     ) {
-      return this.#charWidth; // padding-inline: 1ch
+      return (
+        this.#charWidth + this.#getExpandedAsciiTextWidth(textBeforeCharacter)
+      );
     }
 
-    const children = lineEl.children;
-    if (children.length === 1 && children[0] instanceof Text) {
-      return this.#charWidth; // padding-inline: 1ch
-    }
+    return this.#charWidth + this.#measureTextWidth(textBeforeCharacter);
+  }
 
-    let targetSpan: HTMLElement | undefined;
-    let targetOffset = 0;
-    let lastSpan: HTMLElement | undefined;
-    let lastEnd = 0;
-    for (const child of children) {
-      if (!(child instanceof HTMLElement) || child.tagName !== 'SPAN') {
-        continue;
-      }
-      const dataChar = child.dataset.char;
-      if (dataChar === undefined) {
-        continue;
-      }
-      const start = Number(dataChar);
-      const textLength = child.textContent?.length ?? 0;
-      const end = start + textLength;
-      if (character >= start && character <= end) {
-        targetSpan = child;
-        targetOffset = character - start;
-        break;
-      }
-      if (end >= lastEnd) {
-        lastSpan = child;
-        lastEnd = end;
-      }
+  #getExpandedAsciiTextWidth(text: string) {
+    let columns = 0;
+    for (let i = 0; i < text.length; i++) {
+      columns += text.charCodeAt(i) === /* '\t' */ 9 ? this.#tabSize : 1;
     }
+    return columns * this.#charWidth;
+  }
 
-    const range = document.createRange();
-    if (targetSpan !== undefined) {
-      const textNode = targetSpan.firstChild;
-      if (textNode === null) {
-        return 0;
-      }
-      const nodeLength = textNode.textContent?.length ?? 0;
-      const boundedOffset = Math.max(0, Math.min(targetOffset, nodeLength));
-      range.setStart(textNode, boundedOffset);
-      range.setEnd(textNode, boundedOffset);
-    } else if (lastSpan !== undefined) {
-      const textNode = lastSpan.firstChild;
-      if (textNode === null) {
-        return 0;
-      }
-      const nodeLength = textNode.textContent?.length ?? 0;
-      range.setStart(textNode, nodeLength);
-      range.setEnd(textNode, nodeLength);
-    } else {
-      return 0;
+  #measureTextWidth(text: string) {
+    if (this.#measureCtx === undefined) {
+      return this.#getExpandedAsciiTextWidth(text);
     }
-
-    const editorLeft =
-      this.#editorLeft > -1
-        ? this.#editorLeft
-        : (this.#editorLeft = contentEl.getBoundingClientRect().left);
-    const pointRect = range.getBoundingClientRect();
-    return pointRect.left - editorLeft;
+    const textWithExpandedTabs = text.replaceAll(
+      '\t',
+      ' '.repeat(this.#tabSize)
+    );
+    console.log(
+      textWithExpandedTabs,
+      this.#measureCtx.measureText(textWithExpandedTabs).width
+    );
+    return this.#measureCtx.measureText(textWithExpandedTabs).width;
   }
 
   #getCSSProperites() {
@@ -1199,7 +1179,10 @@ export class Editor<LAnnotation> {
     const ctx = el.getContext('2d');
     if (ctx !== null) {
       ctx.font = fontSize + ' ' + fontFamily;
+      this.#measureCtx = ctx;
       this.#charWidth = Math.round(ctx.measureText('0').width * 1000) / 1000;
+    } else {
+      this.#measureCtx = undefined;
     }
 
     if (lineHeight.endsWith('px')) {

@@ -91,6 +91,15 @@ export function getLineIndentation(lineText: string): string {
   return indentation;
 }
 
+export function isAsciiOnly(text: string): boolean {
+  for (let i = 0; i < text.length; i++) {
+    if (text.charCodeAt(i) > 127) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function resolveDirtyLines(
   change: TextDocumentChange | undefined,
   startingLine: number,

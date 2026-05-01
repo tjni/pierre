@@ -13,11 +13,6 @@ type PieceSegment = {
   readonly lineOffsets: number[];
 };
 
-type PieceLocation = {
-  readonly node: PieceNode;
-  readonly offsetInPiece: number;
-};
-
 enum PieceSourceType {
   Original = 0,
   Added = 1,
@@ -129,8 +124,7 @@ export class PieceTable {
     }
 
     const chunks: string[] = [];
-    let node: PieceNode | null = location.node;
-    let offsetInPiece = location.offsetInPiece;
+    let [node, offsetInPiece] = location as [PieceNode | null, number];
     let remaining = sliceEnd - sliceStart;
     while (node !== null && remaining > 0) {
       const takeLength = Math.min(node.piece.length - offsetInPiece, remaining);
@@ -155,10 +149,9 @@ export class PieceTable {
       return '';
     }
 
-    const buffer = this.#bufferFor(location.node.piece.source);
-    return buffer.text.charAt(
-      location.node.piece.offset + location.offsetInPiece
-    );
+    const [node, offsetInPiece] = location;
+    const buffer = this.#bufferFor(node.piece.source);
+    return buffer.text.charAt(node.piece.offset + offsetInPiece);
   }
 
   includes(needle: string): boolean {
@@ -313,7 +306,9 @@ export class PieceTable {
     return offset[0] + character;
   }
 
-  #findPieceAtOffset(offset: number): PieceLocation | undefined {
+  #findPieceAtOffset(
+    offset: number
+  ): [node: PieceNode, offsetInPiece: number] | undefined {
     if (offset < 0 || offset >= this.#length) {
       return undefined;
     }
@@ -329,7 +324,7 @@ export class PieceTable {
 
       remaining -= leftLength;
       if (remaining < node.piece.length) {
-        return { node, offsetInPiece: remaining };
+        return [node, remaining];
       }
 
       remaining -= node.piece.length;
