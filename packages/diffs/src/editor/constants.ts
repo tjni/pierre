@@ -6,9 +6,9 @@ export const EDITOR_CSS = /* CSS */ `
     background-color: transparent;
   }
   @keyframes blinking {
-    0% { opacity: 0.9; }
+    0% { opacity: 0.85; }
     50% { opacity: 0; }
-    100% { opacity: 0.9; }
+    100% { opacity: 0.85; }
   }
   [data-line] {
     background-color: transparent;
@@ -32,7 +32,6 @@ export const EDITOR_CSS = /* CSS */ `
     font: inherit;
     padding: 0;
     padding-inline: 1ch;
-    transform: translateY(-1lh);
     color: transparent;
     color: transparent;
     background-color: transparent;

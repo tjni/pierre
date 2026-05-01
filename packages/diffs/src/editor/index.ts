@@ -36,7 +36,6 @@ import {
   addEventListener,
   createElement,
   extend,
-  isAsciiOnly,
   isCodeLineTarget,
   resolveDirtyLines,
 } from '../editor/editorUtils';
@@ -83,6 +82,7 @@ export class Editor<LAnnotation> {
   // cache
   #stateStackCache?: StateStack[];
   #lineYCache = new Map<number, number>();
+  #lastCharX?: [line: number, character: number, x: number];
 
   // dom elements
   #contentEl?: HTMLElement;
@@ -174,6 +174,7 @@ export class Editor<LAnnotation> {
 
     this.#stateStackCache = undefined;
     this.#lineYCache.clear();
+    this.#lastCharX = undefined;
 
     this.#contentEl = undefined;
     this.#styleEl?.remove();
@@ -220,7 +221,6 @@ export class Editor<LAnnotation> {
     const shadowRoot =
       fileContainer.shadowRoot ?? fileContainer.attachShadow({ mode: 'open' });
 
-    this.#lineYCache.clear();
     this.#contentEl = shadowRoot.querySelector('[data-content]') ?? undefined;
     if (this.#contentEl === undefined) {
       throw new Error('could not edit the file.');
@@ -356,6 +356,9 @@ export class Editor<LAnnotation> {
         this.#syncTextareaState();
       }),
     ];
+
+    this.#lineYCache.clear();
+    this.#lastCharX = undefined;
 
     if (this.#selections !== undefined) {
       this.#selectionEls?.forEach((el) => el.remove());
@@ -833,20 +836,18 @@ export class Editor<LAnnotation> {
     fragment: DocumentFragment,
     cacheMap: Map<string, HTMLElement>
   ) {
-    if (!this.#isSelectionVisible(selection)) {
+    if (
+      this.#textDocument === undefined ||
+      !this.#isSelectionVisible(selection)
+    ) {
       return;
     }
 
-    const selectionEls = this.#selectionEls;
     const { start, end } = selection;
+    const selectionEls = this.#selectionEls;
 
     for (let ln = start.line; ln <= end.line; ln++) {
-      const lineText = this.#textDocument?.getLineText(ln);
-      if (lineText === undefined) {
-        // ignore out of bounds line
-        continue;
-      }
-
+      const lineText = this.#textDocument.getLineText(ln);
       const lineLength = lineText.length;
       const startChar = ln === start.line ? start.character : 0;
       const endChar = ln === end.line ? end.character : lineLength;
@@ -854,47 +855,42 @@ export class Editor<LAnnotation> {
         ln === end.line || startChar === endChar ? 0 : this.#charWidth;
       const cacheKey = `selection-${ln}-${startChar}-${endChar}`;
 
-      let rangeEl: HTMLElement | undefined;
-      if (selectionEls?.has(cacheKey) === true) {
-        rangeEl = selectionEls.get(cacheKey)!;
-        selectionEls.delete(cacheKey);
-        cacheMap.set(cacheKey, rangeEl);
-        // already in view, skip
-        continue;
-      }
-
       let left = 0;
       let width = 0;
+      let rangeEl: HTMLElement | undefined;
       if (startChar === endChar && startChar === 0) {
         left = this.#charWidth;
-        width = this.#charWidth;
+        width = ln === end.line ? 0 : this.#charWidth;
       } else {
-        const startX = this.#getCharacterX(ln, startChar);
-        const endX =
-          endChar === startChar ? startX : this.#getCharacterX(ln, endChar);
-        left = startX;
-        width = endX - startX;
+        left = this.#getCharX(ln, startChar);
+        width = endChar === startChar ? 0 : this.#getCharX(ln, endChar) - left;
       }
 
       const css = `width: ${width + spacing}px; transform: translateY(${this.#getLineY(ln)}px) translateX(${left}px);`;
 
-      for (const [key, el] of selectionEls?.entries() ?? []) {
-        if (key.startsWith(`selection-${ln}-`)) {
-          rangeEl = el;
-          selectionEls?.delete(key);
-          el.style.cssText = css;
-          break;
+      if (selectionEls?.has(cacheKey) === true) {
+        rangeEl = selectionEls.get(cacheKey)!;
+        selectionEls.delete(cacheKey);
+        rangeEl.style.cssText = css;
+      } else {
+        for (const [key, el] of selectionEls?.entries() ?? []) {
+          if (key.startsWith(`selection-${ln}-`)) {
+            rangeEl = el;
+            selectionEls?.delete(key);
+            el.style.cssText = css;
+            break;
+          }
         }
       }
 
       rangeEl ??= createElement(
-        'div',
-        {
-          dataset: 'selectionRange',
-          style: { cssText: css },
-        },
-        fragment
-      );
+          'div',
+          {
+            dataset: 'selectionRange',
+            style: { cssText: css },
+          },
+          fragment
+        );
 
       cacheMap.set(cacheKey, rangeEl);
     }
@@ -913,16 +909,13 @@ export class Editor<LAnnotation> {
     const isBackward = direction === SelectionDirection.Backward;
     const line = isBackward ? start.line : end.line;
     const character = isBackward ? start.character : end.character;
-    const left = Math.max(
-      this.#charWidth,
-      this.#getCharacterX(line, character)
-    );
+    const left = Math.max(this.#charWidth, this.#getCharX(line, character));
     const caretEl = createElement(
       'div',
       {
         dataset: 'caret',
         style: {
-          transform: `translateY(${this.#getLineY(line)}px) translateX(${left}px)`,
+          transform: `translateY(${this.#getLineY(line)}px) translateX(${left - 1}px)`,
         },
       },
       fragment
@@ -1123,29 +1116,49 @@ export class Editor<LAnnotation> {
   }
 
   // get character left position in line
-  #getCharacterX(line: number, character: number) {
-    const lineText = this.#textDocument?.getLineText(line);
-    if (lineText === undefined || lineText.length === 0) {
-      return this.#charWidth; // padding-inline: 1ch
-    }
-
-    const boundedCharacter = Math.max(0, Math.min(character, lineText.length));
-    const textBeforeCharacter = lineText.slice(0, boundedCharacter);
+  #getCharX(line: number, character: number) {
     if (
-      isAsciiOnly(textBeforeCharacter) ||
-      this.#file?.options.overflow === 'wrap'
+      this.#lastCharX !== undefined &&
+      this.#lastCharX[0] === line &&
+      this.#lastCharX[1] === character
     ) {
-      return (
-        this.#charWidth + this.#getExpandedAsciiTextWidth(textBeforeCharacter)
-      );
+      return this.#lastCharX[2];
     }
 
-    return this.#charWidth + this.#measureTextWidth(textBeforeCharacter);
+    const lineText = this.#textDocument?.getLineText(line);
+    const paddingInline = this.#charWidth; // align to diff css: padding-inline: 1ch
+    if (lineText === undefined || lineText.length === 0 || character <= 0) {
+      return paddingInline;
+    }
+
+    const boundedCharacter = Math.min(character, lineText.length);
+    const textBeforeCharacter = lineText.slice(0, boundedCharacter);
+    const asciiWidth = this.#getExpandedAsciiTextWidth(textBeforeCharacter);
+
+    let left = 0;
+    if (asciiWidth !== -1 || this.#file?.options.overflow === 'wrap') {
+      left = paddingInline + asciiWidth;
+    } else {
+      left = paddingInline + this.#measureTextWidth(textBeforeCharacter);
+    }
+
+    if (this.#lastCharX !== undefined) {
+      this.#lastCharX[0] = line;
+      this.#lastCharX[1] = character;
+      this.#lastCharX[2] = left;
+    } else {
+      this.#lastCharX = [line, character, left];
+    }
+
+    return left;
   }
 
   #getExpandedAsciiTextWidth(text: string) {
     let columns = 0;
     for (let i = 0; i < text.length; i++) {
+      if (text.charCodeAt(i) > 127) {
+        return -1;
+      }
       columns += text.charCodeAt(i) === /* '\t' */ 9 ? this.#tabSize : 1;
     }
     return columns * this.#charWidth;
@@ -1153,15 +1166,11 @@ export class Editor<LAnnotation> {
 
   #measureTextWidth(text: string) {
     if (this.#measureCtx === undefined) {
-      return this.#getExpandedAsciiTextWidth(text);
+      throw new Error('Measure context not initialized');
     }
     const textWithExpandedTabs = text.replaceAll(
       '\t',
       ' '.repeat(this.#tabSize)
-    );
-    console.log(
-      textWithExpandedTabs,
-      this.#measureCtx.measureText(textWithExpandedTabs).width
     );
     return this.#measureCtx.measureText(textWithExpandedTabs).width;
   }
