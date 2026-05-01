@@ -109,19 +109,21 @@ export class TextDocument {
   #languageId: string;
   #version: number;
   #pieceTable: PieceTable;
-  #editStack = new EditStack();
+  #editStack: EditStack;
   #lastChange?: TextDocumentChange;
 
   constructor(
     uri: string,
     text: string,
     languageId = 'plaintext',
-    version = 0
+    version = 0,
+    editStack: EditStack = new EditStack()
   ) {
     this.#uri = new URL(uri, 'file://').toString();
     this.#languageId = languageId;
     this.#version = version;
     this.#pieceTable = new PieceTable(text);
+    this.#editStack = editStack;
   }
 
   get uri(): string {

@@ -1,6 +1,10 @@
 import type { EditorSelection } from './editorSelection';
 import type { ResolvedTextEdit } from './textDocument';
 
+/** Largest number of undo or redo entries kept; oldest entries drop first once exceeded. */
+const DEFAULT_EDIT_STACK_MAX_ENTRIES = 100;
+const MINIMUM_EDIT_STACK_MAX_ENTRIES = 10;
+
 interface EditSource {
   getTextSlice(start: number, end: number): string;
 }
@@ -20,9 +24,19 @@ interface EditStackEntry {
   selectionsAfter?: EditorSelection[];
 }
 
+export interface EditStackOptions {
+  maxEntries?: number;
+}
+
 export class EditStack {
   #undoStack: EditStackEntry[] = [];
   #redoStack: EditStackEntry[] = [];
+  #maxEntries: number;
+
+  constructor(options?: EditStackOptions) {
+    const maxEntries = options?.maxEntries ?? DEFAULT_EDIT_STACK_MAX_ENTRIES;
+    this.#maxEntries = Math.max(MINIMUM_EDIT_STACK_MAX_ENTRIES, maxEntries);
+  }
 
   get canUndo(): boolean {
     return this.#undoStack.length > 0;
@@ -58,6 +72,9 @@ export class EditStack {
       selectionsAfter: selectionsAfter?.map((selection) => ({ ...selection })),
     });
     this.#redoStack.length = 0;
+    if (this.#undoStack.length > this.#maxEntries) {
+      this.#undoStack.shift();
+    }
   }
 
   setLastUndoSelectionsAfter(selections: EditorSelection[]): void {

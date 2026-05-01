@@ -131,6 +131,27 @@ describe('EditHistory', () => {
     });
   });
 
+  test('maxEntries drops oldest undo history first', () => {
+    const editStack = new EditStack({ maxEntries: 3 });
+
+    for (let i = 0; i < 4; i++) {
+      editStack.push(
+        source(''),
+        [{ start: 0, end: 0, text: `${i}` }],
+        i,
+        i + 1,
+        [caret(0)],
+        undefined
+      );
+    }
+
+    const third = editStack.popUndoToRedo();
+    expect(third?.forwardEdits[0]?.text).toBe('3');
+    expect(editStack.popUndoToRedo()?.forwardEdits[0]?.text).toBe('2');
+    expect(editStack.popUndoToRedo()?.forwardEdits[0]?.text).toBe('1');
+    expect(editStack.popUndoToRedo()).toBeUndefined();
+  });
+
   test('clear resets both undo and redo stacks', () => {
     const editStack = new EditStack();
 
