@@ -73,6 +73,7 @@ export class Editor<LAnnotation> {
   #textareaEl?: HTMLTextAreaElement;
   #selectionEls?: Map<string, HTMLElement>;
 
+  #editorLeft = -1;
   #charWidth = -1;
   #lineHeight = 20;
   #tabSize = 2;
@@ -116,7 +117,6 @@ export class Editor<LAnnotation> {
       Math.max(0, primarySelection.start.line - 1) !==
       this.#textareaSnapshot?.startLine;
     this.#selections = selections;
-    this.#file?.setSelectedLines(null);
     this.#renderSelections(selections, primarySelection);
     if (shouldUpdateTextarea) {
       this.#updateTextarea(primarySelection);
@@ -176,8 +176,6 @@ export class Editor<LAnnotation> {
     fileContents: FileContents,
     renderRange: RenderRange | undefined
   ): void {
-    console.log('Editor initialized, renderRange:', renderRange);
-
     if (
       this.#textDocument === undefined ||
       this.#fileContents === undefined ||
@@ -205,6 +203,7 @@ export class Editor<LAnnotation> {
     if (this.#contentEl === undefined) {
       throw new Error('could not edit the file.');
     }
+    this.#editorLeft = -1;
 
     this.#textareaEl ??= extend(
       createElement('textarea', { dataset: 'textarea' }),
@@ -345,6 +344,12 @@ export class Editor<LAnnotation> {
     }
 
     this.#getCSSProperites();
+    console.log('Editor initialized.', {
+      renderRange,
+      tabSize: this.#tabSize,
+      lineHeight: this.#lineHeight,
+      charWidth: this.#charWidth,
+    });
   }
 
   #computeMouseSelectionDirection(): SelectionDirection {
@@ -714,9 +719,8 @@ export class Editor<LAnnotation> {
       primarySelection
     );
     const direction = toTextareaSelectionDirection(primarySelection);
-    textareaEl.style.top = this.#getLineY(primarySelection.start.line) + 'px';
-    textareaEl.style.height = textareaSnapshot.lines + 'lh';
     textareaEl.value = textareaSnapshot.text;
+    textareaEl.style.transform = `translateY(${this.#getLineY(primarySelection.start.line)}px)`;
     textareaEl.setSelectionRange(
       textareaSnapshot.selectionStart,
       textareaSnapshot.selectionEnd,
@@ -747,50 +751,62 @@ export class Editor<LAnnotation> {
     selections: EditorSelection[],
     primarySelection: EditorSelection
   ) {
-    const selectionEls = new Map<string, HTMLElement>();
+    const fragment = document.createDocumentFragment();
+    const cacheMap = new Map<string, HTMLElement>();
+    this.#file?.setSelectedLines(null);
     if (isCollapsedSelection(primarySelection)) {
-      this.#renderLineHighlight(primarySelection, selectionEls);
+      this.#file?.setSelectedLines({
+        start: primarySelection.start.line + 1,
+        end: primarySelection.end.line + 1,
+      });
+      this.#renderLineHighlight(primarySelection, fragment, cacheMap);
     }
     selections.forEach((selection) => {
       if (selections.length > 1 || !isCollapsedSelection(selection)) {
-        this.#renderSelectionRange(selection, selectionEls);
+        this.#renderSelectionRange(selection, fragment, cacheMap);
       }
-      this.#renderCaret(selection, selectionEls);
+      this.#renderCaret(selection, fragment, cacheMap);
     });
+    this.#contentEl?.append(fragment);
     this.#selectionEls?.forEach((el) => el.remove());
     this.#selectionEls?.clear();
-    this.#selectionEls = selectionEls;
+    this.#selectionEls = cacheMap;
   }
 
   #renderLineHighlight(
     selection: EditorSelection,
-    markMap: Map<string, HTMLElement>
+    fragment: DocumentFragment,
+    cacheMap: Map<string, HTMLElement>
   ) {
     if (!this.#isSelectionVisible(selection)) {
       return;
     }
+
+    const cacheKey = `lineHighlight-${selection.start.line}`;
+    if (this.#selectionEls?.has(cacheKey) === true) {
+      const el = this.#selectionEls.get(cacheKey)!;
+      this.#selectionEls.delete(cacheKey);
+      cacheMap.set(cacheKey, el);
+      return;
+    }
+
     const hlEl = createElement(
       'div',
       {
         dataset: 'lineHighlight',
         style: {
-          top: this.#getLineY(selection.start.line) + 'px',
+          transform: `translateY(${this.#getLineY(selection.start.line)}px)`,
         },
       },
-      this.#contentEl
+      fragment
     );
-
-    this.#file?.setSelectedLines({
-      start: selection.start.line + 1,
-      end: selection.end.line + 1,
-    });
-    // hlEl.scrollIntoView({ block: "nearest" });
-    markMap.set(`lineHighlight-${selection.start.line}`, hlEl);
+    cacheMap.set(cacheKey, hlEl);
   }
 
   #renderSelectionRange(
     selection: EditorSelection,
-    markMap: Map<string, HTMLElement>
+    fragment: DocumentFragment,
+    cacheMap: Map<string, HTMLElement>
   ) {
     if (!this.#isSelectionVisible(selection)) {
       return;
@@ -817,46 +833,53 @@ export class Editor<LAnnotation> {
       if (selectionEls?.has(cacheKey) === true) {
         rangeEl = selectionEls.get(cacheKey)!;
         selectionEls.delete(cacheKey);
-      } else {
-        let left = 0;
-        let width = 0;
-        if (startChar === endChar && startChar === 0) {
-          left = this.#charWidth;
-          width = this.#charWidth;
-        } else {
-          const startX = this.#getCharacterX(ln, startChar);
-          const endX =
-            endChar === startChar ? startX : this.#getCharacterX(ln, endChar);
-          left = startX;
-          width = endX - startX;
-        }
-
-        for (const [key, el] of selectionEls?.entries() ?? []) {
-          if (key.startsWith(`selection-${ln}-`)) {
-            rangeEl = el;
-            selectionEls?.delete(key);
-            el.style.left = left + 'px';
-            el.style.width = width + spacing + 'px';
-            break;
-          }
-        }
-
-        rangeEl ??= createElement('div', {
-          dataset: 'selectionRange',
-          style: {
-            top: this.#getLineY(ln) + 'px',
-            left: left + 'px',
-            width: width + spacing + 'px',
-          },
-        });
+        cacheMap.set(cacheKey, rangeEl);
+        // already in view, skip
+        continue;
       }
 
-      this.#contentEl?.append(rangeEl);
-      markMap.set(cacheKey, rangeEl);
+      let left = 0;
+      let width = 0;
+      if (startChar === endChar && startChar === 0) {
+        left = this.#charWidth;
+        width = this.#charWidth;
+      } else {
+        const startX = this.#getCharacterX(ln, startChar);
+        const endX =
+          endChar === startChar ? startX : this.#getCharacterX(ln, endChar);
+        left = startX;
+        width = endX - startX;
+      }
+
+      const css = `width: ${width + spacing}px; transform: translateY(${this.#getLineY(ln)}px) translateX(${left}px);`;
+
+      for (const [key, el] of selectionEls?.entries() ?? []) {
+        if (key.startsWith(`selection-${ln}-`)) {
+          rangeEl = el;
+          selectionEls?.delete(key);
+          el.style.cssText = css;
+          break;
+        }
+      }
+
+      rangeEl ??= createElement(
+        'div',
+        {
+          dataset: 'selectionRange',
+          style: { cssText: css },
+        },
+        fragment
+      );
+
+      cacheMap.set(cacheKey, rangeEl);
     }
   }
 
-  #renderCaret(selection: EditorSelection, markMap: Map<string, HTMLElement>) {
+  #renderCaret(
+    selection: EditorSelection,
+    fragment: DocumentFragment,
+    cacheMap: Map<string, HTMLElement>
+  ) {
     if (!this.#isSelectionVisible(selection)) {
       return;
     }
@@ -874,13 +897,12 @@ export class Editor<LAnnotation> {
       {
         dataset: 'caret',
         style: {
-          top: this.#getLineY(line) + 'px',
-          left: left + 'px',
+          transform: `translateY(${this.#getLineY(line)}px) translateX(${left}px)`,
         },
       },
-      this.#contentEl
+      fragment
     );
-    markMap.set('caret-' + line + '-' + character + '-' + direction, caretEl);
+    cacheMap.set('caret-' + line + '-' + character, caretEl);
   }
 
   async #runCommand(command: EditorCommand) {
@@ -1134,9 +1156,12 @@ export class Editor<LAnnotation> {
       return 0;
     }
 
-    const editorRect = contentEl.getBoundingClientRect();
+    const editorLeft =
+      this.#editorLeft > -1
+        ? this.#editorLeft
+        : (this.#editorLeft = contentEl.getBoundingClientRect().left);
     const pointRect = range.getBoundingClientRect();
-    return pointRect.left - editorRect.left;
+    return pointRect.left - editorLeft;
   }
 
   #getCSSProperites() {
@@ -1144,32 +1169,25 @@ export class Editor<LAnnotation> {
       return;
     }
 
-    const styleMap = this.#contentEl.computedStyleMap();
-    const tabSize = styleMap.get('tab-size');
-    if (
-      tabSize !== undefined &&
-      tabSize instanceof CSSUnitValue &&
-      tabSize.unit === 'number'
-    ) {
-      this.#tabSize = tabSize.value;
+    const { fontFamily, fontSize, lineHeight, tabSize } = getComputedStyle(
+      this.#contentEl
+    );
+
+    const el = document.createElement('canvas');
+    const ctx = el.getContext('2d');
+    if (ctx !== null) {
+      ctx.font = fontSize + ' ' + fontFamily;
+      this.#charWidth = Math.round(ctx.measureText('0').width * 1000) / 1000;
     }
 
-    const lineHeight = styleMap.get('line-height');
-    if (
-      lineHeight !== undefined &&
-      lineHeight instanceof CSSUnitValue &&
-      lineHeight.unit === 'px'
-    ) {
-      this.#lineHeight = Number(lineHeight.value);
+    if (lineHeight.endsWith('px')) {
+      this.#lineHeight = Number(lineHeight.slice(0, -2));
+    } else if (fontSize.endsWith('px')) {
+      this.#lineHeight =
+        Number(fontSize.slice(0, -2)) * Number(lineHeight.slice(0, -2));
     }
 
-    const el = document.createElement('div');
-    el.style.width = '1ch';
-    el.style.position = 'absolute';
-    el.style.visibility = 'hidden';
-    this.#contentEl.appendChild(el);
-    this.#charWidth = el.offsetWidth;
-    el.remove();
+    this.#tabSize = Number(tabSize);
   }
 
   // check if the web selection belongs to editor

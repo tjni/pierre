@@ -9,7 +9,7 @@ export function createElement<K extends keyof HTMLElementTagNameMap>(
     dataset?: DOMStringMap | string[] | string;
     textContent?: string;
   } = {},
-  parent?: Element | ShadowRoot
+  parent?: Element | ShadowRoot | DocumentFragment
 ): HTMLElementTagNameMap[K] {
   const el = document.createElement(tagName);
   const { id, class: className, style, dataset, textContent } = props;

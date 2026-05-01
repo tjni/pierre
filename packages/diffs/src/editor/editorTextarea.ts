@@ -6,7 +6,6 @@ export interface TextareaSnapshot {
   offset: number;
   selectionStart: number;
   selectionEnd: number;
-  lines: number;
   text: string;
 }
 
@@ -44,7 +43,6 @@ export function createTextareaSnapshot(
     offset: textDocument.offsetAt({ line: startLine, character: 0 }),
     selectionStart,
     selectionEnd,
-    lines: lines.length,
     text: lines.join('\n'),
   };
 }

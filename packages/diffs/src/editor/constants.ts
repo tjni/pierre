@@ -21,6 +21,7 @@ export const EDITOR_CSS = /* CSS */ `
   }
   [data-textarea], [data-caret], [data-line-highlight], [data-selection-range] {
     position: absolute;
+    top: 0;
     left: 0;
     z-index: -10;
     height: 1lh;
