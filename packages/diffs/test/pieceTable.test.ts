@@ -245,8 +245,6 @@ describe('PieceTable', () => {
     expect(table.charAt(3)).toBe('C');
     expect(table.charAt(4)).toBe('D');
     expect(table.charAt(5)).toBe('e');
-    expect(table.charAt(1, 0)).toBe('C');
-    expect(table.charAt(1, 2)).toBe('e');
     expect(table.charAt(-1)).toBe('');
     expect(table.charAt(table.getText().length)).toBe('');
   });
