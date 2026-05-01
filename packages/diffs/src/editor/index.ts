@@ -71,7 +71,9 @@ export class Editor<LAnnotation> {
   #highlighter?: DiffsHighlighter;
   #grammar?: IGrammar;
   #colorMap?: Map<string, string[]>;
+
   #stateStackCache?: StateStack[];
+  #lineYCache = new Map<number, number>();
 
   // dom elements
   #contentEl?: HTMLElement;
@@ -161,6 +163,7 @@ export class Editor<LAnnotation> {
     this.#highlighter = undefined;
     this.#colorMap = undefined;
     this.#stateStackCache = undefined;
+    this.#lineYCache.clear();
 
     this.#contentEl = undefined;
     this.#styleEl?.remove();
@@ -208,6 +211,7 @@ export class Editor<LAnnotation> {
       fileContainer.shadowRoot ?? fileContainer.attachShadow({ mode: 'open' });
 
     this.#editorLeft = -1;
+    this.#lineYCache.clear();
     this.#contentEl = shadowRoot.querySelector('[data-content]') ?? undefined;
     if (this.#contentEl === undefined) {
       throw new Error('could not edit the file.');
@@ -411,6 +415,7 @@ export class Editor<LAnnotation> {
       const linesChange = lastChange?.lineDelta ?? 0;
 
       for (let line = endLine; line < prevEndLine; line++) {
+        this.#lineYCache.delete(line);
         this.#getLineElement(line)?.remove();
       }
 
@@ -1098,12 +1103,19 @@ export class Editor<LAnnotation> {
     );
   }
 
-  // get line Y position
+  // get line top position
   #getLineY(line: number) {
-    return this.#getLineElement(line)?.offsetTop ?? 0;
+    const cachedY = this.#lineYCache.get(line);
+    if (cachedY !== undefined) {
+      return cachedY;
+    }
+
+    const y = this.#getLineElement(line)?.offsetTop ?? 0;
+    this.#lineYCache.set(line, y);
+    return y;
   }
 
-  // get character X position
+  // get character left position in line
   #getCharacterX(line: number, character: number) {
     const contentEl = this.#contentEl;
     const lineEl = this.#getLineElement(line);
@@ -1112,12 +1124,12 @@ export class Editor<LAnnotation> {
       lineEl === undefined ||
       !lineEl.hasChildNodes()
     ) {
-      return 0;
+      return this.#charWidth; // padding-inline: 1ch
     }
 
     const children = lineEl.children;
     if (children.length === 1 && children[0] instanceof Text) {
-      return 0;
+      return this.#charWidth; // padding-inline: 1ch
     }
 
     let targetSpan: HTMLElement | undefined;
