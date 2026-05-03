@@ -7,6 +7,7 @@ export interface TextareaSnapshot {
   selectionStart: number;
   selectionEnd: number;
   text: string;
+  lineCount: number;
 }
 
 export function createTextareaSnapshot(
@@ -44,21 +45,21 @@ export function createTextareaSnapshot(
     selectionStart,
     selectionEnd,
     text: lines.join('\n'),
+    lineCount: lines.length,
   };
 }
 
 export function resolveTextareaChange(
   textareaSnapshot: TextareaSnapshot,
   newView: string,
-  selectionStart?: number,
-  selectionEnd?: number
+  selectionStart: number,
+  selectionEnd: number
 ): ResolvedTextEdit {
   const original = textareaSnapshot.text;
   const originalLength = original.length;
   const nextLength = newView.length;
+
   if (
-    selectionStart !== undefined &&
-    selectionEnd !== undefined &&
     selectionStart === selectionEnd &&
     textareaSnapshot.selectionStart === textareaSnapshot.selectionEnd
   ) {

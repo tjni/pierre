@@ -393,14 +393,16 @@ export class Editor<LAnnotation> {
     return SelectionDirection.None;
   }
 
-  #rerender(textDocument: TextDocument, nextSelections?: EditorSelection[]) {
+  #rerender() {
     const file = this.#file;
     const fileContents = this.#fileContents;
+    const textDocument = this.#textDocument;
     const contentEl = this.#contentEl;
     if (
       file === undefined ||
       fileContents === undefined ||
-      contentEl === undefined
+      contentEl === undefined ||
+      textDocument === undefined
     ) {
       return;
     }
@@ -579,10 +581,6 @@ export class Editor<LAnnotation> {
         'linesChange:',
         linesChange
       );
-
-      if (nextSelections !== undefined) {
-        this.setSelections(nextSelections, false);
-      }
     }
 
     if (this.#onChange !== undefined) {
@@ -732,7 +730,8 @@ export class Editor<LAnnotation> {
         this.#selections,
         change
       );
-      this.#rerender(this.#textDocument, nextSelections);
+      this.#rerender();
+      this.setSelections(nextSelections, false);
     }
   }
 
@@ -884,13 +883,13 @@ export class Editor<LAnnotation> {
       }
 
       rangeEl ??= createElement(
-          'div',
-          {
-            dataset: 'selectionRange',
-            style: { cssText: css },
-          },
-          fragment
-        );
+        'div',
+        {
+          dataset: 'selectionRange',
+          style: { cssText: css },
+        },
+        fragment
+      );
 
       cacheMap.set(cacheKey, rangeEl);
     }
@@ -998,7 +997,8 @@ export class Editor<LAnnotation> {
               this.#selections,
               nextSelections
             );
-            this.#rerender(this.#textDocument, nextSelections);
+            this.#rerender();
+            this.setSelections(nextSelections, false);
           }
         }
         break;
@@ -1013,14 +1013,20 @@ export class Editor<LAnnotation> {
       case 'undo':
         if (this.#textDocument?.canUndo === true) {
           const nextSelections = this.#textDocument.undo();
-          this.#rerender(this.#textDocument, nextSelections);
+          this.#rerender();
+          if (nextSelections !== undefined) {
+            this.setSelections(nextSelections, false);
+          }
         }
         break;
 
       case 'redo':
         if (this.#textDocument?.canRedo === true) {
           const nextSelections = this.#textDocument.redo();
-          this.#rerender(this.#textDocument, nextSelections);
+          this.#rerender();
+          if (nextSelections !== undefined) {
+            this.setSelections(nextSelections, false);
+          }
         }
         break;
     }
@@ -1092,7 +1098,8 @@ export class Editor<LAnnotation> {
           end: textDocument.offsetAt(primarySelection.end),
           text: text,
         });
-    this.#rerender(textDocument, nextSelections);
+    this.#rerender();
+    this.setSelections(nextSelections, false);
   }
 
   #getLineElement(line: number) {
