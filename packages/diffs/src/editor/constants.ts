@@ -38,6 +38,7 @@ export const EDITOR_CSS = /* CSS */ `
     border: none;
     outline: none;
     resize: none;
+    overflow: hidden;
     field-sizing: content;
   }
   [data-overflow='scroll'] [data-textarea] {

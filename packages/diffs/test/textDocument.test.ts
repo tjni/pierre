@@ -46,13 +46,23 @@ describe('TextDocument', () => {
     expect(() => d.getLineText(99)).toThrow('Line index out of range: 99');
   });
 
-  test('getLineText can include line endings', () => {
+  test('getLineText trims line endings; getText range still includes them', () => {
     const d = doc('first\r\nsecond\n');
     expect(d.getLineText(0)).toBe('first');
-    expect(d.getLineText(0, false)).toBe('first\r\n');
     expect(d.getLineText(1)).toBe('second');
-    expect(d.getLineText(1, false)).toBe('second\n');
     expect(d.getLineText(2)).toBe('');
+    expect(
+      d.getText({
+        start: { line: 0, character: 0 },
+        end: { line: 1, character: 0 },
+      })
+    ).toBe('first\r\n');
+    expect(
+      d.getText({
+        start: { line: 1, character: 0 },
+        end: { line: 2, character: 0 },
+      })
+    ).toBe('second\n');
   });
 
   // test('offsetAt clamps to line and document bounds', () => {

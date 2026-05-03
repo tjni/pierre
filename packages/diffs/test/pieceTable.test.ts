@@ -22,6 +22,19 @@ function lineTexts(text: string): string[] {
   return lines;
 }
 
+/** Trailing CR/LF removed, matching `PieceTable.getLineText` / `getTextSlice(..., true)`. */
+function trimLineEndings(text: string): string {
+  let end = text.length;
+  while (end > 0 && isLineEnding(text.charCodeAt(end - 1))) {
+    end--;
+  }
+  return text.slice(0, end);
+}
+
+function isLineEnding(c: number): boolean {
+  return c === 10 || c === 13;
+}
+
 function positionAt(text: string, offset: number): Position {
   const clampedOffset = Math.min(Math.max(offset, 0), text.length);
   let line = 0;
@@ -72,7 +85,7 @@ function expectTableToMatchText(table: PieceTable, text: string): void {
   expect(table.lineCount).toBe(lines.length);
 
   for (let line = 0; line < lines.length; line++) {
-    expect(table.getLineText(line)).toBe(lines[line]);
+    expect(table.getLineText(line)).toBe(trimLineEndings(lines[line]));
   }
 
   for (let offset = 0; offset <= text.length; offset++) {
@@ -116,11 +129,11 @@ describe('PieceTable', () => {
     ).toBe('bb');
   });
 
-  test('returns raw line text', () => {
+  test('getLineText omits trailing CR/LF', () => {
     const table = new PieceTable('first\r\nsecond\n');
 
-    expect(table.getLineText(0)).toBe('first\r\n');
-    expect(table.getLineText(1)).toBe('second\n');
+    expect(table.getLineText(0)).toBe('first');
+    expect(table.getLineText(1)).toBe('second');
     expect(table.getLineText(2)).toBe('');
     expect(() => table.getLineText(99)).toThrow('Line index out of range: 99');
   });
@@ -167,7 +180,7 @@ describe('PieceTable', () => {
 
     expect(table.getText()).toBe('one zero\nTWO\nthree');
     expect(table.lineCount).toBe(3);
-    expect(table.getLineText(1)).toBe('TWO\n');
+    expect(table.getLineText(1)).toBe('TWO');
   });
 
   test('handles CRLF split across piece boundaries', () => {
@@ -178,7 +191,7 @@ describe('PieceTable', () => {
 
     expect(table.getText()).toBe('a\r\nb');
     expect(table.lineCount).toBe(2);
-    expect(table.getLineText(0)).toBe('a\r\n');
+    expect(table.getLineText(0)).toBe('a');
     expect(table.positionAt(2)).toEqual({ line: 0, character: 2 });
     expect(table.positionAt(3)).toEqual({ line: 1, character: 0 });
   });
@@ -187,8 +200,8 @@ describe('PieceTable', () => {
     const table = new PieceTable('a\r\r\nb\r');
 
     expectTableToMatchText(table, 'a\r\r\nb\r');
-    expect(table.getLineText(0)).toBe('a\r\r\n');
-    expect(table.getLineText(1)).toBe('b\r');
+    expect(table.getLineText(0)).toBe('a');
+    expect(table.getLineText(1)).toBe('b');
     expect(table.positionAt(2)).toEqual({ line: 0, character: 2 });
     expect(table.offsetAt({ line: 1, character: 10 })).toBe(6);
   });

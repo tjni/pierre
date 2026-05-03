@@ -159,21 +159,17 @@ export class TextDocument {
   }
 
   offsetAt(position: Position): number {
-    // todo: clamp EOL
+    // todo: clamp
     return this.#pieceTable.offsetAt(position);
   }
 
   getText(range?: Range): string {
-    // todo: clamp EOL
+    // todo: clamp
     return this.#pieceTable.getText(range);
   }
 
-  getLineText(line: number, stripEndings = true): string {
-    const text = this.#pieceTable.getLineText(line);
-    if (stripEndings) {
-      return stripLineEndings(text);
-    }
-    return text;
+  getLineText(line: number): string {
+    return this.#pieceTable.getLineText(line);
   }
 
   charAt(offset: number): string;
@@ -307,18 +303,6 @@ export class TextDocument {
     }
     return { startLine, endLine };
   }
-}
-
-function stripLineEndings(text: string): string {
-  let end = text.length;
-  while (end > 0 && isEOL(text.charCodeAt(end - 1))) {
-    end--;
-  }
-  return text.slice(0, end);
-}
-
-function isEOL(charCode: number): boolean {
-  return charCode === 10 || charCode === 13;
 }
 
 function lineFeedCount(text: string): number {

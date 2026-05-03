@@ -74,6 +74,7 @@ export class PieceTable {
   #root: PieceNode | null = null;
   #length = 0;
   #lineCount = 0;
+  #lastVisitedLine: [number, string] | null = null;
 
   constructor(originalText: string) {
     this.#original = new TextBuffer(originalText);
@@ -100,14 +101,19 @@ export class PieceTable {
   }
 
   getLineText(line: number): string {
+    if (this.#lastVisitedLine !== null && this.#lastVisitedLine[0] === line) {
+      return this.#lastVisitedLine[1];
+    }
     const offset = this.#getLineOffset(line);
     if (offset === undefined) {
       throw new Error(`Line index out of range: ${line}`);
     }
-    return this.getTextSlice(offset[0], offset[1]);
+    const text = this.getTextSlice(offset[0], offset[1], true);
+    this.#lastVisitedLine = [line, text];
+    return text;
   }
 
-  getTextSlice(start: number, end: number): string {
+  getTextSlice(start: number, end: number, trimEOF = false): string {
     if (start >= end) {
       return '';
     }
@@ -129,12 +135,14 @@ export class PieceTable {
     while (node !== null && remaining > 0) {
       const takeLength = Math.min(node.piece.length - offsetInPiece, remaining);
       const buffer = this.#bufferFor(node.piece.source);
-      chunks.push(
-        buffer.text.slice(
-          node.piece.offset + offsetInPiece,
-          node.piece.offset + offsetInPiece + takeLength
-        )
-      );
+      const start = node.piece.offset + offsetInPiece;
+      let end = start + takeLength;
+      if (trimEOF) {
+        while (end > start && isEOL(buffer.text.charCodeAt(end - 1))) {
+          end--;
+        }
+      }
+      chunks.push(buffer.text.slice(start, end));
       remaining -= takeLength;
       offsetInPiece = 0;
       node = this.#nextNode(node);
@@ -226,6 +234,7 @@ export class PieceTable {
     }
 
     this.#setPieces(nextPieces);
+    this.#lastVisitedLine = null;
   }
 
   delete(offset: number, length: number): void {
@@ -261,6 +270,7 @@ export class PieceTable {
     }
 
     this.#setPieces(nextPieces);
+    this.#lastVisitedLine = null;
   }
 
   positionAt(offset: number): Position {
@@ -609,6 +619,10 @@ export class PieceTable {
     node.updateSubtreeLength();
     left.updateSubtreeLength();
   }
+}
+
+function isEOL(charCode: number): boolean {
+  return charCode === /* \n */ 10 || charCode === /* \r */ 13;
 }
 
 function clamp(value: number, min: number, max: number): number {
