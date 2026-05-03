@@ -13,9 +13,10 @@ import type {
   BaseCodeOptions,
   DiffsHighlighter,
   FileContents,
-  FileContentsWithLineOffsets,
   FileHeaderRenderMode,
+  HighlightedToken,
   LineAnnotation,
+  LineOffsets,
   RenderedFileASTCache,
   RenderFileOptions,
   RenderFileResult,
@@ -82,7 +83,8 @@ export class FileRenderer<LAnnotation = undefined> {
   private renderCache: RenderedFileASTCache | undefined;
   private computedLang: SupportedLanguages = 'text';
   private lineAnnotations: AnnotationLineMap<LAnnotation> = {};
-  private lineCache: FileContentsWithLineOffsets | undefined;
+  private lineOffsets: LineOffsets | undefined;
+  private lineOffsetsCacheKey: string | undefined;
 
   constructor(
     public options: FileRendererOptions = { theme: DEFAULT_THEMES },
@@ -120,7 +122,7 @@ export class FileRenderer<LAnnotation = undefined> {
     this.highlighter = undefined;
     this.workerManager = undefined;
     this.onRenderUpdate = undefined;
-    this.lineCache = undefined;
+    this.lineOffsets = undefined;
   }
 
   public hydrate(file: FileContents): void {
@@ -176,53 +178,71 @@ export class FileRenderer<LAnnotation = undefined> {
     return { options, forceRender: false };
   }
 
-  public getOrCreateLineCache(file: FileContents): FileContentsWithLineOffsets {
+  public getOrCreateLineOffsets(file: FileContents): LineOffsets {
     // Uncached files will get split every time, not the greatest experience
     // tbh... but something people should try to optimize away
     if (file.cacheKey == null) {
-      this.lineCache = undefined;
-      return computeLineOffsets(file);
+      this.lineOffsets = undefined;
+      return computeLineOffsets(file.contents);
     }
 
-    let { lineCache } = this;
-    if (lineCache == null || lineCache.cacheKey !== file.cacheKey) {
-      lineCache = computeLineOffsets(file);
+    let { lineOffsets } = this;
+    if (lineOffsets == null || this.lineOffsetsCacheKey !== file.cacheKey) {
+      lineOffsets = computeLineOffsets(file.contents);
     }
-    this.lineCache = lineCache;
-    return lineCache;
+    this.lineOffsets = lineOffsets;
+    this.lineOffsetsCacheKey = file.cacheKey;
+    return lineOffsets;
   }
 
-  public updateRenderCacheAt(
-    line: number,
-    tokens: Array<[char: number, style: string, text: string]>
-  ): void {
-    if (this.renderCache != null && this.renderCache.result != null) {
-      this.renderCache.result.code[line] = {
-        type: 'element',
-        tagName: 'div',
-        properties: {
-          'data-line': line + 1,
-          'data-line-index': line,
-          'data-line-type': 'context',
-        },
-        children: tokens.map(([char, style, text]) => {
-          return {
-            type: 'element',
-            tagName: 'span',
-            properties: {
-              'data-char': char,
-              style,
-            },
-            children: [
-              {
-                type: 'text',
-                value: text,
-              },
-            ],
-          };
-        }),
-      };
+  public updateRenderCache({
+    dirtyLines,
+    lineCount,
+  }: {
+    dirtyLines: Map<number, Array<HighlightedToken>>;
+    lineCount: number;
+  }): FileRenderResult {
+    const renderCache = this.renderCache;
+    if (renderCache == null || renderCache.result == null) {
+      throw new Error('Render cache is not set');
     }
+    if (renderCache != null && renderCache.result != null) {
+      const code = renderCache.result.code;
+      for (const [line, tokens] of dirtyLines) {
+        code[line] = {
+          type: 'element',
+          tagName: 'div',
+          properties: {
+            'data-line': line + 1,
+            'data-line-index': line,
+            'data-line-type': 'context',
+          },
+          children: tokens.map(([char, style, text]) => {
+            return {
+              type: 'element',
+              tagName: 'span',
+              properties: {
+                'data-char': char,
+                style,
+              },
+              children: [
+                {
+                  type: 'text',
+                  value: text,
+                },
+              ],
+            };
+          }),
+        };
+      }
+      code.length = lineCount;
+    }
+
+    return this.processFileResult(
+      renderCache.file,
+      renderCache.renderRange ?? DEFAULT_RENDER_RANGE,
+      renderCache.result
+    );
   }
 
   public renderFile(
@@ -262,7 +282,7 @@ export class FileRenderer<LAnnotation = undefined> {
           file,
           renderRange.startingLine,
           renderRange.totalLines,
-          this.getOrCreateLineCache(file)
+          this.getOrCreateLineOffsets(file)
         );
         this.renderCache.renderRange = renderRange;
       }
@@ -374,11 +394,11 @@ export class FileRenderer<LAnnotation = undefined> {
     const { disableFileHeader = false } = this.options;
     const contentArray: ElementContent[] = [];
     const gutter = createGutterWrapper();
-    const lines = this.getOrCreateLineCache(file);
-    const totalLines = lines.lineCount;
+    const lineOffsets = this.getOrCreateLineOffsets(file);
+    const totalLines = lineOffsets.lineCount;
     const endLine = Math.min(
       renderRange.startingLine + renderRange.totalLines,
-      lines.lineCount
+      lineOffsets.lineCount
     );
     let rowCount = 0;
 
@@ -397,7 +417,7 @@ export class FileRenderer<LAnnotation = undefined> {
           name: file.name,
           lineIndex,
           lineNumber,
-          lines,
+          lineOffsets: lineOffsets,
         });
         throw new Error(message);
       }

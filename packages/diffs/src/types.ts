@@ -38,7 +38,7 @@ export interface FileContents {
 /**
  * Represents a file's contents with line offsets.
  */
-export interface FileContentsWithLineOffsets extends FileContents {
+export interface LineOffsets {
   /** The line offsets for the file contents. */
   readonly offsets: number[];
   /** The number of lines in the file. */
@@ -46,6 +46,8 @@ export interface FileContentsWithLineOffsets extends FileContents {
 }
 
 export type HighlighterTypes = 'shiki-js' | 'shiki-wasm';
+
+export type HighlightedToken = [char: number, style: string, text: string];
 
 export type {
   BundledLanguage,
@@ -633,7 +635,7 @@ export interface ForceFilePlainTextOptions {
   startingLine?: number;
   totalLines?: number;
   // Pre-split lines for caching in windowing scenarios
-  lines?: FileContentsWithLineOffsets;
+  lineOffsets?: LineOffsets;
 }
 
 export interface RenderFileOptions {

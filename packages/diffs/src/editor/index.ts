@@ -1,9 +1,4 @@
-import {
-  EncodedTokenMetadata,
-  type IGrammar,
-  INITIAL,
-  type StateStack,
-} from 'shiki/textmate';
+import { type IGrammar, INITIAL, type StateStack } from 'shiki/textmate';
 
 import {
   areThemesAttached,
@@ -44,7 +39,14 @@ import {
   TextDocument,
   type TextEdit,
 } from '../editor/textDocument';
-import type { DiffsHighlighter, FileContents, RenderRange } from '../types';
+import type {
+  DiffsHighlighter,
+  FileContents,
+  HighlightedToken,
+  LineAnnotation,
+  RenderRange,
+} from '../types';
+import { tokenizeLine } from './backgroundTokenzier';
 import {
   EDITOR_CSS,
   TOKENIZE_MAX_LINE_LENGTH,
@@ -59,8 +61,11 @@ import {
 } from './editorTextarea';
 
 export class Editor<LAnnotation> {
+  #onChange?: (
+    file: FileContents,
+    lineAnnotations?: LineAnnotation<LAnnotation>[]
+  ) => void;
   #disposes?: (() => void)[];
-  #onChange?: (file: FileContents) => void;
 
   // css properties
   #measureCtx?: CanvasRenderingContext2D;
@@ -71,12 +76,12 @@ export class Editor<LAnnotation> {
   // file
   #file?: File<LAnnotation>;
   #fileContents?: FileContents;
+  #lineAnnotations?: LineAnnotation<LAnnotation>[];
   #textDocument?: TextDocument;
 
   // highlighter
   #highlighter?: DiffsHighlighter;
   #colorMap?: Map<string, string[]>;
-  #grammar?: IGrammar;
   #renderRange?: RenderRange;
 
   // cache
@@ -103,7 +108,10 @@ export class Editor<LAnnotation> {
   edit(
     file: File<LAnnotation>,
     options?: {
-      onChange?: (file: FileContents) => void;
+      onChange?: (
+        file: FileContents,
+        lineAnnotations?: LineAnnotation<LAnnotation>[]
+      ) => void;
     }
   ): () => void {
     file.__addEditorHook((fileContainer, fileContents, renderRange) => {
@@ -157,9 +165,9 @@ export class Editor<LAnnotation> {
   }
 
   cleanUp(): void {
+    this.#onChange = undefined;
     this.#disposes?.forEach((dispose) => dispose());
     this.#disposes = undefined;
-    this.#onChange = undefined;
 
     this.#measureCtx = undefined;
 
@@ -169,7 +177,6 @@ export class Editor<LAnnotation> {
 
     this.#highlighter = undefined;
     this.#colorMap = undefined;
-    this.#grammar = undefined;
     this.#renderRange = undefined;
 
     this.#stateStackCache = undefined;
@@ -208,7 +215,6 @@ export class Editor<LAnnotation> {
         fileContents.contents,
         fileContents.lang ?? getFiletypeFromFileName(fileContents.name)
       );
-      this.#grammar = undefined;
       this.#stateStackCache = undefined;
       this.#selections = undefined;
     }
@@ -394,197 +400,147 @@ export class Editor<LAnnotation> {
   }
 
   #rerender() {
+    const contentEl = this.#contentEl;
+    const highlighter = this.#highlighter;
     const file = this.#file;
     const fileContents = this.#fileContents;
     const textDocument = this.#textDocument;
-    const contentEl = this.#contentEl;
+    const lastChange = textDocument?.lastChange;
     if (
+      contentEl === undefined ||
+      highlighter === undefined ||
       file === undefined ||
       fileContents === undefined ||
-      contentEl === undefined ||
-      textDocument === undefined
+      textDocument === undefined ||
+      lastChange === undefined
     ) {
       return;
     }
 
-    if (this.#highlighter !== undefined) {
-      const t = performance.now();
+    const t = performance.now();
+    const grammar = highlighter.getLanguage(textDocument.languageId);
+    const colorMap = {
+      dark: this.#getThemeColorMap('dark'),
+      light: this.#getThemeColorMap('light'),
+    };
 
-      const lastChange = textDocument.lastChange;
-      const { startingLine = 0, totalLines = Infinity } =
-        this.#renderRange ?? {};
-      const endLine =
-        totalLines === Infinity
-          ? textDocument.lineCount
-          : Math.min(startingLine + totalLines, textDocument.lineCount);
-      const previousLineCount =
-        lastChange?.previousLineCount ?? textDocument.lineCount;
-      const prevEndLine =
-        totalLines === Infinity
-          ? previousLineCount
-          : Math.min(startingLine + totalLines, previousLineCount);
-      const { dirtyLines, dirtyLineStart, dirtyLineEnd, tokenizerStartLine } =
-        resolveDirtyLines(lastChange, startingLine, endLine);
-      const linesChange = lastChange?.lineDelta ?? 0;
+    const { startingLine = 0, totalLines = Infinity } = this.#renderRange ?? {};
+    const endLine =
+      totalLines === Infinity
+        ? textDocument.lineCount
+        : Math.min(startingLine + totalLines, textDocument.lineCount);
+    const previousLineCount =
+      lastChange?.previousLineCount ?? textDocument.lineCount;
+    const prevEndLine =
+      totalLines === Infinity
+        ? previousLineCount
+        : Math.min(startingLine + totalLines, previousLineCount);
+    const { dirtyLines, dirtyLineStart, dirtyLineEnd, tokenizerStartLine } =
+      resolveDirtyLines(lastChange, startingLine, endLine);
+    const linesChange = lastChange?.lineDelta ?? 0;
 
-      for (let line = endLine; line < prevEndLine; line++) {
-        this.#lineYCache.delete(line);
-        this.#getLineElement(line)?.remove();
-      }
+    for (let line = endLine; line < prevEndLine; line++) {
+      this.#lineYCache.delete(line);
+      this.#getLineElement(line)?.remove();
+    }
 
-      const grammar = (this.#grammar ??= this.#highlighter.getLanguage(
-        textDocument.languageId
-      ));
-      const previousStateStackCache = this.#stateStackCache;
-      if (dirtyLineStart !== -1) {
-        this.#stateStackCache = previousStateStackCache?.slice(
-          0,
-          tokenizerStartLine + 1
-        );
-      }
-
-      const updateLineEl = (line: number, children: Element[]) => {
-        const lineEl = createElement('div', {
-          dataset: {
-            line: String(line + 1),
-            lineIndex: String(line),
-            lineType: 'context',
-          },
-        });
-        lineEl.replaceChildren(...children);
-        const prevLineEl = contentEl.querySelector(
-          `[data-line-index="${line}"]`
-        );
-        if (prevLineEl !== null) {
-          prevLineEl.replaceWith(lineEl);
-        } else {
-          contentEl.insertBefore(lineEl, this.#textareaEl ?? null);
-        }
-      };
-
-      const colorMap = {
-        dark: this.#getThemeColorMap('dark'),
-        light: this.#getThemeColorMap('light'),
-      };
-
-      let state =
-        dirtyLineStart === -1
-          ? INITIAL
-          : this.#buildStateStackCache(textDocument, grammar, dirtyLineStart);
-      for (let line = dirtyLineStart; line >= 0 && line < endLine; line++) {
-        const isDirty = dirtyLines.has(line);
-        const previousState = previousStateStackCache?.[line];
-        const didLineStateChange =
-          previousState !== undefined && !state.equals(previousState);
-        const shouldUpdateLineEl =
-          isDirty ||
-          didLineStateChange ||
-          (line > dirtyLineEnd && previousState === undefined);
-        const lineText = textDocument.getLineText(line);
-        this.#stateStackCache ??= [INITIAL];
-        this.#stateStackCache[line] = state;
-
-        if (lineText.length > TOKENIZE_MAX_LINE_LENGTH) {
-          if (shouldUpdateLineEl) {
-            console.warn(
-              `[diffs] Line(${line}) too long to tokenize: ${lineText.length}`
-            );
-            updateLineEl(line, [
-              createElement('span', { textContent: lineText }),
-            ]);
-          }
-          this.#stateStackCache[line + 1] = state;
-          if (
-            line >= dirtyLineEnd &&
-            this.#isStateStackCacheSettled(previousStateStackCache, line, state)
-          ) {
-            break;
-          }
-          continue;
-        }
-
-        if (lineText === '' || lineText.trim() === '') {
-          if (shouldUpdateLineEl) {
-            updateLineEl(line, [
-              createElement('span', {
-                textContent: lineText === '' ? ' ' : lineText,
-              }),
-            ]);
-          }
-          this.#stateStackCache[line + 1] = state;
-          if (
-            line >= dirtyLineEnd &&
-            this.#isStateStackCacheSettled(previousStateStackCache, line, state)
-          ) {
-            break;
-          }
-          continue;
-        }
-
-        // even the line is NOT dirty, we still need to tokenize it to get the new state
-        const result = grammar.tokenizeLine2(
-          lineText,
-          state,
-          TOKENIZE_TIME_LIMIT
-        );
-        if (result.stoppedEarly) {
-          console.warn(
-            `[diffs] Time limit reached when tokenizing line: ${lineText.substring(0, 100)}`
-          );
-        }
-        if (shouldUpdateLineEl) {
-          const rawTokens = result.tokens;
-          const lineLength = lineText.length;
-          const tokensLength = rawTokens.length / 2;
-          const tokens: [char: number, style: string, text: string][] = [];
-          const spans: Element[] = [];
-          for (let j = 0; j < tokensLength; j++) {
-            const offset = rawTokens[2 * j];
-            const nextOffset =
-              j + 1 < tokensLength ? rawTokens[2 * j + 2] : lineLength;
-            if (offset === nextOffset) {
-              // should never reach here, skip if happens anyway
-              continue;
-            }
-            const metadata = rawTokens[2 * j + 1];
-            const bg = EncodedTokenMetadata.getForeground(metadata);
-            const darkFG = colorMap.dark[bg];
-            const lightFG = colorMap.light[bg];
-            const cssText = `--diffs-token-dark:${darkFG};--diffs-token-light:${lightFG}`;
-            const tokenText = lineText.slice(offset, nextOffset);
-            tokens.push([offset, cssText, tokenText]);
-            spans.push(
-              createElement('span', {
-                dataset: { char: String(offset) },
-                style: { cssText },
-                textContent: tokenText,
-              })
-            );
-          }
-          updateLineEl(line, spans);
-          this.#file?.updateRenderCacheAt(line, tokens);
-        }
-        state = result.ruleStack;
-        this.#stateStackCache[line + 1] = state;
-        if (
-          line >= dirtyLineEnd &&
-          this.#isStateStackCacheSettled(previousStateStackCache, line, state)
-        ) {
-          break;
-        }
-      }
-
-      console.log(
-        `[diffs] re-render time: ${Math.round((performance.now() - t) * 1000) / 1000}ms`,
-        'dirtyLines:',
-        dirtyLines.size,
-        'linesChange:',
-        linesChange
+    const previousStateStackCache = this.#stateStackCache;
+    if (dirtyLineStart !== -1) {
+      this.#stateStackCache = previousStateStackCache?.slice(
+        0,
+        tokenizerStartLine + 1
       );
     }
 
+    const changes: Map<number, Array<HighlightedToken>> = new Map();
+
+    const isStateStackCacheSettled = (line: number, state: StateStack) => {
+      const previousNextState = previousStateStackCache?.[line + 1];
+      return previousNextState !== undefined && state.equals(previousNextState);
+    };
+
+    let state =
+      dirtyLineStart === -1
+        ? INITIAL
+        : this.#buildStateStackCache(textDocument, grammar, dirtyLineStart);
+    for (let line = dirtyLineStart; line >= 0 && line < endLine; line++) {
+      const isDirty = dirtyLines.has(line);
+      const previousState = previousStateStackCache?.[line];
+      const didLineStateChange =
+        previousState !== undefined && !state.equals(previousState);
+      const shouldUpdateLineEl =
+        isDirty ||
+        didLineStateChange ||
+        (line > dirtyLineEnd && previousState === undefined);
+      const lineText = textDocument.getLineText(line);
+      this.#stateStackCache ??= [INITIAL];
+      this.#stateStackCache[line] = state;
+
+      if (lineText.length > TOKENIZE_MAX_LINE_LENGTH) {
+        if (shouldUpdateLineEl) {
+          console.warn(
+            `[diffs] Line(${line}) too long to tokenize: ${lineText.length}`
+          );
+          changes.set(line, [[0, '', lineText]]);
+        }
+        this.#stateStackCache[line + 1] = state;
+        if (line >= dirtyLineEnd && isStateStackCacheSettled(line, state)) {
+          break;
+        }
+        continue;
+      }
+
+      if (lineText === '' || lineText.trim() === '') {
+        if (shouldUpdateLineEl) {
+          changes.set(line, [[0, '', lineText === '' ? ' ' : lineText]]);
+        }
+        this.#stateStackCache[line + 1] = state;
+        if (line >= dirtyLineEnd && isStateStackCacheSettled(line, state)) {
+          break;
+        }
+        continue;
+      }
+
+      const result = tokenizeLine(
+        grammar,
+        colorMap,
+        lineText,
+        state,
+        TOKENIZE_TIME_LIMIT
+      );
+      if (shouldUpdateLineEl) {
+        changes.set(line, result.resolvedTokens);
+      }
+      state = result.ruleStack;
+      this.#stateStackCache[line + 1] = state;
+      if (line >= dirtyLineEnd && isStateStackCacheSettled(line, state)) {
+        break;
+      }
+    }
+
+    console.log('changes', changes);
+
+    this.#file?.updateRenderCache({
+      dirtyLines: changes,
+      lineCount: lastChange?.lineCount,
+    });
+
+    console.log(
+      `[diffs] re-render time: ${Math.round((performance.now() - t) * 1000) / 1000}ms`,
+      'dirtyLines:',
+      dirtyLines.size,
+      'linesChange:',
+      linesChange
+    );
+
     if (this.#onChange !== undefined) {
-      this.#onChange({ ...fileContents, contents: textDocument.getText() });
+      const { contents: _, ...file } = fileContents;
+      Object.defineProperty(file, 'contents', {
+        get() {
+          return textDocument.getText();
+        },
+      });
+      this.#onChange(file as FileContents, this.#lineAnnotations);
     }
   }
 
@@ -600,13 +556,13 @@ export class Editor<LAnnotation> {
       themeName = theme[themeType];
     }
     this.#colorMap ??= new Map();
-    let colorMap = this.#colorMap.get(themeName);
-    if (colorMap === undefined) {
+    let colors = this.#colorMap.get(themeName);
+    if (colors === undefined) {
       const ret = this.#highlighter.setTheme(themeName);
-      colorMap = ret.colorMap;
+      colors = ret.colorMap;
       this.#colorMap.set(themeName, ret.colorMap ?? []);
     }
-    return colorMap;
+    return colors;
   }
 
   #buildStateStackCache(
@@ -638,15 +594,6 @@ export class Editor<LAnnotation> {
       stateStackCache[line + 1] = state;
     }
     return stateStackCache[boundedEndLine] ?? INITIAL;
-  }
-
-  #isStateStackCacheSettled(
-    previousStateStackCache: StateStack[] | undefined,
-    line: number,
-    state: StateStack
-  ) {
-    const previousNextState = previousStateStackCache?.[line + 1];
-    return previousNextState !== undefined && state.equals(previousNextState);
   }
 
   #prebuildStateStackCache() {
@@ -1102,12 +1049,22 @@ export class Editor<LAnnotation> {
     this.setSelections(nextSelections, false);
   }
 
-  #getLineElement(line: number) {
-    return (
-      this.#contentEl?.querySelector<HTMLDivElement>(
-        `[data-line-index="${line}"]`
-      ) ?? undefined
-    );
+  #getLineElement(line: number): HTMLElement | undefined {
+    const children = this.#contentEl?.children;
+    if (children === undefined) {
+      return undefined;
+    }
+    const { startingLine = 0 } = this.#renderRange ?? {};
+    for (let i = line - startingLine; i <= children.length; i++) {
+      const child = children[i] as HTMLElement;
+      if (
+        child.dataset.lineIndex !== undefined &&
+        Number(child.dataset.lineIndex) === line
+      ) {
+        return child;
+      }
+    }
+    return undefined;
   }
 
   // get line top position

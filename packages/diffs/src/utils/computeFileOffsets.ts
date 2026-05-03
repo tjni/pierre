@@ -1,4 +1,4 @@
-import type { FileContents, FileContentsWithLineOffsets } from '../types';
+import type { LineOffsets } from '../types';
 
 const LINE_FEED = 10; // \n
 const CARRIAGE_RETURN = 13; // \r
@@ -8,11 +8,8 @@ const CARRIAGE_RETURN = 13; // \r
  * `lineCount` excludes the final newline-only parser row, except for files
  * that contain only that row.
  */
-export function computeLineOffsets(
-  file: FileContents
-): FileContentsWithLineOffsets {
-  const { contents } = file;
-  const offsets = [];
+export function computeLineOffsets(contents: string): LineOffsets {
+  const offsets: number[] = [];
   if (contents.length > 0) {
     offsets.push(0);
   }
@@ -43,11 +40,7 @@ export function computeLineOffsets(
       ? rawLineCount - 1
       : rawLineCount;
 
-  return {
-    ...file,
-    offsets,
-    lineCount,
-  };
+  return { offsets, lineCount };
 }
 
 // Detects the synthetic final row produced by terminal newline characters.

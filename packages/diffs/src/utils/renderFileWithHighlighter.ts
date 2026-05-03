@@ -4,8 +4,8 @@ import type {
   DiffsHighlighter,
   DiffsThemeNames,
   FileContents,
-  FileContentsWithLineOffsets,
   ForceFilePlainTextOptions,
+  LineOffsets,
   RenderFileOptions,
   ThemedFileResult,
 } from '../types';
@@ -33,7 +33,7 @@ export function renderFileWithHighlighter(
     forcePlainText,
     startingLine,
     totalLines,
-    lines,
+    lineOffsets,
   }: ForceFilePlainTextOptions = DEFAULT_PLAIN_TEXT_OPTIONS
 ): ThemedFileResult {
   if (forcePlainText) {
@@ -90,7 +90,8 @@ export function renderFileWithHighlighter(
     highlighter.codeToHast(
       isWindowedHighlight
         ? extractWindowedFileContent(
-            lines ?? computeLineOffsets(file),
+            file,
+            lineOffsets ?? computeLineOffsets(file.contents),
             startingLine,
             totalLines
           )
@@ -109,15 +110,16 @@ export function renderFileWithHighlighter(
 }
 
 function extractWindowedFileContent(
-  lines: FileContentsWithLineOffsets,
+  file: FileContents,
+  lineOffsets: LineOffsets,
   startingLine: number,
   totalLines: number
 ): string {
-  if (lines.lineCount === 0) {
+  if (lineOffsets.lineCount === 0) {
     return '';
   }
-  const endLine = Math.min(startingLine + totalLines, lines.lineCount);
-  const startOffset = lines.offsets[startingLine] ?? lines.contents.length;
-  const endOffset = lines.offsets[endLine] ?? lines.contents.length;
-  return lines.contents.slice(startOffset, endOffset);
+  const endLine = Math.min(startingLine + totalLines, lineOffsets.lineCount);
+  const startOffset = lineOffsets.offsets[startingLine] ?? file.contents.length;
+  const endOffset = lineOffsets.offsets[endLine] ?? file.contents.length;
+  return file.contents.slice(startOffset, endOffset);
 }

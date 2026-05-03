@@ -26,8 +26,8 @@ import type {
   BaseCodeOptions,
   EditorHook,
   FileContents,
-  FileContentsWithLineOffsets,
   LineAnnotation,
+  LineOffsets,
   PrePropertiesConfig,
   RenderFileMetadata,
   RenderRange,
@@ -49,9 +49,7 @@ import { setPreNodeProperties } from '../utils/setWrapperNodeProps';
 import type { WorkerPoolManager } from '../worker';
 import { DiffsContainerLoaded } from './web-components';
 
-const EMPTY_FILE: FileContentsWithLineOffsets = {
-  name: '',
-  contents: '',
+const EMPTY_FILE: LineOffsets = {
   offsets: [],
   lineCount: 0,
 };
@@ -380,17 +378,16 @@ export class File<LAnnotation = undefined> {
 
   public getOrCreateLineCache(
     file: FileContents | undefined = this.file
-  ): FileContentsWithLineOffsets {
+  ): LineOffsets {
     return file != null
-      ? this.fileRenderer.getOrCreateLineCache(file)
+      ? this.fileRenderer.getOrCreateLineOffsets(file)
       : EMPTY_FILE;
   }
 
-  public updateRenderCacheAt(
-    line: number,
-    tokens: Array<[char: number, style: string, text: string]>
+  public updateRenderCache(
+    changes: Parameters<FileRenderer['updateRenderCache']>[0]
   ): void {
-    this.fileRenderer.updateRenderCacheAt(line, tokens);
+    this.fileRenderer.updateRenderCache(changes);
   }
 
   public render({
