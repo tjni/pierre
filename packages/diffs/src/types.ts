@@ -647,14 +647,6 @@ export interface RenderFileResult {
   options: RenderFileOptions;
 }
 
-export interface EditorHook {
-  (
-    fileContainer: HTMLElement,
-    file: FileContents,
-    renderRange: RenderRange | undefined
-  ): void;
-}
-
 export interface RenderDiffResult {
   result: ThemedDiffResult;
   options: RenderDiffOptions;
@@ -749,4 +741,13 @@ export interface AppliedThemeStyleCache {
   themeStyles: string;
   themeType: ThemeTypes;
   baseThemeType: 'light' | 'dark' | undefined;
+}
+
+export interface DiffsEditor<LAnnotation> {
+  triggerEdit(
+    fileContainer: HTMLElement,
+    file: FileContents,
+    lineAnnotations: LineAnnotation<LAnnotation>[] | undefined,
+    renderRange: RenderRange | undefined
+  ): void;
 }

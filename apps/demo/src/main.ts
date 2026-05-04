@@ -48,7 +48,7 @@ import {
 const DEMO_THEME: DiffsThemeNames | ThemesType = DEFAULT_THEMES;
 const WORKER_POOL = true;
 const VIRTUALIZE = true;
-const CRAZY_FILE = false;
+const CRAZY_FILE = true;
 const LARGE_CONFLICT_FILE = false;
 
 const FileStreamCodeConfigs: FileStreamCodeConfigsItem[] = [

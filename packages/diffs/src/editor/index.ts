@@ -40,6 +40,7 @@ import {
   type TextEdit,
 } from '../editor/textDocument';
 import type {
+  DiffsEditor,
   DiffsHighlighter,
   FileContents,
   HighlightedToken,
@@ -60,7 +61,7 @@ import {
 } from './editorTextarea';
 import { BackgroundTokenzier, tokenizeLine } from './tokenzier';
 
-export class Editor<LAnnotation> {
+export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #onChange?: (
     file: FileContents,
     lineAnnotations?: LineAnnotation<LAnnotation>[]
@@ -139,9 +140,7 @@ export class Editor<LAnnotation> {
       ) => void;
     }
   ): () => void {
-    file.__addEditorHook((fileContainer, fileContents, renderRange) => {
-      this.#initialize(fileContainer, fileContents, renderRange);
-    });
+    file.__setEditor(this);
     this.#file = file;
     this.#highlighter ??= areThemesAttached(
       file.options.theme ?? DEFAULT_THEMES
@@ -152,11 +151,7 @@ export class Editor<LAnnotation> {
     return this.cleanUp.bind(this);
   }
 
-  setSelections(
-    selections: EditorSelection[],
-    resetTextarea = true,
-    setSelectedLines = true
-  ): void {
+  setSelections(selections: EditorSelection[], resetTextarea = true): void {
     const primarySelection = selections.at(-1);
     if (primarySelection === undefined) {
       return;
@@ -164,15 +159,13 @@ export class Editor<LAnnotation> {
     if (resetTextarea) {
       this.#textareaSnapshot = undefined;
     }
-    if (setSelectedLines) {
-      this.#file?.setSelectedLines(null);
-      if (isCollapsedSelection(primarySelection)) {
-        const line = primarySelection.end.line + 1;
-        this.#file?.setSelectedLines({
-          start: line,
-          end: line,
-        });
-      }
+    this.#file?.setSelectedLines(null);
+    if (isCollapsedSelection(primarySelection)) {
+      const line = primarySelection.end.line + 1;
+      this.#file?.setSelectedLines({
+        start: line,
+        end: line,
+      });
     }
     const shouldUpdateTextarea =
       Math.max(0, primarySelection.start.line - 1) !==
@@ -237,9 +230,10 @@ export class Editor<LAnnotation> {
     this.#reservedSelections = undefined;
   }
 
-  #initialize(
+  triggerEdit(
     fileContainer: HTMLElement,
     fileContents: FileContents,
+    lineAnnotations: LineAnnotation<LAnnotation>[] | undefined,
     renderRange: RenderRange | undefined
   ): void {
     if (
@@ -258,6 +252,7 @@ export class Editor<LAnnotation> {
       this.#selections = undefined;
     }
 
+    this.#lineAnnotations = lineAnnotations;
     this.#renderRange = renderRange;
     this.#prebuildStateStackCache();
 
@@ -269,6 +264,7 @@ export class Editor<LAnnotation> {
       throw new Error('could not edit the file.');
     }
 
+    // TODO(@ije): place the textarea inside the pre (as a child).
     this.#textareaEl ??= extend(
       createElement('textarea', { dataset: 'textarea' }),
       {
@@ -449,7 +445,7 @@ export class Editor<LAnnotation> {
   }
 
   #rerender() {
-    // cancel previous background tokenzier task
+    // cancel existing background tokenzier task
     this.#backgroundTokenzier?.cancelBackgroundTask();
 
     const contentEl = this.#contentEl;
@@ -636,19 +632,6 @@ export class Editor<LAnnotation> {
       });
     }
 
-    if (this.#onChange !== undefined) {
-      // TODO(@ije): use debounce
-      requestAnimationFrame(() => {
-        const { contents: _, ...file } = fileContents;
-        Object.defineProperty(file, 'contents', {
-          get() {
-            return textDocument.getText();
-          },
-        });
-        this.#onChange!(file as FileContents, this.#lineAnnotations);
-      });
-    }
-
     console.log(
       `[diffs] re-render time: ${Math.round((performance.now() - t) * 1000) / 1000}ms`,
       'lastChange:',
@@ -774,7 +757,30 @@ export class Editor<LAnnotation> {
         change
       );
       this.#rerender();
+      this.#emitChange();
       this.setSelections(nextSelections, false);
+    }
+  }
+
+  #emitChange() {
+    const fileContents = this.#fileContents;
+    const textDocument = this.#textDocument;
+    const onChange = this.#onChange;
+    if (
+      fileContents !== undefined &&
+      textDocument !== undefined &&
+      onChange !== undefined
+    ) {
+      // TODO(@ije): use debounce
+      requestAnimationFrame(() => {
+        const { contents: _, ...file } = fileContents;
+        Object.defineProperty(file, 'contents', {
+          get() {
+            return textDocument.getText();
+          },
+        });
+        onChange(file as FileContents, this.#lineAnnotations);
+      });
     }
   }
 
@@ -1038,6 +1044,7 @@ export class Editor<LAnnotation> {
               nextSelections
             );
             this.#rerender();
+            this.#emitChange();
             this.setSelections(nextSelections, false);
           }
         }
@@ -1054,6 +1061,7 @@ export class Editor<LAnnotation> {
         if (this.#textDocument?.canUndo === true) {
           const nextSelections = this.#textDocument.undo();
           this.#rerender();
+          this.#emitChange();
           if (nextSelections !== undefined) {
             this.setSelections(nextSelections, false);
           }
@@ -1064,6 +1072,7 @@ export class Editor<LAnnotation> {
         if (this.#textDocument?.canRedo === true) {
           const nextSelections = this.#textDocument.redo();
           this.#rerender();
+          this.#emitChange();
           if (nextSelections !== undefined) {
             this.setSelections(nextSelections, false);
           }
@@ -1139,6 +1148,7 @@ export class Editor<LAnnotation> {
           text: text,
         });
     this.#rerender();
+    this.#emitChange();
     this.setSelections(nextSelections, false);
   }
 

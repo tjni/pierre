@@ -24,7 +24,7 @@ import { SVGSpriteSheet } from '../sprite';
 import type {
   AppliedThemeStyleCache,
   BaseCodeOptions,
-  EditorHook,
+  DiffsEditor,
   FileContents,
   HighlightedToken,
   LineAnnotation,
@@ -172,17 +172,18 @@ export class File<LAnnotation = undefined> {
     this.workerManager?.subscribeToThemeChanges(this);
   }
 
-  private __editorHook: EditorHook | undefined;
+  private __editor: DiffsEditor<LAnnotation> | undefined;
 
-  public __addEditorHook(hook: EditorHook): void {
+  public __setEditor(editor: DiffsEditor<LAnnotation>): void {
     if (this.fileContainer != null && this.file != null) {
-      hook(this.fileContainer, this.file, this.renderRange);
+      editor.triggerEdit(
+        this.fileContainer,
+        this.file,
+        this.lineAnnotations,
+        this.renderRange
+      );
     }
-    this.__editorHook = hook;
-  }
-
-  public __isEditorAttached(): boolean {
-    return this.__editorHook != null;
+    this.__editor = editor;
   }
 
   private handleHighlightRender = (): void => {
@@ -575,7 +576,12 @@ export class File<LAnnotation = undefined> {
       this.resizeManager.setup(pre, overflow === 'wrap');
       this.renderAnnotations();
       this.renderGutterUtility();
-      this.__editorHook?.(fileContainer, file, nextRenderRange);
+      this.__editor?.triggerEdit(
+        fileContainer,
+        file,
+        lineAnnotations,
+        nextRenderRange
+      );
     } catch (error: unknown) {
       if (disableErrorHandling) {
         throw error;
