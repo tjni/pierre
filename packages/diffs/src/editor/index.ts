@@ -884,7 +884,9 @@ export class Editor<LAnnotation> {
       const startChar = ln === start.line ? start.character : 0;
       const endChar = ln === end.line ? end.character : lineLength;
       const spacing =
-        ln === end.line || startChar === endChar ? 0 : this.#charWidth;
+        ln === end.line || (startChar === endChar && ln !== start.line)
+          ? 0
+          : this.#charWidth;
       const cacheKey = `selection-${ln}-${startChar}-${endChar}`;
 
       let left = 0;
@@ -898,7 +900,7 @@ export class Editor<LAnnotation> {
         width = endChar === startChar ? 0 : this.#getCharX(ln, endChar) - left;
       }
 
-      const css = `width: ${width + spacing}px; transform: translateY(${this.#getLineY(ln)}px) translateX(${left}px);`;
+      const css = `width:${width + spacing}px;transform:translateY(${this.#getLineY(ln)}px) translateX(${left}px);`;
 
       if (selectionEls?.has(cacheKey) === true) {
         rangeEl = selectionEls.get(cacheKey)!;
