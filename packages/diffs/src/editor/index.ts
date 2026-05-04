@@ -417,8 +417,13 @@ export class Editor<LAnnotation> {
 
     console.log(
       'Editor initialized.',
-      renderRange,
-      this.#textDocument.lineCount
+      'renderRange:',
+      (renderRange?.startingLine ?? 0) +
+        '-' +
+        (renderRange?.totalLines ?? Infinity),
+      'of',
+      this.#textDocument.lineCount,
+      'lines'
     );
   }
 
@@ -472,10 +477,6 @@ export class Editor<LAnnotation> {
         ? textDocument.lineCount
         : Math.min(startingLine + totalLines, textDocument.lineCount);
 
-    const isStateStackCacheSettled = (line: number, state: StateStack) => {
-      const nextState = this.#stateStackCache?.[line + 1];
-      return nextState !== undefined && state.equals(nextState);
-    };
     const dirtyLines: Map<number, Array<HighlightedToken>> = new Map();
 
     let line = lastChange.startLine;
@@ -484,50 +485,46 @@ export class Editor<LAnnotation> {
       grammar,
       lastChange.startLine
     );
-    let isSettled = false;
+    let settled = false;
     for (; line < renderRangeEndLine; line++) {
       const lineText = textDocument.getLineText(line);
-      const isDirty = line >= lastChange.startLine && line < lastChange.endLine;
 
       this.#stateStackCache![line] = state;
-      isSettled =
-        !isDirty &&
-        lastChange.lineDelta === 0 &&
-        isStateStackCacheSettled(line, state);
 
       if (lineText.length > TOKENIZE_MAX_LINE_LENGTH) {
         console.warn(
           `[diffs] Line(${line}) too long to tokenize: ${lineText.length}`
         );
         dirtyLines.set(line, [[0, '', lineText]]);
-        if (isSettled) {
-          break;
-        }
-        continue;
-      }
-
-      if (lineText === '' || lineText.trim() === '') {
+      } else if (lineText === '' || lineText.trim() === '') {
         dirtyLines.set(line, [[0, '', lineText === '' ? ' ' : lineText]]);
-        if (isSettled) {
-          break;
-        }
-        continue;
+      } else {
+        const result = tokenizeLine(
+          grammar,
+          colorMap,
+          lineText,
+          state,
+          TOKENIZE_TIME_LIMIT
+        );
+        dirtyLines.set(line, result.resolvedTokens);
+        state = result.ruleStack;
       }
 
-      const result = tokenizeLine(
-        grammar,
-        colorMap,
-        lineText,
-        state,
-        TOKENIZE_TIME_LIMIT
-      );
-      dirtyLines.set(line, result.resolvedTokens);
-      state = result.ruleStack;
-      if (isSettled) {
+      settled =
+        line >= lastChange.endLine &&
+        lastChange.lineDelta === 0 &&
+        this.#stateStackCache![line + 1] !== undefined &&
+        state.equals(this.#stateStackCache![line + 1]);
+
+      if (settled) {
         break;
       }
     }
-    this.#stateStackCache![line] = state;
+    if (line < renderRangeEndLine) {
+      this.#stateStackCache![line + 1] = state;
+    } else {
+      this.#stateStackCache![line] = state;
+    }
 
     // update line elements that have been changed in the document
     // create new line elements for new lines
@@ -620,7 +617,7 @@ export class Editor<LAnnotation> {
       file.emitLineCountChange(lastChange.lineCount);
     }
 
-    if (!isSettled && line < textDocument.lineCount) {
+    if (!settled && line < textDocument.lineCount) {
       requestAnimationFrame(() => {
         this.#backgroundTokenzier = new BackgroundTokenzier({
           grammar,
@@ -653,7 +650,7 @@ export class Editor<LAnnotation> {
       lastChange,
       'dirtyLines:',
       dirtyLines.size,
-      isSettled ? '(are settled)' : ''
+      settled ? '(are settled)' : ''
     );
   }
 
