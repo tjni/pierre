@@ -53,7 +53,7 @@ export const EDITOR_CSS = /* CSS */ `
   }
   [data-caret] {
     width: 2px;
-    background-color: rgb(128,128,128);
+    background-color: var(--diffs-bg-caret);
     animation: blinking 1.2s infinite;
     animation-delay: 0.6s;
     visibility: hidden;

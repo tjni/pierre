@@ -25,6 +25,7 @@
     --diffs-bg-hover-override
     --diffs-bg-context-override
     --diffs-bg-separator-override
+    --diffs-bg-caret-override
 
     --diffs-fg-number-override
     --diffs-fg-number-addition-override
@@ -235,6 +236,14 @@
     --diffs-fg-conflict-marker: var(
       --diffs-fg-conflict-marker-override,
       var(--diffs-fg-number)
+    );
+
+    --diffs-bg-caret: var(
+      --diffs-bg-caret-override,
+      light-dark(
+        color-mix(in lab, var(--diffs-fg) 50%, var(--diffs-bg)),
+        color-mix(in lab, var(--diffs-fg) 75%, var(--diffs-bg))
+      )
     );
 
     --diffs-deletion-base: var(
