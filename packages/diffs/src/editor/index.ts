@@ -59,7 +59,7 @@ import {
   type TextareaSnapshot,
   toTextareaSelectionDirection,
 } from './editorTextarea';
-import { BackgroundTokenzier, tokenizeLine } from './tokenzier';
+import { BackgroundTokenizer, tokenizeLine } from './tokenzier';
 
 export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #onChange?: (
@@ -84,7 +84,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #highlighter?: DiffsHighlighter;
   #colorMap?: Map<string, string[]>;
   #renderRange?: RenderRange;
-  #backgroundTokenzier?: BackgroundTokenzier;
+  #backgroundTokenizer?: BackgroundTokenizer;
 
   // cache
   #stateStackCache?: StateStack[];
@@ -444,7 +444,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
   #rerender() {
     // cancel existing background tokenzier task
-    this.#backgroundTokenzier?.cancelBackgroundTask();
+    this.#backgroundTokenizer?.cancelBackgroundTask();
 
     const contentEl = this.#contentEl;
     const highlighter = this.#highlighter;
@@ -618,7 +618,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
     if (!settled && line < textDocument.lineCount) {
       requestAnimationFrame(() => {
-        this.#backgroundTokenzier = new BackgroundTokenzier({
+        this.#backgroundTokenizer = new BackgroundTokenizer({
           grammar,
           colorMap,
           textDocument,
@@ -626,7 +626,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
             file.emitTokenize(result.lines);
           },
         });
-        this.#backgroundTokenzier.scheduleTokenize(line, state);
+        this.#backgroundTokenizer.scheduleTokenize(line, state);
       });
     }
 
@@ -764,7 +764,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     const fileContents = this.#fileContents;
     const textDocument = this.#textDocument;
     const onChange = this.#onChange;
-    console.log('emitChange:', fileContents, textDocument, onChange);
     if (
       fileContents !== undefined &&
       textDocument !== undefined &&

@@ -12,7 +12,7 @@ import {
 } from './constants';
 import type { TextDocument } from './textDocument';
 
-export interface BackgroundTokenzierOptions {
+export interface BackgroundTokenizerOptions {
   grammar: IGrammar;
   colorMap: { dark: string[]; light: string[] };
   textDocument: TextDocument;
@@ -20,8 +20,8 @@ export interface BackgroundTokenzierOptions {
   linesPreTokenize?: number; // default to 50
 }
 
-/** Stopable background tokenzier */
-export class BackgroundTokenzier {
+/** Stopable background tokenizer */
+export class BackgroundTokenizer {
   #grammar: IGrammar;
   #colorMap: { dark: string[]; light: string[] };
   #textDocument: TextDocument;
@@ -38,7 +38,7 @@ export class BackgroundTokenzier {
     textDocument,
     onTokenize,
     linesPreTokenize = TOKENIZE_LINES_PRE_TOKENIZE,
-  }: BackgroundTokenzierOptions) {
+  }: BackgroundTokenizerOptions) {
     this.#grammar = grammar;
     this.#colorMap = colorMap;
     this.#textDocument = textDocument;
