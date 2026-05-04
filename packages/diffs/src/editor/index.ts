@@ -105,13 +105,18 @@ export class Editor<LAnnotation> {
   #reservedSelections?: EditorSelection[];
   #selections?: EditorSelection[];
 
-  #prebuildStateStackCache = debounce(() => {
+  #prebuildStateStackCache = debounce(async () => {
     const textDocument = this.#textDocument;
-    if (textDocument === undefined) {
+    const highlighter = this.#highlighter;
+    if (textDocument === undefined || highlighter === undefined) {
       return;
     }
 
-    const grammar = this.#highlighter?.getLanguage(textDocument.languageId);
+    if (!highlighter.getLoadedLanguages().includes(textDocument.languageId)) {
+      await highlighter.loadLanguage(textDocument.languageId);
+    }
+
+    const grammar = highlighter.getLanguage(textDocument.languageId);
     if (grammar === undefined) {
       return;
     }
