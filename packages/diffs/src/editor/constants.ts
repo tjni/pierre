@@ -1,19 +1,21 @@
 export const TOKENIZE_TIME_LIMIT = 500;
 export const TOKENIZE_MAX_LINE_LENGTH = 1000;
+export const TOKENIZE_LINES_PRE_TOKENIZE = 50;
 
 export const EDITOR_CSS = /* CSS */ `
   ::selection {
     background-color: transparent;
   }
   @keyframes blinking {
-    0% { opacity: 0.85; }
+    0% { opacity: 1; }
     50% { opacity: 0; }
-    100% { opacity: 0.85; }
+    100% { opacity: 1; }
   }
   [data-line] {
     background-color: transparent;
+    cursor: text;
   }
-  [data-line-annotation] {
+  [data-gutter], [data-line-annotation] {
     user-select: none;
   }
   [data-content] {
@@ -51,9 +53,14 @@ export const EDITOR_CSS = /* CSS */ `
   }
   [data-caret] {
     width: 2px;
-    background-color: var(--fg);
+    background-color: rgb(128,128,128);
     animation: blinking 1.2s infinite;
     animation-delay: 0.6s;
+    visibility: hidden;
+    z-index: 0;
+  }
+  [data-textarea][data-state='focus'] ~ [data-caret] {
+    visibility: visible;
   }
   [data-line-highlight] {
     width: 100%;

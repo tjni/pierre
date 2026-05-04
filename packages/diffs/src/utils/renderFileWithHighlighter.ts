@@ -5,11 +5,9 @@ import type {
   DiffsThemeNames,
   FileContents,
   ForceFilePlainTextOptions,
-  LineOffsets,
   RenderFileOptions,
   ThemedFileResult,
 } from '../types';
-import { cleanLastNewline } from './cleanLastNewline';
 import { computeLineOffsets } from './computeFileOffsets';
 import { createTransformerWithState } from './createTransformerWithState';
 import { formatCSSVariablePrefix } from './formatCSSVariablePrefix';
@@ -95,7 +93,7 @@ export function renderFileWithHighlighter(
             startingLine,
             totalLines
           )
-        : cleanLastNewline(file.contents),
+        : file.contents,
       hastConfig
     )
   );
@@ -111,15 +109,15 @@ export function renderFileWithHighlighter(
 
 function extractWindowedFileContent(
   file: FileContents,
-  lineOffsets: LineOffsets,
+  lineOffsets: number[],
   startingLine: number,
   totalLines: number
 ): string {
-  if (lineOffsets.lineCount === 0) {
+  if (lineOffsets.length === 0) {
     return '';
   }
-  const endLine = Math.min(startingLine + totalLines, lineOffsets.lineCount);
-  const startOffset = lineOffsets.offsets[startingLine] ?? file.contents.length;
-  const endOffset = lineOffsets.offsets[endLine] ?? file.contents.length;
+  const endLine = Math.min(startingLine + totalLines, lineOffsets.length);
+  const startOffset = lineOffsets[startingLine] ?? file.contents.length;
+  const endOffset = lineOffsets[endLine] ?? file.contents.length;
   return file.contents.slice(startOffset, endOffset);
 }

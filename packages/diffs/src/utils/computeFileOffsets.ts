@@ -1,5 +1,3 @@
-import type { LineOffsets } from '../types';
-
 const LINE_FEED = 10; // \n
 const CARRIAGE_RETURN = 13; // \r
 
@@ -8,11 +6,8 @@ const CARRIAGE_RETURN = 13; // \r
  * `lineCount` excludes the final newline-only parser row, except for files
  * that contain only that row.
  */
-export function computeLineOffsets(contents: string): LineOffsets {
-  const offsets: number[] = [];
-  if (contents.length > 0) {
-    offsets.push(0);
-  }
+export function computeLineOffsets(contents: string): number[] {
+  const offsets: number[] = [0];
   for (let i = 0; i < contents.length; i++) {
     const char = contents.charCodeAt(i);
     if (char === LINE_FEED || char === CARRIAGE_RETURN) {
@@ -29,31 +24,5 @@ export function computeLineOffsets(contents: string): LineOffsets {
   if (offsets.length > 0 && offsets[offsets.length - 1] !== contents.length) {
     offsets.push(contents.length);
   }
-  const rawLineCount = Math.max(0, offsets.length - 1);
-  const lineCount =
-    rawLineCount > 1 &&
-    isNewlineOnlyRange(
-      contents,
-      offsets[rawLineCount - 1],
-      offsets[rawLineCount]
-    )
-      ? rawLineCount - 1
-      : rawLineCount;
-
-  return { offsets, lineCount };
-}
-
-// Detects the synthetic final row produced by terminal newline characters.
-function isNewlineOnlyRange(
-  contents: string,
-  startOffset = contents.length,
-  endOffset = contents.length
-): boolean {
-  for (let offset = startOffset; offset < endOffset; offset++) {
-    const char = contents.charCodeAt(offset);
-    if (char !== LINE_FEED && char !== CARRIAGE_RETURN) {
-      return false;
-    }
-  }
-  return true;
+  return offsets;
 }

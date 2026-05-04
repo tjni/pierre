@@ -835,7 +835,7 @@ if (renderEditorButton != null) {
       },
 
       // Line selection stuff
-      // enableLineSelection: true,
+      enableLineSelection: true,
       // onLineClick(props) {
       //   console.log('onLineClick', props);
       // },

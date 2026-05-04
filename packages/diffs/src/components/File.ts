@@ -26,8 +26,8 @@ import type {
   BaseCodeOptions,
   EditorHook,
   FileContents,
+  HighlightedToken,
   LineAnnotation,
-  LineOffsets,
   PrePropertiesConfig,
   RenderFileMetadata,
   RenderRange,
@@ -48,11 +48,6 @@ import { prerenderHTMLIfNecessary } from '../utils/prerenderHTMLIfNecessary';
 import { setPreNodeProperties } from '../utils/setWrapperNodeProps';
 import type { WorkerPoolManager } from '../worker';
 import { DiffsContainerLoaded } from './web-components';
-
-const EMPTY_FILE: LineOffsets = {
-  offsets: [],
-  lineCount: 0,
-};
 
 export interface FileRenderProps<LAnnotation> {
   file: FileContents;
@@ -184,6 +179,10 @@ export class File<LAnnotation = undefined> {
       hook(this.fileContainer, this.file, this.renderRange);
     }
     this.__editorHook = hook;
+  }
+
+  public __isEditorAttached(): boolean {
+    return this.__editorHook != null;
   }
 
   private handleHighlightRender = (): void => {
@@ -376,18 +375,73 @@ export class File<LAnnotation = undefined> {
     this.resizeManager.setup(this.pre, overflow === 'wrap');
   }
 
-  public getOrCreateLineCache(
+  public getOrCreateLineOffSets(
     file: FileContents | undefined = this.file
-  ): LineOffsets {
-    return file != null
-      ? this.fileRenderer.getOrCreateLineOffsets(file)
-      : EMPTY_FILE;
+  ): number[] {
+    return file != null ? this.fileRenderer.getOrCreateLineOffsets(file) : [];
   }
 
-  public updateRenderCache(
-    changes: Parameters<FileRenderer['updateRenderCache']>[0]
+  public getLineCount(file: FileContents | undefined = this.file): number {
+    return file != null ? this.fileRenderer.getLineCount(file) : 0;
+  }
+
+  public emitLineAnnotationsChange(
+    lineAnnotations: LineAnnotation<LAnnotation>[]
   ): void {
-    this.fileRenderer.updateRenderCache(changes);
+    const renderRange = this.renderRange;
+    const result = this.fileRenderer.emitLineAnnotationsChange(
+      lineAnnotations,
+      this.renderRange
+    );
+    // check if the new lineAnnotations are in the renderRange,
+    // if it is, skip the re-render
+    let isVisible = false;
+    if (renderRange != null) {
+      const { startingLine, totalLines } = renderRange;
+      const endLine =
+        totalLines === Infinity
+          ? this.getLineCount()
+          : startingLine + totalLines;
+      isVisible = lineAnnotations.some(
+        (annotation) =>
+          annotation.lineNumber >= startingLine &&
+          annotation.lineNumber < endLine
+      );
+    }
+    if (result != null && this.code != null && isVisible) {
+      const { gutterAST, contentAST, rowCount } = result;
+      const columns = this.getColumns(this.code);
+      if (columns != null) {
+        columns.content.innerHTML =
+          this.fileRenderer.renderPartialHTML(contentAST);
+        columns.gutter.innerHTML =
+          this.fileRenderer.renderPartialHTML(gutterAST);
+        columns.content.style.gridRow = `span ${rowCount}`;
+        columns.gutter.style.gridRow = `span ${rowCount}`;
+        this.renderAnnotations();
+      }
+    }
+  }
+
+  public emitLineCountChange(lineCount: number): void {
+    const result = this.fileRenderer.emitLineCountChange(
+      lineCount,
+      this.renderRange
+    );
+    if (result != null && this.code != null) {
+      const { gutterAST, rowCount } = result;
+      const columns = this.getColumns(this.code);
+      if (columns != null) {
+        columns.gutter.innerHTML =
+          this.fileRenderer.renderPartialHTML(gutterAST);
+        columns.content.style.gridRow = `span ${rowCount}`;
+        columns.gutter.style.gridRow = `span ${rowCount}`;
+      }
+    }
+  }
+
+  public emitTokenize(lines: Map<number, Array<HighlightedToken>>): void {
+    this.fileRenderer.emitTokenize(lines);
   }
 
   public render({
@@ -483,7 +537,6 @@ export class File<LAnnotation = undefined> {
       if (!preventEmit) {
         this.emitPostRender();
       }
-      this.__editorHook?.(fileContainer, file, renderRange);
       return true;
     }
 
@@ -522,6 +575,7 @@ export class File<LAnnotation = undefined> {
       this.resizeManager.setup(pre, overflow === 'wrap');
       this.renderAnnotations();
       this.renderGutterUtility();
+      this.__editorHook?.(fileContainer, file, nextRenderRange);
     } catch (error: unknown) {
       if (disableErrorHandling) {
         throw error;
@@ -534,7 +588,6 @@ export class File<LAnnotation = undefined> {
     if (!preventEmit) {
       this.emitPostRender();
     }
-    this.__editorHook?.(fileContainer, file, renderRange);
     return true;
   }
 

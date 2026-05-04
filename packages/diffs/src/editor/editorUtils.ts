@@ -1,18 +1,26 @@
-import type { TextDocumentChange } from './textDocument';
-
 export function createElement<K extends keyof HTMLElementTagNameMap>(
   tagName: K,
   props: {
     id?: string;
     class?: string;
-    style?: Partial<CSSStyleDeclaration>;
+    style?: string | Partial<CSSStyleDeclaration>;
     dataset?: DOMStringMap | string[] | string;
+    children?: (Node | string)[];
     textContent?: string;
+    html?: string;
   } = {},
   parent?: Element | ShadowRoot | DocumentFragment
 ): HTMLElementTagNameMap[K] {
   const el = document.createElement(tagName);
-  const { id, class: className, style, dataset, textContent } = props;
+  const {
+    id,
+    class: className,
+    style,
+    dataset,
+    textContent,
+    html,
+    children,
+  } = props;
   if (id) {
     el.id = id;
   }
@@ -20,7 +28,11 @@ export function createElement<K extends keyof HTMLElementTagNameMap>(
     el.className = className;
   }
   if (style !== undefined) {
-    Object.assign(el.style, style);
+    if (typeof style === 'string') {
+      el.style.cssText = style;
+    } else {
+      Object.assign(el.style, style);
+    }
   }
   if (dataset !== undefined) {
     if (typeof dataset === 'string') {
@@ -36,8 +48,14 @@ export function createElement<K extends keyof HTMLElementTagNameMap>(
   if (textContent !== undefined) {
     el.textContent = textContent;
   }
+  if (html !== undefined) {
+    el.innerHTML = html;
+  }
   if (parent !== undefined) {
     parent.appendChild(el);
+  }
+  if (children !== undefined) {
+    el.replaceChildren(...children);
   }
   return el;
 }
@@ -72,9 +90,10 @@ export function isCodeLineTarget(target?: EventTarget): target is HTMLElement {
   if (target === undefined || !(target instanceof HTMLElement)) {
     return false;
   }
+  const { tagName, dataset } = target;
   return (
-    (target.tagName === 'DIV' && target.dataset.line !== undefined) ||
-    (target.tagName === 'SPAN' && target.dataset.char !== undefined)
+    (tagName === 'DIV' && dataset.line !== undefined) ||
+    (tagName === 'SPAN' && dataset.char !== undefined)
   );
 }
 
@@ -91,79 +110,17 @@ export function getLineIndentation(lineText: string): string {
   return indentation;
 }
 
-export function resolveDirtyLines(
-  change: TextDocumentChange | undefined,
-  startingLine: number,
-  endLine: number
-): {
-  dirtyLines: Set<number>;
-  dirtyLineStart: number;
-  dirtyLineEnd: number;
-  tokenizerStartLine: number;
-} {
-  const dirtyLines = new Set<number>();
-  if (endLine <= startingLine) {
-    return {
-      dirtyLines,
-      dirtyLineStart: -1,
-      dirtyLineEnd: -1,
-      tokenizerStartLine: startingLine,
-    };
-  }
-
-  if (change === undefined) {
-    for (let line = startingLine; line < endLine; line++) {
-      dirtyLines.add(line);
-    }
-    return {
-      dirtyLines,
-      dirtyLineStart: startingLine,
-      dirtyLineEnd: endLine - 1,
-      tokenizerStartLine: startingLine,
-    };
-  }
-
-  const tokenizerStartLine = Math.max(0, change.startLine);
-  if (change.startLine >= endLine) {
-    return {
-      dirtyLines,
-      dirtyLineStart: -1,
-      dirtyLineEnd: -1,
-      tokenizerStartLine,
-    };
-  }
-
-  let dirtyLineStart = Math.max(change.startLine, startingLine);
-  let dirtyLineEnd = Math.min(change.endLine, endLine - 1);
-  let shouldMarkDirtyLines = true;
-
-  if (change.lineDelta !== 0) {
-    dirtyLineEnd = endLine - 1;
-  } else if (change.endLine < startingLine) {
-    // No visible line text changed, but a tokenizer state change may flow in.
-    dirtyLineStart = startingLine;
-    dirtyLineEnd = startingLine;
-    shouldMarkDirtyLines = false;
-  }
-
-  if (dirtyLineEnd < dirtyLineStart) {
-    dirtyLineEnd = dirtyLineStart;
-  }
-
-  if (shouldMarkDirtyLines) {
-    for (let line = dirtyLineStart; line <= dirtyLineEnd; line++) {
-      dirtyLines.add(line);
-    }
-  }
-
-  return {
-    dirtyLines,
-    dirtyLineStart,
-    dirtyLineEnd,
-    tokenizerStartLine,
-  };
-}
-
 export function extend<T extends object>(obj: T, attrs: Partial<T>): T {
   return Object.assign(obj, attrs);
+}
+
+export function debounce<T extends (...args: any[]) => void>(
+  func: T,
+  wait: number
+): (...args: Parameters<T>) => void {
+  let timeout: ReturnType<typeof setTimeout>;
+  return function (this: ThisType<T>, ...args: Parameters<T>) {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func.apply(this, args), wait);
+  };
 }

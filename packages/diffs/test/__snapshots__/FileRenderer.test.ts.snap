@@ -388,10 +388,34 @@ exports[`FileRenderer should render TypeScript code to AST matching snapshot 1`]
         "tagName": "div",
         "type": "element",
       },
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "type": "text",
+                "value": "17",
+              },
+            ],
+            "properties": {
+              "data-line-number-content": "",
+            },
+            "tagName": "span",
+            "type": "element",
+          },
+        ],
+        "properties": {
+          "data-column-number": 17,
+          "data-line-index": "16",
+          "data-line-type": "context",
+        },
+        "tagName": "div",
+        "type": "element",
+      },
     ],
     "properties": {
       "data-gutter": "",
-      "style": "grid-row: span 16",
+      "style": "grid-row: span 17",
     },
     "tagName": "div",
     "type": "element",
@@ -1598,10 +1622,29 @@ exports[`FileRenderer should render TypeScript code to AST matching snapshot 1`]
         "tagName": "div",
         "type": "element",
       },
+      {
+        "children": [
+          {
+            "type": "text",
+            "value": 
+"
+"
+,
+          },
+        ],
+        "properties": {
+          "data-alt-line": undefined,
+          "data-line": 17,
+          "data-line-index": 16,
+          "data-line-type": "context",
+        },
+        "tagName": "div",
+        "type": "element",
+      },
     ],
     "properties": {
       "data-content": "",
-      "style": "grid-row: span 16",
+      "style": "grid-row: span 17",
     },
     "tagName": "div",
     "type": "element",

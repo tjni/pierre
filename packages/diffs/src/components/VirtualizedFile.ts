@@ -1,6 +1,7 @@
 import { DEFAULT_VIRTUAL_FILE_METRICS } from '../constants';
 import type {
   FileContents,
+  LineAnnotation,
   RenderRange,
   RenderWindow,
   VirtualFileMetrics,
@@ -172,7 +173,7 @@ export class VirtualizedFile<
       overflow = 'scroll',
     } = this.options;
     const { diffHeaderHeight, fileGap, lineHeight } = this.metrics;
-    const lines = this.getOrCreateLineCache(this.file);
+    const lineCount = this.getLineCount(this.file);
 
     // Header or initial padding
     if (!disableFileHeader) {
@@ -185,15 +186,15 @@ export class VirtualizedFile<
     }
 
     if (overflow === 'scroll' && this.lineAnnotations.length === 0) {
-      this.height += lines.lineCount * lineHeight;
+      this.height += lineCount * lineHeight;
     } else {
-      for (let lineIndex = 0; lineIndex < lines.lineCount; lineIndex++) {
+      for (let lineIndex = 0; lineIndex < lineCount; lineIndex++) {
         this.height += this.getLineHeight(lineIndex, false);
       }
     }
 
     // Bottom padding
-    if (lines.lineCount > 0) {
+    if (lineCount > 0) {
       this.height += fileGap;
     }
 
@@ -233,6 +234,18 @@ export class VirtualizedFile<
       this.isVisible = false;
       this.rerender();
     }
+  }
+
+  override emitLineAnnotationsChange(
+    lineAnnotations: LineAnnotation<LAnnotation>[]
+  ): void {
+    super.emitLineAnnotationsChange(lineAnnotations);
+    this.computeApproximateSize();
+  }
+
+  override emitLineCountChange(lineCount: number): void {
+    super.emitLineCountChange(lineCount);
+    this.computeApproximateSize();
   }
 
   override render({
@@ -291,8 +304,7 @@ export class VirtualizedFile<
     const { disableFileHeader = false, overflow = 'scroll' } = this.options;
     const { diffHeaderHeight, fileGap, hunkLineCount, lineHeight } =
       this.metrics;
-    const lines = this.getOrCreateLineCache(file);
-    const lineCount = lines.lineCount;
+    const lineCount = this.getLineCount(file);
     const fileHeight = this.height;
     const headerRegion = disableFileHeader ? fileGap : diffHeaderHeight;
 

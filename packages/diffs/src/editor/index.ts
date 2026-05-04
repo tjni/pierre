@@ -30,9 +30,9 @@ import {
 import {
   addEventListener,
   createElement,
+  debounce,
   extend,
   isCodeLineTarget,
-  resolveDirtyLines,
 } from '../editor/editorUtils';
 import {
   type ResolvedTextEdit,
@@ -46,7 +46,6 @@ import type {
   LineAnnotation,
   RenderRange,
 } from '../types';
-import { tokenizeLine } from './backgroundTokenzier';
 import {
   EDITOR_CSS,
   TOKENIZE_MAX_LINE_LENGTH,
@@ -59,6 +58,7 @@ import {
   type TextareaSnapshot,
   toTextareaSelectionDirection,
 } from './editorTextarea';
+import { BackgroundTokenzier, tokenizeLine } from './tokenzier';
 
 export class Editor<LAnnotation> {
   #onChange?: (
@@ -83,12 +83,12 @@ export class Editor<LAnnotation> {
   #highlighter?: DiffsHighlighter;
   #colorMap?: Map<string, string[]>;
   #renderRange?: RenderRange;
+  #backgroundTokenzier?: BackgroundTokenzier;
 
   // cache
   #stateStackCache?: StateStack[];
   #lineYCache = new Map<number, number>();
   #lastCharX?: [line: number, character: number, x: number];
-
   // dom elements
   #contentEl?: HTMLElement;
   #styleEl?: HTMLStyleElement;
@@ -104,6 +104,26 @@ export class Editor<LAnnotation> {
   #textareaSnapshot?: TextareaSnapshot;
   #reservedSelections?: EditorSelection[];
   #selections?: EditorSelection[];
+
+  #prebuildStateStackCache = debounce(() => {
+    const textDocument = this.#textDocument;
+    if (textDocument === undefined) {
+      return;
+    }
+
+    const grammar = this.#highlighter?.getLanguage(textDocument.languageId);
+    if (grammar === undefined) {
+      return;
+    }
+
+    const { startingLine = 0, totalLines = Infinity } = this.#renderRange ?? {};
+    const endLine = Math.min(
+      totalLines === Infinity ? Infinity : startingLine + totalLines,
+      textDocument.lineCount
+    );
+
+    this.#buildStateStackCache(textDocument, grammar, endLine);
+  }, 500);
 
   edit(
     file: File<LAnnotation>,
@@ -127,13 +147,27 @@ export class Editor<LAnnotation> {
     return this.cleanUp.bind(this);
   }
 
-  setSelections(selections: EditorSelection[], resetTextarea = true): void {
+  setSelections(
+    selections: EditorSelection[],
+    resetTextarea = true,
+    setSelectedLines = true
+  ): void {
     const primarySelection = selections.at(-1);
     if (primarySelection === undefined) {
       return;
     }
     if (resetTextarea) {
       this.#textareaSnapshot = undefined;
+    }
+    if (setSelectedLines) {
+      this.#file?.setSelectedLines(null);
+      if (isCollapsedSelection(primarySelection)) {
+        const line = primarySelection.end.line + 1;
+        this.#file?.setSelectedLines({
+          start: line,
+          end: line,
+        });
+      }
     }
     const shouldUpdateTextarea =
       Math.max(0, primarySelection.start.line - 1) !==
@@ -220,9 +254,7 @@ export class Editor<LAnnotation> {
     }
 
     this.#renderRange = renderRange;
-    setTimeout(() => {
-      this.#prebuildStateStackCache();
-    }, 500);
+    this.#prebuildStateStackCache();
 
     const shadowRoot =
       fileContainer.shadowRoot ?? fileContainer.attachShadow({ mode: 'open' });
@@ -346,6 +378,14 @@ export class Editor<LAnnotation> {
         this.#selectionEndY = e.clientY;
       }),
 
+      addEventListener(this.#textareaEl, 'focus', () => {
+        this.#textareaEl!.dataset.state = 'focus';
+      }),
+
+      addEventListener(this.#textareaEl, 'blur', () => {
+        this.#textareaEl!.dataset.state = 'blur';
+      }),
+
       addEventListener(this.#textareaEl, 'keydown', (e) => {
         const command = resolveEditorCommandFromKeyboardEvent(e);
         if (command !== undefined) {
@@ -375,12 +415,11 @@ export class Editor<LAnnotation> {
 
     this.#getCSSProperites();
 
-    console.log('Editor initialized.', {
+    console.log(
+      'Editor initialized.',
       renderRange,
-      tabSize: this.#tabSize,
-      lineHeight: this.#lineHeight,
-      charWidth: this.#charWidth,
-    });
+      this.#textDocument.lineCount
+    );
   }
 
   #computeMouseSelectionDirection(): SelectionDirection {
@@ -400,6 +439,9 @@ export class Editor<LAnnotation> {
   }
 
   #rerender() {
+    // cancel previous background tokenzier task
+    this.#backgroundTokenzier?.cancelBackgroundTask();
+
     const contentEl = this.#contentEl;
     const highlighter = this.#highlighter;
     const file = this.#file;
@@ -425,77 +467,48 @@ export class Editor<LAnnotation> {
     };
 
     const { startingLine = 0, totalLines = Infinity } = this.#renderRange ?? {};
-    const endLine =
+    const renderRangeEndLine =
       totalLines === Infinity
         ? textDocument.lineCount
         : Math.min(startingLine + totalLines, textDocument.lineCount);
-    const previousLineCount =
-      lastChange?.previousLineCount ?? textDocument.lineCount;
-    const prevEndLine =
-      totalLines === Infinity
-        ? previousLineCount
-        : Math.min(startingLine + totalLines, previousLineCount);
-    const { dirtyLines, dirtyLineStart, dirtyLineEnd, tokenizerStartLine } =
-      resolveDirtyLines(lastChange, startingLine, endLine);
-    const linesChange = lastChange?.lineDelta ?? 0;
-
-    for (let line = endLine; line < prevEndLine; line++) {
-      this.#lineYCache.delete(line);
-      this.#getLineElement(line)?.remove();
-    }
-
-    const previousStateStackCache = this.#stateStackCache;
-    if (dirtyLineStart !== -1) {
-      this.#stateStackCache = previousStateStackCache?.slice(
-        0,
-        tokenizerStartLine + 1
-      );
-    }
-
-    const changes: Map<number, Array<HighlightedToken>> = new Map();
 
     const isStateStackCacheSettled = (line: number, state: StateStack) => {
-      const previousNextState = previousStateStackCache?.[line + 1];
-      return previousNextState !== undefined && state.equals(previousNextState);
+      const nextState = this.#stateStackCache?.[line + 1];
+      return nextState !== undefined && state.equals(nextState);
     };
+    const dirtyLines: Map<number, Array<HighlightedToken>> = new Map();
 
-    let state =
-      dirtyLineStart === -1
-        ? INITIAL
-        : this.#buildStateStackCache(textDocument, grammar, dirtyLineStart);
-    for (let line = dirtyLineStart; line >= 0 && line < endLine; line++) {
-      const isDirty = dirtyLines.has(line);
-      const previousState = previousStateStackCache?.[line];
-      const didLineStateChange =
-        previousState !== undefined && !state.equals(previousState);
-      const shouldUpdateLineEl =
-        isDirty ||
-        didLineStateChange ||
-        (line > dirtyLineEnd && previousState === undefined);
+    let line = lastChange.startLine;
+    let state = this.#buildStateStackCache(
+      textDocument,
+      grammar,
+      lastChange.startLine
+    );
+    let isSettled = false;
+    for (; line < renderRangeEndLine; line++) {
       const lineText = textDocument.getLineText(line);
-      this.#stateStackCache ??= [INITIAL];
-      this.#stateStackCache[line] = state;
+      const isDirty = line >= lastChange.startLine && line < lastChange.endLine;
+
+      this.#stateStackCache![line] = state;
+      isSettled =
+        !isDirty &&
+        lastChange.lineDelta === 0 &&
+        isStateStackCacheSettled(line, state);
 
       if (lineText.length > TOKENIZE_MAX_LINE_LENGTH) {
-        if (shouldUpdateLineEl) {
-          console.warn(
-            `[diffs] Line(${line}) too long to tokenize: ${lineText.length}`
-          );
-          changes.set(line, [[0, '', lineText]]);
-        }
-        this.#stateStackCache[line + 1] = state;
-        if (line >= dirtyLineEnd && isStateStackCacheSettled(line, state)) {
+        console.warn(
+          `[diffs] Line(${line}) too long to tokenize: ${lineText.length}`
+        );
+        dirtyLines.set(line, [[0, '', lineText]]);
+        if (isSettled) {
           break;
         }
         continue;
       }
 
       if (lineText === '' || lineText.trim() === '') {
-        if (shouldUpdateLineEl) {
-          changes.set(line, [[0, '', lineText === '' ? ' ' : lineText]]);
-        }
-        this.#stateStackCache[line + 1] = state;
-        if (line >= dirtyLineEnd && isStateStackCacheSettled(line, state)) {
+        dirtyLines.set(line, [[0, '', lineText === '' ? ' ' : lineText]]);
+        if (isSettled) {
           break;
         }
         continue;
@@ -508,40 +521,140 @@ export class Editor<LAnnotation> {
         state,
         TOKENIZE_TIME_LIMIT
       );
-      if (shouldUpdateLineEl) {
-        changes.set(line, result.resolvedTokens);
-      }
+      dirtyLines.set(line, result.resolvedTokens);
       state = result.ruleStack;
-      this.#stateStackCache[line + 1] = state;
-      if (line >= dirtyLineEnd && isStateStackCacheSettled(line, state)) {
+      if (isSettled) {
         break;
       }
     }
+    this.#stateStackCache![line] = state;
 
-    console.log('changes', changes);
+    // update line elements that have been changed in the document
+    // create new line elements for new lines
+    if (dirtyLines.size > 0) {
+      const children = contentEl.children;
+      const dirtyLineIndexes = new Set<number>(dirtyLines.keys());
+      for (
+        let i = lastChange.startLine - startingLine;
+        i < children.length;
+        i++
+      ) {
+        if (dirtyLineIndexes.size === 0) {
+          break;
+        }
+        const child = children[i] as HTMLElement;
+        if (child.dataset.lineIndex !== undefined) {
+          const lineIndex = Number(child.dataset.lineIndex);
+          if (dirtyLines.has(lineIndex)) {
+            const tokens = dirtyLines.get(lineIndex)!;
+            child.replaceChildren(
+              ...tokens.map(([char, style, textContent]) => {
+                if (char === 0 && style === '') {
+                  return textContent;
+                }
+                return createElement('span', {
+                  dataset: {
+                    char: char.toString(),
+                  },
+                  style,
+                  textContent: textContent,
+                });
+              })
+            );
+            dirtyLineIndexes.delete(lineIndex);
+          }
+        }
+      }
+      if (dirtyLineIndexes.size > 0) {
+        for (const lineIndex of dirtyLineIndexes) {
+          const tokens = dirtyLines.get(lineIndex)!;
+          createElement(
+            'div',
+            {
+              dataset: {
+                line: (lineIndex + 1).toString(),
+                lineType: 'context',
+                lineIndex: lineIndex.toString(),
+              },
+              children: tokens.map(([char, style, textContent]) => {
+                if (char === 0 && style === '') {
+                  return textContent;
+                }
+                return createElement('span', {
+                  dataset: {
+                    char: char.toString(),
+                  },
+                  style,
+                  textContent,
+                });
+              }),
+            },
+            contentEl
+          );
+        }
+      }
+    }
 
-    this.#file?.updateRenderCache({
-      dirtyLines: changes,
-      lineCount: lastChange?.lineCount,
-    });
+    // remove line elements that have been deleted in the document
+    if (lastChange.lineDelta < 0) {
+      const children = contentEl.children;
+      for (let i = children.length - 1; i >= 0; i--) {
+        const child = children[i] as HTMLElement;
+        const { lineIndex, lineAnnotation } = child.dataset;
+        if (lineIndex !== undefined || lineAnnotation !== undefined) {
+          const lineIndexNum = Number(
+            lineAnnotation !== undefined
+              ? lineAnnotation.split(',')[1]
+              : lineIndex
+          );
+          if (lineIndexNum < lastChange.lineCount) {
+            break;
+          }
+          child.remove();
+        }
+      }
+    }
+
+    file.emitTokenize(dirtyLines);
+    if (lastChange.lineDelta !== 0) {
+      file.emitLineCountChange(lastChange.lineCount);
+    }
+
+    if (!isSettled && line < textDocument.lineCount) {
+      requestAnimationFrame(() => {
+        this.#backgroundTokenzier = new BackgroundTokenzier({
+          grammar,
+          colorMap,
+          textDocument,
+          onTokenize: (result) => {
+            file.emitTokenize(result.lines);
+          },
+        });
+        this.#backgroundTokenzier.scheduleTokenize(line, state);
+      });
+    }
+
+    if (this.#onChange !== undefined) {
+      // TODO(@ije): use debounce
+      requestAnimationFrame(() => {
+        const { contents: _, ...file } = fileContents;
+        Object.defineProperty(file, 'contents', {
+          get() {
+            return textDocument.getText();
+          },
+        });
+        this.#onChange!(file as FileContents, this.#lineAnnotations);
+      });
+    }
 
     console.log(
       `[diffs] re-render time: ${Math.round((performance.now() - t) * 1000) / 1000}ms`,
+      'lastChange:',
+      lastChange,
       'dirtyLines:',
       dirtyLines.size,
-      'linesChange:',
-      linesChange
+      isSettled ? '(are settled)' : ''
     );
-
-    if (this.#onChange !== undefined) {
-      const { contents: _, ...file } = fileContents;
-      Object.defineProperty(file, 'contents', {
-        get() {
-          return textDocument.getText();
-        },
-      });
-      this.#onChange(file as FileContents, this.#lineAnnotations);
-    }
   }
 
   #getThemeColorMap(themeType: 'dark' | 'light'): string[] {
@@ -591,28 +704,9 @@ export class Editor<LAnnotation> {
           TOKENIZE_TIME_LIMIT
         ).ruleStack;
       }
-      stateStackCache[line + 1] = state;
     }
+    stateStackCache[line] = state;
     return stateStackCache[boundedEndLine] ?? INITIAL;
-  }
-
-  #prebuildStateStackCache() {
-    const textDocument = this.#textDocument;
-    if (textDocument === undefined) {
-      return;
-    }
-    const { startingLine = 0, totalLines = Infinity } = this.#renderRange ?? {};
-    const endLine = Math.min(
-      totalLines === Infinity ? Infinity : startingLine + totalLines,
-      textDocument.lineCount
-    );
-
-    const grammar = this.#highlighter?.getLanguage(textDocument.languageId);
-    if (grammar === undefined) {
-      return;
-    }
-
-    this.#buildStateStackCache(textDocument, grammar, endLine);
   }
 
   #syncTextareaState() {
@@ -727,12 +821,7 @@ export class Editor<LAnnotation> {
   ) {
     const fragment = document.createDocumentFragment();
     const cacheMap = new Map<string, HTMLElement>();
-    this.#file?.setSelectedLines(null);
     if (isCollapsedSelection(primarySelection)) {
-      this.#file?.setSelectedLines({
-        start: primarySelection.start.line + 1,
-        end: primarySelection.end.line + 1,
-      });
       this.#renderLineHighlight(primarySelection, fragment, cacheMap);
     }
     selections.forEach((selection) => {
@@ -1056,8 +1145,9 @@ export class Editor<LAnnotation> {
     }
     const { startingLine = 0 } = this.#renderRange ?? {};
     for (let i = line - startingLine; i <= children.length; i++) {
-      const child = children[i] as HTMLElement;
+      const child = children[i] as HTMLElement | undefined;
       if (
+        child !== undefined &&
         child.dataset.lineIndex !== undefined &&
         Number(child.dataset.lineIndex) === line
       ) {

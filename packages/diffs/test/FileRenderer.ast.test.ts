@@ -147,18 +147,18 @@ describe('FileRenderer AST Structure', () => {
     expect(result2.totalLines).toBe(file2Lines);
   });
 
-  test('should render a single line without a trailing newline', async () => {
+  test('should render one content line when the buffer ends with a newline', async () => {
     const instance = new FileRenderer();
     const result = await instance.asyncRender({
       name: 'single-line.txt',
-      contents: 'hello',
+      contents: 'hello\n',
     });
     const [gutter, contentColumn] = instance.renderCodeAST(result) as Element[];
 
-    expect(result.totalLines).toBe(1);
-    expect(result.rowCount).toBe(1);
-    expect(gutter.children).toHaveLength(1);
-    expect(contentColumn.children).toHaveLength(1);
+    expect(result.totalLines).toBe(2);
+    expect(result.rowCount).toBe(2);
+    expect(gutter.children).toHaveLength(2);
+    expect(contentColumn.children).toHaveLength(2);
   });
 
   test('should include CSS property in result', async () => {

@@ -35,16 +35,6 @@ export interface FileContents {
   cacheKey?: string;
 }
 
-/**
- * Represents a file's contents with line offsets.
- */
-export interface LineOffsets {
-  /** The line offsets for the file contents. */
-  readonly offsets: number[];
-  /** The number of lines in the file. */
-  readonly lineCount: number;
-}
-
 export type HighlighterTypes = 'shiki-js' | 'shiki-wasm';
 
 export type HighlightedToken = [char: number, style: string, text: string];
@@ -635,7 +625,7 @@ export interface ForceFilePlainTextOptions {
   startingLine?: number;
   totalLines?: number;
   // Pre-split lines for caching in windowing scenarios
-  lineOffsets?: LineOffsets;
+  lineOffsets?: number[];
 }
 
 export interface RenderFileOptions {

@@ -15,7 +15,6 @@ import type {
   FileDiffMetadata,
   HighlighterTypes,
   HunkExpansionRegion,
-  LineOffsets,
   RenderDiffOptions,
   RenderDiffResult,
   RenderFileOptions,
@@ -547,7 +546,7 @@ export class WorkerPoolManager {
     file: FileContents,
     startingLine: number,
     totalLines: number,
-    lineOffsets: LineOffsets
+    lineOffsets: number[]
   ): ThemedFileResult | undefined {
     if (this.highlighter == null) {
       this.queueInitialization();

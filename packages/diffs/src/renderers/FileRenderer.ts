@@ -16,7 +16,6 @@ import type {
   FileHeaderRenderMode,
   HighlightedToken,
   LineAnnotation,
-  LineOffsets,
   RenderedFileASTCache,
   RenderFileOptions,
   RenderFileResult,
@@ -83,8 +82,8 @@ export class FileRenderer<LAnnotation = undefined> {
   private renderCache: RenderedFileASTCache | undefined;
   private computedLang: SupportedLanguages = 'text';
   private lineAnnotations: AnnotationLineMap<LAnnotation> = {};
-  private lineOffsets: LineOffsets | undefined;
-  private lineOffsetsCacheKey: string | undefined;
+  private lineOffsets = new WeakMap<FileContents, number[]>();
+  private alternateLineCount = new WeakMap<FileContents, number>();
 
   constructor(
     public options: FileRendererOptions = { theme: DEFAULT_THEMES },
@@ -122,7 +121,6 @@ export class FileRenderer<LAnnotation = undefined> {
     this.highlighter = undefined;
     this.workerManager = undefined;
     this.onRenderUpdate = undefined;
-    this.lineOffsets = undefined;
   }
 
   public hydrate(file: FileContents): void {
@@ -178,71 +176,106 @@ export class FileRenderer<LAnnotation = undefined> {
     return { options, forceRender: false };
   }
 
-  public getOrCreateLineOffsets(file: FileContents): LineOffsets {
-    // Uncached files will get split every time, not the greatest experience
-    // tbh... but something people should try to optimize away
-    if (file.cacheKey == null) {
-      this.lineOffsets = undefined;
-      return computeLineOffsets(file.contents);
+  public getOrCreateLineOffsets(file: FileContents): number[] {
+    let offsets = this.lineOffsets.get(file);
+    if (offsets == null) {
+      offsets = computeLineOffsets(file.contents);
+      this.lineOffsets.set(file, offsets);
     }
-
-    let { lineOffsets } = this;
-    if (lineOffsets == null || this.lineOffsetsCacheKey !== file.cacheKey) {
-      lineOffsets = computeLineOffsets(file.contents);
-    }
-    this.lineOffsets = lineOffsets;
-    this.lineOffsetsCacheKey = file.cacheKey;
-    return lineOffsets;
+    return offsets;
   }
 
-  public updateRenderCache({
-    dirtyLines,
-    lineCount,
-  }: {
-    dirtyLines: Map<number, Array<HighlightedToken>>;
-    lineCount: number;
-  }): FileRenderResult {
+  public getLineCount(file: FileContents): number {
+    return (
+      this.alternateLineCount.get(file) ??
+      this.getOrCreateLineOffsets(file).length
+    );
+  }
+
+  public emitLineAnnotationsChange(
+    lineAnnotations: LineAnnotation<LAnnotation>[],
+    renderRange: RenderRange = DEFAULT_RENDER_RANGE
+  ): FileRenderResult | undefined {
     const renderCache = this.renderCache;
     if (renderCache == null || renderCache.result == null) {
-      throw new Error('Render cache is not set');
+      return undefined;
     }
-    if (renderCache != null && renderCache.result != null) {
-      const code = renderCache.result.code;
-      for (const [line, tokens] of dirtyLines) {
-        code[line] = {
-          type: 'element',
-          tagName: 'div',
-          properties: {
-            'data-line': line + 1,
-            'data-line-index': line,
-            'data-line-type': 'context',
-          },
-          children: tokens.map(([char, style, text]) => {
-            return {
-              type: 'element',
-              tagName: 'span',
-              properties: {
-                'data-char': char,
-                style,
-              },
-              children: [
-                {
-                  type: 'text',
-                  value: text,
-                },
-              ],
-            };
-          }),
-        };
-      }
-      code.length = lineCount;
-    }
-
+    this.setLineAnnotations(lineAnnotations);
     return this.processFileResult(
       renderCache.file,
-      renderCache.renderRange ?? DEFAULT_RENDER_RANGE,
+      renderRange,
       renderCache.result
     );
+  }
+
+  public emitLineCountChange(
+    lineCount: number,
+    renderRange: RenderRange = DEFAULT_RENDER_RANGE
+  ): FileRenderResult | undefined {
+    const renderCache = this.renderCache;
+    if (renderCache == null || renderCache.result == null) {
+      return undefined;
+    }
+    const prevCodeLines = renderCache.result.code.length;
+    renderCache.result.code.length = lineCount;
+    for (let i = prevCodeLines; i < lineCount; i++) {
+      renderCache.result.code[i] = {
+        type: 'element',
+        tagName: 'div',
+        properties: {
+          'data-line': i + 1,
+          'data-line-type': 'context',
+          'data-line-index': i,
+        },
+        children: [{ type: 'text', value: ' ' }],
+      };
+    }
+    this.alternateLineCount.set(renderCache.file, lineCount);
+    return this.processFileResult(
+      renderCache.file,
+      renderRange,
+      renderCache.result
+    );
+  }
+
+  public emitTokenize(lines: Map<number, Array<HighlightedToken>>): void {
+    const renderCache = this.renderCache;
+    if (renderCache == null || renderCache.result == null) {
+      return;
+    }
+    for (const [line, tokens] of lines) {
+      renderCache.result.code[line] = {
+        type: 'element',
+        tagName: 'div',
+        properties: {
+          'data-line': line + 1,
+          'data-line-type': 'context',
+          'data-line-index': line,
+        },
+        children: tokens.map(([char, style, text]) => {
+          if (char === 0 && style === '') {
+            return {
+              type: 'text',
+              value: text,
+            };
+          }
+          return {
+            type: 'element',
+            tagName: 'span',
+            properties: {
+              'data-char': char,
+              style,
+            },
+            children: [
+              {
+                type: 'text',
+                value: text,
+              },
+            ],
+          };
+        }),
+      };
+    }
   }
 
   public renderFile(
@@ -391,14 +424,13 @@ export class FileRenderer<LAnnotation = undefined> {
     renderRange: RenderRange,
     { code, themeStyles, baseThemeType }: ThemedFileResult
   ): FileRenderResult {
+    const totalLines = this.getLineCount(file);
     const { disableFileHeader = false } = this.options;
     const contentArray: ElementContent[] = [];
     const gutter = createGutterWrapper();
-    const lineOffsets = this.getOrCreateLineOffsets(file);
-    const totalLines = lineOffsets.lineCount;
     const endLine = Math.min(
       renderRange.startingLine + renderRange.totalLines,
-      lineOffsets.lineCount
+      totalLines
     );
     let rowCount = 0;
 
@@ -417,7 +449,6 @@ export class FileRenderer<LAnnotation = undefined> {
           name: file.name,
           lineIndex,
           lineNumber,
-          lineOffsets: lineOffsets,
         });
         throw new Error(message);
       }
