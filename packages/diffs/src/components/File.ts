@@ -579,7 +579,7 @@ export class File<LAnnotation = undefined> {
       this.__editor?.triggerEdit(
         fileContainer,
         file,
-        lineAnnotations,
+        this.lineAnnotations,
         nextRenderRange
       );
     } catch (error: unknown) {
