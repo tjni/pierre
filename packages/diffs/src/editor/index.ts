@@ -146,7 +146,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       ? getHighlighterIfLoaded()
       : undefined;
     this.#onChange = onChange;
-    return this.cleanUp.bind(this);
+    return () => this.cleanUp();
   }
 
   setSelections(selections: EditorSelection[], resetTextarea = true): void {
