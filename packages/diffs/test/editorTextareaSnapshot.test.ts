@@ -52,4 +52,25 @@ describe('resolveTextChange', () => {
       text: '',
     });
   });
+
+  test('clamps caret column on empty lines so textarea slice matches the document', () => {
+    const textDocument = new TextDocument('inmemory://1', 'a\n\nb');
+    const valid = createTextareaSnapshot(
+      textDocument,
+      createSelection(1, 0, 1, 0)
+    );
+    const oversizedColumnFromDomPlaceholder = createTextareaSnapshot(
+      textDocument,
+      createSelection(1, 1, 1, 1)
+    );
+
+    expect(oversizedColumnFromDomPlaceholder.selectionStart).toBe(
+      valid.selectionStart
+    );
+    expect(oversizedColumnFromDomPlaceholder.selectionEnd).toBe(
+      valid.selectionEnd
+    );
+    expect(oversizedColumnFromDomPlaceholder.text).toBe(valid.text);
+    expect(oversizedColumnFromDomPlaceholder.offset).toBe(valid.offset);
+  });
 });

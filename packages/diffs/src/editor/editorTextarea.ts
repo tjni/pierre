@@ -1,5 +1,5 @@
 import { type EditorSelection, SelectionDirection } from './editorSelection';
-import type { ResolvedTextEdit, TextDocument } from './textDocument';
+import type { Position, ResolvedTextEdit, TextDocument } from './textDocument';
 
 export interface TextareaSnapshot {
   startLine: number;
@@ -24,13 +24,22 @@ export function createTextareaSnapshot(
   let selectionStart = 0;
   let selectionEnd = 0;
 
+  const startCharacter = normalizeCharacterForDocument(
+    textDocument,
+    primarySelection.start
+  );
+  const endCharacter = normalizeCharacterForDocument(
+    textDocument,
+    primarySelection.end
+  );
+
   for (let line = startLine; line <= endLine; line++) {
     const lineText = textDocument.getLineText(line);
     if (line === primarySelection.start.line) {
-      selectionStart = offset + primarySelection.start.character;
+      selectionStart = offset + startCharacter;
     }
     if (line === primarySelection.end.line) {
-      selectionEnd = offset + primarySelection.end.character;
+      selectionEnd = offset + endCharacter;
     }
     lines.push(lineText);
     offset += lineText.length;
@@ -128,4 +137,12 @@ export function toTextareaSelectionDirection(
     case SelectionDirection.None:
       return 'none';
   }
+}
+
+/** Aligns a column with `TextDocument.offsetAt` / `positionAt` so textarea indices match backing text (DOM may report past end for empty lines that render a placeholder space). */
+function normalizeCharacterForDocument(
+  textDocument: TextDocument,
+  position: Position
+): number {
+  return textDocument.positionAt(textDocument.offsetAt(position)).character;
 }
