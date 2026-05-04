@@ -1,5 +1,5 @@
 export const TOKENIZE_TIME_LIMIT = 500;
-export const TOKENIZE_MAX_LINE_LENGTH = 1000;
+export const TOKENIZE_MAX_LINE_LENGTH = 10000;
 export const TOKENIZE_LINES_PRE_TOKENIZE = 50;
 
 export const EDITOR_CSS = /* CSS */ `
