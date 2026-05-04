@@ -835,7 +835,7 @@ if (renderEditorButton != null) {
       },
 
       // Line selection stuff
-      enableLineSelection: true,
+      // enableLineSelection: true,
       // onLineClick(props) {
       //   console.log('onLineClick', props);
       // },
@@ -863,7 +863,7 @@ if (renderEditorButton != null) {
       // },
 
       // Hover Decoration Snippets
-      enableGutterUtility: true,
+      // enableGutterUtility: true,
       // onGutterUtilityClick(event) {
       //   console.log('onGutterUtilityClick', event);
       // },
@@ -932,7 +932,9 @@ if (renderEditorButton != null) {
     fileInstances.push(instance);
 
     const editor = new Editor();
-    editor.edit(instance);
+    editor.edit(instance, (file) => {
+      console.log('onChange', file);
+    });
   });
 }
 

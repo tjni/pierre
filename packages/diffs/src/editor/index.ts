@@ -133,12 +133,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
   edit(
     file: File<LAnnotation>,
-    options?: {
-      onChange?: (
-        file: FileContents,
-        lineAnnotations?: LineAnnotation<LAnnotation>[]
-      ) => void;
-    }
+    onChange?: (
+      file: FileContents,
+      lineAnnotations?: LineAnnotation<LAnnotation>[]
+    ) => void
   ): () => void {
     file.__setEditor(this);
     this.#file = file;
@@ -147,7 +145,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     )
       ? getHighlighterIfLoaded()
       : undefined;
-    this.#onChange = options?.onChange;
+    this.#onChange = onChange;
     return this.cleanUp.bind(this);
   }
 
@@ -766,6 +764,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     const fileContents = this.#fileContents;
     const textDocument = this.#textDocument;
     const onChange = this.#onChange;
+    console.log('emitChange:', fileContents, textDocument, onChange);
     if (
       fileContents !== undefined &&
       textDocument !== undefined &&
