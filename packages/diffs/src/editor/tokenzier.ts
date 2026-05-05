@@ -32,7 +32,7 @@ export class BackgroundTokenizer {
   }) => void;
 
   // state
-  #isFinished: boolean = true;
+  #isStopped: boolean = true;
   #lastLine: number = -1;
   #lastState: StateStack | null = null;
 
@@ -57,21 +57,21 @@ export class BackgroundTokenizer {
   }
 
   scheduleTokenize(startLine: number, state: StateStack): void {
-    this.#isFinished = false;
+    this.#isStopped = false;
     this.#lastLine = startLine;
     this.#lastState = state;
     postMessage(this.#messageKey);
   }
 
-  cancelBackgroundTask(): void {
+  stop(): void {
     removeEventListener('message', this.#onMessage);
-    this.#isFinished = true;
+    this.#isStopped = true;
     this.#lastLine = -1;
     this.#lastState = null;
   }
 
   #doTokenize(linesPreTokenize: number = TOKENIZE_LINES_PRE_TOKENIZE): void {
-    if (this.#isFinished || this.#lastState === null) {
+    if (this.#isStopped || this.#lastState === null) {
       return;
     }
 
@@ -109,7 +109,7 @@ export class BackgroundTokenizer {
 
     this.#onTokenize({ lines });
     if (line >= totalLines) {
-      this.cancelBackgroundTask();
+      this.stop();
       return;
     }
 

@@ -62,14 +62,13 @@ import {
 import { BackgroundTokenizer, tokenizeLine } from './tokenzier';
 
 export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
+  #disposes?: (() => void)[];
   #onChange?: (
     file: FileContents,
     lineAnnotations?: LineAnnotation<LAnnotation>[]
   ) => void;
-  #disposes?: (() => void)[];
 
   // css properties
-  #measureCtx?: CanvasRenderingContext2D;
   #charWidth = -1;
   #lineHeight = 20;
   #tabSize = 2;
@@ -90,11 +89,13 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #stateStackCache?: StateStack[];
   #lineYCache = new Map<number, number>();
   #lastCharX?: [line: number, character: number, x: number];
+
   // dom elements
   #contentEl?: HTMLElement;
   #styleEl?: HTMLStyleElement;
   #textareaEl?: HTMLTextAreaElement;
   #selectionEls?: Map<string, HTMLElement>;
+  #measureCtx?: CanvasRenderingContext2D;
 
   // state
   #selectionStartX = 0;
@@ -169,7 +170,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       Math.max(0, primarySelection.start.line - 1) !==
       this.#textareaSnapshot?.startLine;
     this.#selections = selections;
-    this.#renderSelections(selections, primarySelection);
+    this.#renderSelections(selections);
     if (shouldUpdateTextarea) {
       this.#updateTextarea(primarySelection);
     } else if (
@@ -195,19 +196,20 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   }
 
   cleanUp(): void {
-    this.#onChange = undefined;
     this.#disposes?.forEach((dispose) => dispose());
     this.#disposes = undefined;
-
-    this.#measureCtx = undefined;
+    this.#onChange = undefined;
 
     this.#file = undefined;
     this.#fileContents = undefined;
+    this.#lineAnnotations = undefined;
     this.#textDocument = undefined;
 
     this.#highlighter = undefined;
     this.#colorMap = undefined;
     this.#renderRange = undefined;
+    this.#backgroundTokenizer?.stop();
+    this.#backgroundTokenizer = undefined;
 
     this.#stateStackCache = undefined;
     this.#lineYCache.clear();
@@ -221,6 +223,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#selectionEls?.forEach((el) => el.remove());
     this.#selectionEls?.clear();
     this.#selectionEls = undefined;
+    this.#measureCtx = undefined;
 
     this.#shouldIgnoreSelectionChange = false;
     this.#textareaSnapshot = undefined;
@@ -234,35 +237,53 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     lineAnnotations: LineAnnotation<LAnnotation>[] | undefined,
     renderRange: RenderRange | undefined
   ): void {
+    const shadowRoot =
+      fileContainer.shadowRoot ?? fileContainer.attachShadow({ mode: 'open' });
+    this.#contentEl = shadowRoot.querySelector('[data-content]') ?? undefined;
+    if (this.#contentEl === undefined) {
+      throw new Error('could not edit the file.');
+    }
+
+    // measure the font width, line height, and tab size
+    const { fontFamily, fontSize, lineHeight, tabSize } = getComputedStyle(
+      this.#contentEl
+    );
+    this.#tabSize = Number(tabSize);
+    this.#measureCtx ??=
+      document.createElement('canvas').getContext('2d') ?? undefined;
+    if (this.#measureCtx !== undefined) {
+      this.#measureCtx.font = fontSize + ' ' + fontFamily;
+      this.#charWidth =
+        Math.round(this.#measureCtx.measureText('0').width * 1000) / 1000;
+    }
+    if (lineHeight.endsWith('px')) {
+      this.#lineHeight = Number(lineHeight.slice(0, -2));
+    } else if (fontSize.endsWith('px')) {
+      this.#lineHeight =
+        Number(fontSize.slice(0, -2)) * Number(lineHeight.slice(0, -2));
+    }
+
     if (
       this.#textDocument === undefined ||
       this.#fileContents === undefined ||
       this.#fileContents.contents !== fileContents.contents ||
       this.#fileContents.lang !== fileContents.lang
     ) {
+      if (this.#textDocument !== undefined) {
+        this.cleanUp();
+      }
       this.#fileContents = fileContents;
       this.#textDocument = new TextDocument(
         fileContents.name,
         fileContents.contents,
         fileContents.lang ?? getFiletypeFromFileName(fileContents.name)
       );
-      this.#stateStackCache = undefined;
-      this.#selections = undefined;
     }
 
     this.#lineAnnotations = lineAnnotations;
     this.#renderRange = renderRange;
     this.#prebuildStateStackCache();
 
-    const shadowRoot =
-      fileContainer.shadowRoot ?? fileContainer.attachShadow({ mode: 'open' });
-
-    this.#contentEl = shadowRoot.querySelector('[data-content]') ?? undefined;
-    if (this.#contentEl === undefined) {
-      throw new Error('could not edit the file.');
-    }
-
-    // TODO(@ije): place the textarea inside the pre (as a child).
     this.#textareaEl ??= extend(
       createElement('textarea', { dataset: 'textarea' }),
       {
@@ -398,16 +419,14 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#lastCharX = undefined;
 
     if (this.#selections !== undefined) {
-      this.#selectionEls?.forEach((el) => el.remove());
-      this.#selectionEls?.clear();
+      // this.#selectionEls?.forEach((el) => el.remove());
+      // this.#selectionEls?.clear();
       this.setSelections(this.#selections);
       this.#textareaEl.focus();
     }
 
-    this.#getCSSProperites();
-
     console.log(
-      'Editor initialized.',
+      '[triggerEdit]',
       'renderRange:',
       (renderRange?.startingLine ?? 0) +
         '-' +
@@ -436,7 +455,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
   #rerender() {
     // cancel existing background tokenzier task
-    this.#backgroundTokenizer?.cancelBackgroundTask();
+    this.#backgroundTokenizer?.stop();
 
     const contentEl = this.#contentEl;
     const highlighter = this.#highlighter;
@@ -530,8 +549,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         if (dirtyLineIndexes.size === 0) {
           break;
         }
-        const child = children[i] as HTMLElement;
-        if (child.dataset.lineIndex !== undefined) {
+        const child = children[i] as HTMLElement | undefined;
+        if (child?.dataset.lineIndex !== undefined) {
           const lineIndex = Number(child.dataset.lineIndex);
           if (dirtyLines.has(lineIndex)) {
             const tokens = dirtyLines.get(lineIndex)!;
@@ -628,7 +647,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       lastChange,
       'dirtyLines:',
       dirtyLines.size,
-      settled ? '(are settled)' : ''
+      settled ? '(settled)' : ''
     );
   }
 
@@ -799,29 +818,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }, 0);
   }
 
-  // Check whether a selection overlaps the currently rendered line window.
-  #isSelectionVisible(selection: EditorSelection): boolean {
-    if (this.#renderRange === undefined) {
-      return true;
-    }
-    const { start, end } = selection;
-    const { startingLine, totalLines } = this.#renderRange;
-    if (totalLines === Infinity) {
-      return end.line >= startingLine;
-    }
-    const endLine = startingLine + totalLines;
-    return start.line < endLine && end.line >= startingLine;
-  }
-
-  #renderSelections(
-    selections: EditorSelection[],
-    primarySelection: EditorSelection
-  ) {
+  #renderSelections(selections: EditorSelection[]) {
     const fragment = document.createDocumentFragment();
     const cacheMap = new Map<string, HTMLElement>();
-    if (isCollapsedSelection(primarySelection)) {
-      this.#renderLineHighlight(primarySelection, fragment, cacheMap);
-    }
     selections.forEach((selection) => {
       if (selections.length > 1 || !isCollapsedSelection(selection)) {
         this.#renderSelectionRange(selection, fragment, cacheMap);
@@ -834,45 +833,12 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#selectionEls = cacheMap;
   }
 
-  #renderLineHighlight(
-    selection: EditorSelection,
-    fragment: DocumentFragment,
-    cacheMap: Map<string, HTMLElement>
-  ) {
-    if (!this.#isSelectionVisible(selection)) {
-      return;
-    }
-
-    const cacheKey = `lineHighlight-${selection.start.line}`;
-    if (this.#selectionEls?.has(cacheKey) === true) {
-      const el = this.#selectionEls.get(cacheKey)!;
-      this.#selectionEls.delete(cacheKey);
-      cacheMap.set(cacheKey, el);
-      return;
-    }
-
-    const hlEl = createElement(
-      'div',
-      {
-        dataset: 'lineHighlight',
-        style: {
-          transform: `translateY(${this.#getLineY(selection.start.line)}px)`,
-        },
-      },
-      fragment
-    );
-    cacheMap.set(cacheKey, hlEl);
-  }
-
   #renderSelectionRange(
     selection: EditorSelection,
     fragment: DocumentFragment,
     cacheMap: Map<string, HTMLElement>
   ) {
-    if (
-      this.#textDocument === undefined ||
-      !this.#isSelectionVisible(selection)
-    ) {
+    if (this.#textDocument === undefined) {
       return;
     }
 
@@ -880,6 +846,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     const selectionEls = this.#selectionEls;
 
     for (let ln = start.line; ln <= end.line; ln++) {
+      if (!this.#isLineVisible(ln)) {
+        continue;
+      }
       const lineText = this.#textDocument.getLineText(ln);
       const lineLength = lineText.length;
       const startChar = ln === start.line ? start.character : 0;
@@ -936,7 +905,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     fragment: DocumentFragment,
     cacheMap: Map<string, HTMLElement>
   ) {
-    if (!this.#isSelectionVisible(selection)) {
+    if (!this.#isLineVisible(selection.start.line)) {
       return;
     }
 
@@ -956,6 +925,21 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       fragment
     );
     cacheMap.set('caret-' + line + '-' + character, caretEl);
+  }
+
+  // Check whether a line is visible in the currently rendered line window.
+  #isLineVisible(line: number): boolean {
+    if (this.#renderRange === undefined) {
+      return true;
+    }
+    const { startingLine, totalLines } = this.#renderRange;
+    if (line < startingLine) {
+      return false;
+    }
+    if (totalLines === Infinity) {
+      return true;
+    }
+    return line < startingLine + totalLines;
   }
 
   async #runCommand(command: EditorCommand) {
@@ -1231,35 +1215,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       ' '.repeat(this.#tabSize)
     );
     return this.#measureCtx.measureText(textWithExpandedTabs).width;
-  }
-
-  #getCSSProperites() {
-    if (this.#contentEl === undefined) {
-      return;
-    }
-
-    const { fontFamily, fontSize, lineHeight, tabSize } = getComputedStyle(
-      this.#contentEl
-    );
-
-    const el = document.createElement('canvas');
-    const ctx = el.getContext('2d');
-    if (ctx !== null) {
-      ctx.font = fontSize + ' ' + fontFamily;
-      this.#measureCtx = ctx;
-      this.#charWidth = Math.round(ctx.measureText('0').width * 1000) / 1000;
-    } else {
-      this.#measureCtx = undefined;
-    }
-
-    if (lineHeight.endsWith('px')) {
-      this.#lineHeight = Number(lineHeight.slice(0, -2));
-    } else if (fontSize.endsWith('px')) {
-      this.#lineHeight =
-        Number(fontSize.slice(0, -2)) * Number(lineHeight.slice(0, -2));
-    }
-
-    this.#tabSize = Number(tabSize);
   }
 
   // check if the web selection belongs to editor

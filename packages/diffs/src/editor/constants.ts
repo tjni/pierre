@@ -12,8 +12,10 @@ export const EDITOR_CSS = /* CSS */ `
     100% { opacity: 1; }
   }
   [data-line] {
-    background-color: transparent;
     cursor: text;
+  }
+  [data-line]:not([data-selected-line]) {
+    background-color: transparent;
   }
   [data-gutter], [data-line-annotation] {
     user-select: none;
@@ -21,11 +23,10 @@ export const EDITOR_CSS = /* CSS */ `
   [data-content] {
     position: relative;
   }
-  [data-textarea], [data-caret], [data-line-highlight], [data-selection-range] {
+  [data-textarea], [data-caret], [data-selection-range] {
     position: absolute;
     top: 0;
     left: 0;
-    z-index: -10;
     height: 1lh;
     line-height: var(--diffs-line-height);
     pointer-events: none;
@@ -56,17 +57,13 @@ export const EDITOR_CSS = /* CSS */ `
     animation: blinking 1.2s infinite;
     animation-delay: 0.6s;
     visibility: hidden;
-    z-index: 0;
   }
   [data-file]:focus [data-caret],
   [data-textarea]:focus ~ [data-caret] {
     visibility: visible;
   }
-  [data-line-highlight] {
-    width: 100%;
-    background-color: var(--diffs-bg-selection);
-  }
   [data-selection-range] {
+    z-index: -10;
     background-color: var(--diffs-bg-selection);
   }
 `;
