@@ -20,60 +20,67 @@ export interface BackgroundTokenizerOptions {
   linesPreTokenize?: number; // default to 50
 }
 
-/** Stopable background tokenizer */
+/** Stoppable background tokenizer */
 export class BackgroundTokenizer {
   #grammar: IGrammar;
   #colorMap: { dark: string[]; light: string[] };
   #textDocument: TextDocument;
+  #messageKey: string;
+  #onMessage: (event: MessageEvent) => void;
   #onTokenize: (result: {
     lines: Map<number, Array<HighlightedToken>>;
   }) => void;
-  #linesPreTokenize: number;
+
+  // state
   #isFinished: boolean = true;
-  #nextFrameId: number | null = null;
+  #lastLine: number = -1;
+  #lastState: StateStack | null = null;
 
   constructor({
     grammar,
     colorMap,
     textDocument,
     onTokenize,
-    linesPreTokenize = TOKENIZE_LINES_PRE_TOKENIZE,
+    linesPreTokenize,
   }: BackgroundTokenizerOptions) {
     this.#grammar = grammar;
     this.#colorMap = colorMap;
     this.#textDocument = textDocument;
     this.#onTokenize = onTokenize;
-    this.#linesPreTokenize = linesPreTokenize;
+    this.#onMessage = ({ data }: MessageEvent) => {
+      if (data === this.#messageKey) {
+        this.#doTokenize(linesPreTokenize);
+      }
+    };
+    this.#messageKey = 'tokenize-' + Date.now().toString(16);
+    addEventListener('message', this.#onMessage);
   }
 
   scheduleTokenize(startLine: number, state: StateStack): void {
     this.#isFinished = false;
-    this.#nextFrameId = requestAnimationFrame(() => {
-      this.#doTokenize(startLine, state);
-    });
+    this.#lastLine = startLine;
+    this.#lastState = state;
+    postMessage(this.#messageKey);
   }
 
   cancelBackgroundTask(): void {
-    if (this.#nextFrameId !== null) {
-      cancelAnimationFrame(this.#nextFrameId);
-      this.#nextFrameId = null;
-    }
+    removeEventListener('message', this.#onMessage);
     this.#isFinished = true;
+    this.#lastLine = -1;
+    this.#lastState = null;
   }
 
-  #doTokenize(startLine: number, state: StateStack): void {
-    this.#nextFrameId = null;
-    if (this.#isFinished) {
+  #doTokenize(linesPreTokenize: number = TOKENIZE_LINES_PRE_TOKENIZE): void {
+    if (this.#isFinished || this.#lastState === null) {
       return;
     }
 
     const lines = new Map<number, Array<HighlightedToken>>();
-    const endLine = Math.min(
-      startLine + this.#linesPreTokenize,
-      this.#textDocument.lineCount
-    );
+    const totalLines = this.#textDocument.lineCount;
+    const endLine = Math.min(this.#lastLine + linesPreTokenize, totalLines);
 
-    let line = startLine;
+    let line = this.#lastLine;
+    let state = this.#lastState;
     for (; line < endLine; line++) {
       const lineText = this.#textDocument.getLineText(line);
       if (lineText.length > TOKENIZE_MAX_LINE_LENGTH) {
@@ -101,15 +108,14 @@ export class BackgroundTokenizer {
     }
 
     this.#onTokenize({ lines });
-    if (line >= this.#textDocument.lineCount) {
-      this.#isFinished = true;
+    if (line >= totalLines) {
+      this.cancelBackgroundTask();
       return;
     }
 
-    // schedule the next tokenize
-    this.#nextFrameId = requestAnimationFrame(() => {
-      this.#doTokenize(line, state);
-    });
+    this.#lastLine = line;
+    this.#lastState = state;
+    postMessage(this.#messageKey);
   }
 }
 
