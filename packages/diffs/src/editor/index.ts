@@ -377,14 +377,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         this.#selectionEndY = e.clientY;
       }),
 
-      addEventListener(this.#textareaEl, 'focus', () => {
-        this.#textareaEl!.dataset.state = 'focus';
-      }),
-
-      addEventListener(this.#textareaEl, 'blur', () => {
-        this.#textareaEl!.dataset.state = 'blur';
-      }),
-
       addEventListener(this.#textareaEl, 'keydown', (e) => {
         const command = resolveEditorCommandFromKeyboardEvent(e);
         if (command !== undefined) {

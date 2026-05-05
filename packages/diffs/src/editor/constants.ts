@@ -35,7 +35,6 @@ export const EDITOR_CSS = /* CSS */ `
     padding: 0;
     padding-inline: 1ch;
     color: transparent;
-    color: transparent;
     background-color: transparent;
     border: none;
     outline: none;
@@ -59,7 +58,8 @@ export const EDITOR_CSS = /* CSS */ `
     visibility: hidden;
     z-index: 0;
   }
-  [data-textarea][data-state='focus'] ~ [data-caret] {
+  [data-file]:focus [data-caret],
+  [data-textarea]:focus ~ [data-caret] {
     visibility: visible;
   }
   [data-line-highlight] {
