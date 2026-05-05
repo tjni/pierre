@@ -33,6 +33,7 @@ import {
   debounce,
   extend,
   isCodeLineTarget,
+  round,
 } from '../editor/editorUtils';
 import {
   type ResolvedTextEdit,
@@ -241,26 +242,40 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       fileContainer.shadowRoot ?? fileContainer.attachShadow({ mode: 'open' });
     this.#contentEl = shadowRoot.querySelector('[data-content]') ?? undefined;
     if (this.#contentEl === undefined) {
-      throw new Error('could not edit the file.');
+      throw new Error('Could not edit the file.');
     }
 
     // measure the font width, line height, and tab size
-    const { fontFamily, fontSize, lineHeight, tabSize } = getComputedStyle(
+    // purge the lineY cache if the line height or line annotations change
+    const { lineHeight, fontSize, fontFamily, tabSize } = getComputedStyle(
       this.#contentEl
     );
+    let lineHeighPx = 20;
+    if (lineHeight.endsWith('px')) {
+      lineHeighPx = Number(lineHeight.slice(0, -2));
+    } else if (fontSize.endsWith('px')) {
+      lineHeighPx = round(
+        Number(fontSize.slice(0, -2)) * Number(lineHeight.slice(0, -2))
+      );
+    }
+    if (
+      lineHeighPx !== this.#lineHeight ||
+      lineAnnotations !== this.#lineAnnotations
+    ) {
+      this.#lineYCache.clear();
+    }
+    this.#lastCharX = undefined;
+    this.#lineHeight = lineHeighPx;
     this.#tabSize = Number(tabSize);
     this.#measureCtx ??=
       document.createElement('canvas').getContext('2d') ?? undefined;
-    if (this.#measureCtx !== undefined) {
+    if (
+      this.#measureCtx !== undefined &&
+      (this.#measureCtx.font !== fontSize + ' ' + fontFamily ||
+        this.#charWidth === -1)
+    ) {
       this.#measureCtx.font = fontSize + ' ' + fontFamily;
-      this.#charWidth =
-        Math.round(this.#measureCtx.measureText('0').width * 1000) / 1000;
-    }
-    if (lineHeight.endsWith('px')) {
-      this.#lineHeight = Number(lineHeight.slice(0, -2));
-    } else if (fontSize.endsWith('px')) {
-      this.#lineHeight =
-        Number(fontSize.slice(0, -2)) * Number(lineHeight.slice(0, -2));
+      this.#charWidth = round(this.#measureCtx.measureText('0').width);
     }
 
     if (
@@ -415,12 +430,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       }),
     ];
 
-    this.#lineYCache.clear();
-    this.#lastCharX = undefined;
-
     if (this.#selections !== undefined) {
-      // this.#selectionEls?.forEach((el) => el.remove());
-      // this.#selectionEls?.clear();
       this.setSelections(this.#selections);
       this.#textareaEl.focus();
     }

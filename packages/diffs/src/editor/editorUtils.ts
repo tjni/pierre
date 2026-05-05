@@ -124,3 +124,7 @@ export function debounce<T extends (...args: any[]) => void>(
     timeout = setTimeout(() => func.apply(this, args), wait);
   };
 }
+
+export function round(value: number, precision: number = 1000): number {
+  return Math.round(value * precision) / precision;
+}
