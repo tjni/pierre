@@ -750,4 +750,5 @@ export interface DiffsEditor<LAnnotation> {
     lineAnnotations: LineAnnotation<LAnnotation>[] | undefined,
     renderRange: RenderRange | undefined
   ): void;
+  cleanUp(): void;
 }

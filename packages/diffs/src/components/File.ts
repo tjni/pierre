@@ -154,6 +154,8 @@ export class File<LAnnotation = undefined> {
   protected file: FileContents | undefined;
   protected renderRange: RenderRange | undefined;
 
+  protected editor: DiffsEditor<LAnnotation> | undefined;
+
   constructor(
     public options: FileOptions<LAnnotation> = { theme: DEFAULT_THEMES },
     private workerManager?: WorkerPoolManager | undefined,
@@ -172,9 +174,7 @@ export class File<LAnnotation = undefined> {
     this.workerManager?.subscribeToThemeChanges(this);
   }
 
-  private __editor: DiffsEditor<LAnnotation> | undefined;
-
-  public __setEditor(editor: DiffsEditor<LAnnotation>): void {
+  public setEditor(editor: DiffsEditor<LAnnotation>): void {
     if (this.fileContainer != null && this.file != null) {
       editor.triggerEdit(
         this.fileContainer,
@@ -183,7 +183,7 @@ export class File<LAnnotation = undefined> {
         this.renderRange
       );
     }
-    this.__editor = editor;
+    this.editor = editor;
   }
 
   private handleHighlightRender = (): void => {
@@ -278,6 +278,10 @@ export class File<LAnnotation = undefined> {
     this.unsafeCSSStyle = undefined;
     this.appliedUnsafeCSS = undefined;
     this.placeHolder = undefined;
+
+    // Clean up the editor
+    this.editor?.cleanUp();
+    this.editor = undefined;
   }
 
   public hydrate(props: FileHydrateProps<LAnnotation>): void {
@@ -576,7 +580,7 @@ export class File<LAnnotation = undefined> {
       this.resizeManager.setup(pre, overflow === 'wrap');
       this.renderAnnotations();
       this.renderGutterUtility();
-      this.__editor?.triggerEdit(
+      this.editor?.triggerEdit(
         fileContainer,
         file,
         this.lineAnnotations,
