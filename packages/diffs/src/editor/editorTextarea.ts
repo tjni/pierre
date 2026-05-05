@@ -131,9 +131,9 @@ export function toTextareaSelectionDirection(
 ): HTMLTextAreaElement['selectionDirection'] {
   switch (selection.direction) {
     case SelectionDirection.Backward:
-      return 'backward';
-    case SelectionDirection.Forward:
       return 'forward';
+    case SelectionDirection.Forward:
+      return 'backward';
     case SelectionDirection.None:
       return 'none';
   }
