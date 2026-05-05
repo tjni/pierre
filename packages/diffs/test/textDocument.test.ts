@@ -529,8 +529,8 @@ describe('TextDocument', () => {
       [selectionAfter]
     );
 
-    expect(d.undo()).toEqual([selectionBefore]);
-    expect(d.redo()).toEqual([selectionAfter]);
+    expect(d.undo()).toEqual({ selections: [selectionBefore] });
+    expect(d.redo()).toEqual({ selections: [selectionAfter] });
   });
 
   test('undo and redo preserve multiple selections', () => {
@@ -559,7 +559,7 @@ describe('TextDocument', () => {
       selectionsAfter
     );
 
-    expect(d.undo()).toEqual(selectionsBefore);
-    expect(d.redo()).toEqual(selectionsAfter);
+    expect(d.undo()).toEqual({ selections: selectionsBefore });
+    expect(d.redo()).toEqual({ selections: selectionsAfter });
   });
 });

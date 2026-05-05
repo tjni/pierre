@@ -9,6 +9,7 @@ import {
 import type { EditorSelection } from '../src/editor/editorSelection';
 import { SelectionDirection } from '../src/editor/editorSelection';
 import { TextDocument } from '../src/editor/textDocument';
+import type { LineAnnotation } from '../src/types';
 
 function createSelection(
   startLine: number,
@@ -32,7 +33,7 @@ describe('mapSelectionTextChange', () => {
       createSelection(1, 1, 1, 1),
       createSelection(2, 1, 2, 1),
     ];
-    const nextSelections = applyTextChangeToSelections(
+    const { nextSelections } = applyTextChangeToSelections(
       textDocument,
       selections,
       {
@@ -57,7 +58,7 @@ describe('mapSelectionTextChange', () => {
       createSelection(0, 4, 0, 7, SelectionDirection.Forward),
       createSelection(0, 8, 0, 11, SelectionDirection.Forward),
     ];
-    const nextSelections = applyTextChangeToSelections(
+    const { nextSelections } = applyTextChangeToSelections(
       textDocument,
       selections,
       {
@@ -82,7 +83,7 @@ describe('mapSelectionTextChange', () => {
       createSelection(1, 1, 1, 1),
       createSelection(2, 1, 2, 1),
     ];
-    const nextSelections = applyTextChangeToSelections(
+    const { nextSelections } = applyTextChangeToSelections(
       textDocument,
       selections,
       {
@@ -106,7 +107,7 @@ describe('mapSelectionTextChange', () => {
       createSelection(0, 1, 0, 1),
       createSelection(0, 2, 0, 2),
     ];
-    const nextSelections = applyTextChangeToSelections(
+    const { nextSelections } = applyTextChangeToSelections(
       textDocument,
       selections,
       {
@@ -126,7 +127,7 @@ describe('mapSelectionTextChange', () => {
   test('places the caret on the inserted blank line after Enter', () => {
     const textDocument = new TextDocument('inmemory://1', 'foo\nbar');
     const selections = [createSelection(0, 3, 0, 3)];
-    const nextSelections = applyTextChangeToSelections(
+    const { nextSelections } = applyTextChangeToSelections(
       textDocument,
       selections,
       {
@@ -143,7 +144,7 @@ describe('mapSelectionTextChange', () => {
   test('moves the caret to the previous line end after deleting a line break', () => {
     const textDocument = new TextDocument('inmemory://1', 'foo\n\nbar');
     const selections = [createSelection(1, 0, 1, 0)];
-    const nextSelections = applyTextChangeToSelections(
+    const { nextSelections } = applyTextChangeToSelections(
       textDocument,
       selections,
       {
@@ -242,7 +243,7 @@ describe('mapSelectionTextReplace', () => {
       createSelection(1, 1, 1, 1),
       createSelection(2, 1, 2, 1),
     ];
-    const nextSelections = applyTextReplaceToSelections(
+    const { nextSelections } = applyTextReplaceToSelections(
       textDocument,
       selections,
       ['a', 'b', 'c']
@@ -254,5 +255,35 @@ describe('mapSelectionTextReplace', () => {
       createSelection(1, 2, 1, 2),
       createSelection(2, 2, 2, 2),
     ]);
+  });
+
+  test('updates line annotations after replacements that insert lines', () => {
+    const textDocument = new TextDocument('inmemory://1', 'x\ny\nz');
+    const selections = [createSelection(0, 1, 0, 1)];
+    const annotations: LineAnnotation<string>[] = [
+      { lineNumber: 1, metadata: 'x' },
+      { lineNumber: 2, metadata: 'y' },
+    ];
+
+    const { newLineAnnotations } = applyTextReplaceToSelections(
+      textDocument,
+      selections,
+      ['\ninserted'],
+      annotations
+    );
+
+    expect(textDocument.getText()).toBe('x\ninserted\ny\nz');
+    expect(newLineAnnotations).toEqual([
+      { lineNumber: 1, metadata: 'x' },
+      { lineNumber: 3, metadata: 'y' },
+    ]);
+    expect(textDocument.undo()).toEqual({
+      selections,
+      lineAnnotations: annotations,
+    });
+    expect(textDocument.redo()).toEqual({
+      selections: [createSelection(1, 8, 1, 8)],
+      lineAnnotations: newLineAnnotations,
+    });
   });
 });

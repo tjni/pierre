@@ -35,11 +35,7 @@ import {
   isCodeLineTarget,
   round,
 } from '../editor/editorUtils';
-import {
-  type ResolvedTextEdit,
-  TextDocument,
-  type TextEdit,
-} from '../editor/textDocument';
+import { TextDocument, type TextEdit } from '../editor/textDocument';
 import type {
   DiffsEditor,
   DiffsHighlighter,
@@ -140,7 +136,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       lineAnnotations?: LineAnnotation<LAnnotation>[]
     ) => void
   ): () => void {
-    file.__setEditor(this);
+    file.setEditor(this);
     this.#file = file;
     this.#highlighter ??= areThemesAttached(
       file.options.theme ?? DEFAULT_THEMES
@@ -463,7 +459,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     return SelectionDirection.None;
   }
 
-  #rerender() {
+  #rerender(newLineAnnotations?: LineAnnotation<LAnnotation>[] | undefined) {
     // cancel existing background tokenzier task
     this.#backgroundTokenizer?.stop();
 
@@ -636,6 +632,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     if (lastChange.lineDelta !== 0) {
       file.emitLineCountChange(lastChange.lineCount);
     }
+    if (newLineAnnotations !== undefined) {
+      file.emitLineAnnotationsChange(newLineAnnotations);
+      this.#lineAnnotations = newLineAnnotations;
+    }
 
     if (!settled && line < textDocument.lineCount) {
       requestAnimationFrame(() => {
@@ -733,7 +733,19 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         selectionStart,
         selectionEnd
       );
-      this.#applyTextChange(change);
+      const lineAnnotations = this.#lineAnnotations;
+      if (this.#selections !== undefined) {
+        const { nextSelections, newLineAnnotations } =
+          applyTextChangeToSelections(
+            textDocument,
+            this.#selections,
+            change,
+            lineAnnotations
+          );
+        this.#rerender(newLineAnnotations);
+        this.#emitChange();
+        this.setSelections(nextSelections, false);
+      }
     } else if (this.#selections !== undefined) {
       // Selection in the textarea changed, but no text change was made.
       if (selectionStart === selectionEnd) {
@@ -765,19 +777,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           false
         );
       }
-    }
-  }
-
-  #applyTextChange(change: ResolvedTextEdit) {
-    if (this.#textDocument !== undefined && this.#selections !== undefined) {
-      const nextSelections = applyTextChangeToSelections(
-        this.#textDocument,
-        this.#selections,
-        change
-      );
-      this.#rerender();
-      this.#emitChange();
-      this.setSelections(nextSelections, false);
     }
   }
 
@@ -1043,22 +1042,30 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
       case 'undo':
         if (this.#textDocument?.canUndo === true) {
-          const nextSelections = this.#textDocument.undo();
-          this.#rerender();
+          const undoResult = this.#textDocument.undo();
+          this.#rerender(
+            undoResult?.lineAnnotations as
+              | LineAnnotation<LAnnotation>[]
+              | undefined
+          );
           this.#emitChange();
-          if (nextSelections !== undefined) {
-            this.setSelections(nextSelections, false);
+          if (undoResult?.selections !== undefined) {
+            this.setSelections(undoResult.selections, false);
           }
         }
         break;
 
       case 'redo':
         if (this.#textDocument?.canRedo === true) {
-          const nextSelections = this.#textDocument.redo();
-          this.#rerender();
+          const redoResult = this.#textDocument.redo();
+          this.#rerender(
+            redoResult?.lineAnnotations as
+              | LineAnnotation<LAnnotation>[]
+              | undefined
+          );
           this.#emitChange();
-          if (nextSelections !== undefined) {
-            this.setSelections(nextSelections, false);
+          if (redoResult?.selections !== undefined) {
+            this.setSelections(redoResult.selections, false);
           }
         }
         break;
@@ -1124,14 +1131,25 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       return;
     }
     // todo: normalize text with textDocument.EOF
-    const nextSelections = Array.isArray(text)
-      ? applyTextReplaceToSelections(textDocument, selections, text)
-      : applyTextChangeToSelections(textDocument, selections, {
-          start: textDocument.offsetAt(primarySelection.start),
-          end: textDocument.offsetAt(primarySelection.end),
-          text: text,
-        });
-    this.#rerender();
+    const lineAnnotations = this.#lineAnnotations;
+    const { nextSelections, newLineAnnotations } = Array.isArray(text)
+      ? applyTextReplaceToSelections<LAnnotation>(
+          textDocument,
+          selections,
+          text,
+          lineAnnotations
+        )
+      : applyTextChangeToSelections<LAnnotation>(
+          textDocument,
+          selections,
+          {
+            start: textDocument.offsetAt(primarySelection.start),
+            end: textDocument.offsetAt(primarySelection.end),
+            text: text,
+          },
+          lineAnnotations
+        );
+    this.#rerender(newLineAnnotations);
     this.#emitChange();
     this.setSelections(nextSelections, false);
   }

@@ -1,3 +1,5 @@
+import type { LineAnnotation } from '../types';
+import { applyDocumentChangeToLineAnnotations } from './editorLineAnnotations';
 import { type EditorSelection, SelectionDirection } from './editorSelection';
 import {
   type Position,
@@ -74,14 +76,18 @@ export function mapSelectionRangeMove(
   });
 }
 
-export function applyTextChangeToSelections(
+export function applyTextChangeToSelections<LAnnotation>(
   textDocument: TextDocument,
   selections: EditorSelection[],
-  change: ResolvedTextEdit
-): EditorSelection[] {
+  change: ResolvedTextEdit,
+  lineAnnotations?: LineAnnotation<LAnnotation>[]
+): {
+  nextSelections: EditorSelection[];
+  newLineAnnotations: LineAnnotation<LAnnotation>[] | undefined;
+} {
   const primarySelection = selections[selections.length - 1];
   if (primarySelection === undefined) {
-    return [];
+    return { nextSelections: [], newLineAnnotations: undefined };
   }
   const primaryStartOffset = textDocument.offsetAt(primarySelection.start);
   const primaryEndOffset = textDocument.offsetAt(primarySelection.end);
@@ -155,19 +161,35 @@ export function applyTextChangeToSelections(
     };
   }
   finalizeMergedGroup();
-  textDocument.applyEdits(edits, true, selections);
+  textDocument.applyEdits(edits, true, selections, undefined, lineAnnotations);
   const nextSelections = nextSelectionOffsets.map((offsets) =>
     createSelectionFromAnchorAndFocusOffsets(textDocument, ...offsets)
   );
   textDocument.setLastUndoSelectionsAfter(nextSelections);
-  return nextSelections;
+
+  let newLineAnnotations: LineAnnotation<LAnnotation>[] | undefined;
+  if (lineAnnotations !== undefined && textDocument.lastChange !== undefined) {
+    newLineAnnotations = applyDocumentChangeToLineAnnotations<LAnnotation>(
+      textDocument.lastChange,
+      lineAnnotations
+    );
+    if (newLineAnnotations !== undefined) {
+      textDocument.setLastUndoLineAnnotationsAfter(newLineAnnotations);
+    }
+  }
+
+  return { nextSelections, newLineAnnotations };
 }
 
-export function applyTextReplaceToSelections(
+export function applyTextReplaceToSelections<LAnnotation>(
   textDocument: TextDocument,
   selections: EditorSelection[],
-  texts: readonly string[]
-): EditorSelection[] {
+  texts: readonly string[],
+  lineAnnotations?: LineAnnotation<LAnnotation>[]
+): {
+  nextSelections: EditorSelection[];
+  newLineAnnotations: LineAnnotation<LAnnotation>[] | undefined;
+} {
   if (selections.length !== texts.length) {
     throw new Error(
       'Selection text replacements must match the selection count'
@@ -213,12 +235,24 @@ export function applyTextReplaceToSelections(
       entry.start + offsetDelta + entry.text.length;
     offsetDelta += entry.text.length - (entry.end - entry.start);
   }
-  textDocument.applyEdits(edits, true, selections);
+  textDocument.applyEdits(edits, true, selections, undefined, lineAnnotations);
   const nextSelections = nextSelectionOffsets.map((offset) =>
     createSelectionFromAnchorAndFocusOffsets(textDocument, offset, offset)
   );
   textDocument.setLastUndoSelectionsAfter(nextSelections);
-  return nextSelections;
+
+  let newLineAnnotations: LineAnnotation<LAnnotation>[] | undefined;
+  if (lineAnnotations !== undefined && textDocument.lastChange !== undefined) {
+    newLineAnnotations = applyDocumentChangeToLineAnnotations<LAnnotation>(
+      textDocument.lastChange,
+      lineAnnotations
+    );
+    if (newLineAnnotations !== undefined) {
+      textDocument.setLastUndoLineAnnotationsAfter(newLineAnnotations);
+    }
+  }
+
+  return { nextSelections, newLineAnnotations };
 }
 
 export function createSelectionFromAnchorAndFocusOffsets(

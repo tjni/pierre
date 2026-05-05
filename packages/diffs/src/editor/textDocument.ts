@@ -91,6 +91,8 @@ export type ResolvedTextEdit = {
 export type TextDocumentChange = {
   /** First line whose rendered content or tokenizer state may have changed. */
   readonly startLine: number;
+  /** Character on the first changed line where the edit began. */
+  readonly startCharacter?: number;
   /** Last line whose rendered content may have changed after the edit. */
   readonly endLine: number;
   /** Line count before the edit was applied. */
@@ -189,7 +191,9 @@ export class TextDocument {
     edits: TextEdit[],
     updateHistory = false,
     selectionsBefore?: EditorSelection[],
-    selectionsAfter?: EditorSelection[]
+    selectionsAfter?: EditorSelection[],
+    lineAnnotationsBefore?: unknown[],
+    lineAnnotationsAfter?: unknown[]
   ): void {
     if (edits.length === 0) {
       return;
@@ -204,7 +208,9 @@ export class TextDocument {
         this.#version,
         this.#version + 1,
         selectionsBefore,
-        selectionsAfter
+        selectionsAfter,
+        lineAnnotationsBefore,
+        lineAnnotationsAfter
       );
     }
     this.#lastChange = this.#applyResolvedEdits(resolvedEdits);
@@ -215,7 +221,13 @@ export class TextDocument {
     this.#editStack.setLastUndoSelectionsAfter(selections);
   }
 
-  undo(): EditorSelection[] | undefined {
+  setLastUndoLineAnnotationsAfter(lineAnnotations: unknown[]): void {
+    this.#editStack.setLastUndoLineAnnotationsAfter(lineAnnotations);
+  }
+
+  undo():
+    | { selections?: EditorSelection[]; lineAnnotations?: unknown[] }
+    | undefined {
     const entry = this.#editStack.popUndoToRedo();
     if (entry === undefined) {
       this.#lastChange = undefined;
@@ -223,12 +235,15 @@ export class TextDocument {
     }
     this.#lastChange = this.#applyResolvedEdits(entry.inverseEdits);
     this.#version = entry.versionBefore;
-    return entry.selectionsBefore !== undefined
-      ? entry.selectionsBefore.map((selection) => ({ ...selection }))
-      : undefined;
+    return {
+      selections: cloneSelections(entry.selectionsBefore),
+      lineAnnotations: entry.lineAnnotationsBefore?.slice(),
+    };
   }
 
-  redo(): EditorSelection[] | undefined {
+  redo():
+    | { selections?: EditorSelection[]; lineAnnotations?: unknown[] }
+    | undefined {
     const entry = this.#editStack.popRedoToUndo();
     if (entry === undefined) {
       this.#lastChange = undefined;
@@ -236,9 +251,13 @@ export class TextDocument {
     }
     this.#lastChange = this.#applyResolvedEdits(entry.forwardEdits);
     this.#version = entry.versionAfter;
-    return entry.selectionsAfter !== undefined
-      ? entry.selectionsAfter.map((selection) => ({ ...selection }))
-      : undefined;
+    return {
+      selections:
+        entry.selectionsAfter !== undefined
+          ? cloneSelections(entry.selectionsAfter)
+          : undefined,
+      lineAnnotations: entry.lineAnnotationsAfter?.slice(),
+    };
   }
 
   #resolveEdit(edit: TextEdit): ResolvedTextEdit {
@@ -265,19 +284,24 @@ export class TextDocument {
   #applyResolvedEdits(edits: ResolvedTextEdit[]): TextDocumentChange {
     const previousLineCount = this.#pieceTable.lineCount;
     const changedLineRange = this.#computeChangedLineRange(edits);
+    const startPosition = this.positionAt(edits[0].start);
     for (let i = edits.length - 1; i >= 0; i--) {
       const edit = edits[i];
       this.#pieceTable.delete(edit.start, edit.end - edit.start);
       this.#pieceTable.insert(edit.text, edit.start);
     }
     const lineCount = this.#pieceTable.lineCount;
-    return {
+    const change = {
       startLine: changedLineRange.startLine,
       endLine: Math.min(changedLineRange.endLine, Math.max(0, lineCount - 1)),
       previousLineCount,
       lineCount,
       lineDelta: lineCount - previousLineCount,
     };
+    Object.defineProperty(change, 'startCharacter', {
+      value: startPosition.character,
+    });
+    return change as TextDocumentChange;
   }
 
   #computeChangedLineRange(edits: ResolvedTextEdit[]): {
@@ -313,4 +337,10 @@ function lineFeedCount(text: string): number {
     }
   }
   return count;
+}
+
+function cloneSelections(
+  selections: readonly EditorSelection[]
+): EditorSelection[] {
+  return selections.map((selection) => ({ ...selection }));
 }

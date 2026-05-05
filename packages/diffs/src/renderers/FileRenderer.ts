@@ -193,14 +193,14 @@ export class FileRenderer<LAnnotation = undefined> {
   }
 
   public emitLineAnnotationsChange(
-    lineAnnotations: LineAnnotation<LAnnotation>[],
+    newLineAnnotations: LineAnnotation<LAnnotation>[],
     renderRange: RenderRange = DEFAULT_RENDER_RANGE
   ): FileRenderResult | undefined {
     const renderCache = this.renderCache;
     if (renderCache == null || renderCache.result == null) {
       return undefined;
     }
-    this.setLineAnnotations(lineAnnotations);
+    this.setLineAnnotations(newLineAnnotations);
     return this.processFileResult(
       renderCache.file,
       renderRange,

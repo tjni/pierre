@@ -21,6 +21,10 @@ interface EditStackEntry {
   selectionsBefore: EditorSelection[];
   /** Selection after the transaction (restored on redo). */
   selectionsAfter?: EditorSelection[];
+  /** Line annotations before the transaction (restored on undo). */
+  lineAnnotationsBefore?: unknown[];
+  /** Line annotations after the transaction (restored on redo). */
+  lineAnnotationsAfter?: unknown[];
 }
 
 export interface EditStackOptions {
@@ -58,7 +62,9 @@ export class EditStack {
     versionBefore: number,
     versionAfter: number,
     selectionsBefore: EditorSelection[],
-    selectionsAfter?: EditorSelection[]
+    selectionsAfter?: EditorSelection[],
+    lineAnnotationsBefore?: unknown[],
+    lineAnnotationsAfter?: unknown[]
   ): void {
     const forwardEdits = [...resolvedEdits].sort((a, b) => a.start - b.start);
     const inverseEdits = buildInverseOffsetEdits(source, forwardEdits);
@@ -71,6 +77,8 @@ export class EditStack {
         ...selection,
       })),
       selectionsAfter: selectionsAfter?.map((selection) => ({ ...selection })),
+      lineAnnotationsBefore: lineAnnotationsBefore?.slice(),
+      lineAnnotationsAfter: lineAnnotationsAfter?.slice(),
     });
     this.#redoStack.length = 0;
     if (this.#undoStack.length > this.#maxEntries) {
@@ -84,6 +92,13 @@ export class EditStack {
       lastEntry.selectionsAfter = selections.map((selection) => ({
         ...selection,
       }));
+    }
+  }
+
+  setLastUndoLineAnnotationsAfter(lineAnnotations: unknown[]): void {
+    const lastEntry = this.#undoStack[this.#undoStack.length - 1];
+    if (lastEntry !== undefined) {
+      lastEntry.lineAnnotationsAfter = lineAnnotations.slice();
     }
   }
 
