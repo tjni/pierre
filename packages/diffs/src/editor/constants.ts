@@ -27,14 +27,14 @@ export const EDITOR_CSS = /* CSS */ `
     position: absolute;
     top: 0;
     left: 0;
-    height: 1lh;
     line-height: var(--diffs-line-height);
     pointer-events: none;
   }
   [data-textarea] {
-    font: inherit;
+    top: -1lh;
     padding: 0;
     padding-inline: 1ch;
+    font: inherit;
     color: transparent;
     background-color: transparent;
     border: none;
@@ -48,11 +48,13 @@ export const EDITOR_CSS = /* CSS */ `
     min-height: 1lh;
   }
   [data-overflow='wrap'] [data-textarea] {
+    width: 100%;
     white-space: pre-wrap;
     word-break: break-word;
   }
   [data-caret] {
     width: 2px;
+    height: 1lh;
     background-color: var(--diffs-bg-caret);
     animation: blinking 1.2s infinite;
     animation-delay: 0.6s;
@@ -63,6 +65,7 @@ export const EDITOR_CSS = /* CSS */ `
     visibility: visible;
   }
   [data-selection-range] {
+    height: 1lh;
     z-index: -10;
     background-color: var(--diffs-bg-selection);
   }
