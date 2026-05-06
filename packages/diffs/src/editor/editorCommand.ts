@@ -17,16 +17,6 @@ const SHORTCUTS: Partial<Record<string, EditorCommand>> = {
   x: 'cut',
 };
 
-function isMacLike(): boolean {
-  return /macOS|MacIntel|iPhone|iPad|iPod/i.test(getPlatform());
-}
-
-export function isPrimaryModifier(event: MouseEvent | KeyboardEvent): boolean {
-  return isMacLike()
-    ? event.metaKey && !event.ctrlKey
-    : event.ctrlKey && !event.metaKey;
-}
-
 export function resolveEditorCommandFromKeyboardEvent(
   event: KeyboardEvent
 ): EditorCommand | undefined {
@@ -63,6 +53,17 @@ export function resolveEditorCommandFromKeyboardEvent(
   }
 
   return SHORTCUTS[key];
+}
+
+export function isPrimaryModifier({
+  metaKey,
+  ctrlKey,
+}: MouseEvent | KeyboardEvent): boolean {
+  return isMacLike() ? metaKey && !ctrlKey : ctrlKey && !metaKey;
+}
+
+function isMacLike(): boolean {
+  return /macOS|MacIntel|iPhone|iPad|iPod/i.test(getPlatform());
 }
 
 function getPlatform(): string {

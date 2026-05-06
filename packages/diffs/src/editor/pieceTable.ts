@@ -4,6 +4,7 @@ import type { Position, Range } from './textDocument';
 class Piece {
   static Original = 0;
   static Added = 1;
+
   constructor(
     public readonly source: number,
     public readonly offset: number,

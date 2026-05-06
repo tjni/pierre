@@ -76,7 +76,7 @@ export interface TextEdit {
 }
 
 /** Different with `TextEdit`, the range has been resolved to offsets. */
-export type ResolvedTextEdit = {
+export interface ResolvedTextEdit {
   /** The start offset of the text change. */
   readonly start: number;
   /** The end offset of the text change. */
@@ -86,9 +86,9 @@ export type ResolvedTextEdit = {
    * empty string.
    */
   readonly text: string;
-};
+}
 
-export type TextDocumentChange = {
+export interface TextDocumentChange {
   /** First line whose rendered content or tokenizer state may have changed. */
   readonly startLine: number;
   /** Character on the first changed line where the edit began. */
@@ -101,7 +101,7 @@ export type TextDocumentChange = {
   readonly lineCount: number;
   /** Difference between the old and new line counts. */
   readonly lineDelta: number;
-};
+}
 
 /**
  * A vscode-languageserver-textdocument compatible text document.
