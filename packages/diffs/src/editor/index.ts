@@ -35,7 +35,6 @@ import {
   createElement,
   debounce,
   extend,
-  isCodeLineTarget,
   round,
 } from '../editor/editorUtils';
 import { TextDocument, type TextEdit } from '../editor/textDocument';
@@ -139,7 +138,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       lineAnnotations?: LineAnnotation<LAnnotation>[]
     ) => void
   ): () => void {
-    file.setEditor(this);
     this.#file = file;
     this.#highlighter ??= areThemesAttached(
       file.options.theme ?? DEFAULT_THEMES
@@ -147,6 +145,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       ? getHighlighterIfLoaded()
       : undefined;
     this.#onChange = onChange;
+    this.#initialize();
+    file.setEditor(this);
     return () => this.cleanUp();
   }
 
@@ -246,9 +246,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
     // measure the font width, line height, and tab size
     // purge the lineY cache if the line height or line annotations change
-    const { lineHeight, fontSize, fontFamily, tabSize } = getComputedStyle(
-      this.#contentEl
-    );
+    const style = getComputedStyle(this.#contentEl);
+    const { fontSize, fontFamily, tabSize, lineHeight } = style;
     let lineHeighPx = 20;
     if (lineHeight.endsWith('px')) {
       lineHeighPx = Number(lineHeight.slice(0, -2));
@@ -257,10 +256,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         Number(fontSize.slice(0, -2)) * Number(lineHeight.slice(0, -2))
       );
     }
-    if (
-      lineHeighPx !== this.#lineHeight ||
-      lineAnnotations !== this.#lineAnnotations
-    ) {
+    if (lineHeighPx !== this.#lineHeight) {
       this.#lineYCache.clear();
     }
     this.#lastCharX = undefined;
@@ -268,12 +264,12 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#tabSize = Number(tabSize);
     this.#measureCtx ??=
       document.createElement('canvas').getContext('2d') ?? undefined;
+    const font = fontSize + ' ' + fontFamily;
     if (
       this.#measureCtx !== undefined &&
-      (this.#measureCtx.font !== fontSize + ' ' + fontFamily ||
-        this.#charWidth === -1)
+      (this.#measureCtx.font !== font || this.#charWidth === -1)
     ) {
-      this.#measureCtx.font = fontSize + ' ' + fontFamily;
+      this.#measureCtx.font = font;
       this.#charWidth = round(this.#measureCtx.measureText('0').width);
     }
 
@@ -283,22 +279,68 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       this.#fileContents.contents !== fileContents.contents ||
       this.#fileContents.lang !== fileContents.lang
     ) {
-      if (this.#textDocument !== undefined) {
-        this.cleanUp();
-      }
       this.#fileContents = fileContents;
       this.#textDocument = new TextDocument(
         fileContents.name,
         fileContents.contents,
         fileContents.lang ?? getFiletypeFromFileName(fileContents.name)
       );
+      this.#stateStackCache = undefined;
+      this.#lineYCache.clear();
+      this.#lastCharX = undefined;
+      this.#shouldIgnoreSelectionChange = false;
+      this.#textareaSnapshot = undefined;
+      this.#selections = undefined;
+      this.#reservedSelections = undefined;
     }
 
-    this.#lineAnnotations = lineAnnotations;
+    if (this.#lineAnnotations !== lineAnnotations) {
+      this.#lineAnnotations = lineAnnotations;
+      this.#lineYCache.clear();
+    }
+
     this.#renderRange = renderRange;
     this.#prebuildStateStackCache();
 
-    this.#textareaEl ??= extend(
+    if (this.#styleEl !== undefined) {
+      shadowRoot.appendChild(this.#styleEl);
+    }
+    if (this.#textareaEl !== undefined) {
+      this.#contentEl?.appendChild(this.#textareaEl);
+    }
+    if (this.#selections !== undefined) {
+      this.setSelections(this.#selections);
+      this.#textareaEl?.focus();
+    }
+
+    console.log(
+      '[triggerEdit]',
+      'renderRange:',
+      (renderRange?.startingLine ?? 0) +
+        '-' +
+        (renderRange?.totalLines ?? Infinity),
+      'of',
+      this.#textDocument.lineCount,
+      'lines'
+    );
+  }
+
+  #initialize(): void {
+    const isCodeLineTarget = (target?: EventTarget): target is HTMLElement => {
+      if (target === undefined || !(target instanceof HTMLElement)) {
+        return false;
+      }
+      const { tagName, dataset } = target;
+      return (
+        (tagName === 'DIV' && dataset.line !== undefined) ||
+        (tagName === 'SPAN' && dataset.char !== undefined)
+      );
+    };
+    this.#styleEl = createElement('style', {
+      dataset: 'editorCss',
+      textContent: EDITOR_CSS,
+    });
+    this.#textareaEl = extend(
       createElement('textarea', { dataset: 'textarea' }),
       {
         autocapitalize: 'off',
@@ -308,17 +350,14 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         wrap: 'off',
       }
     );
-    this.#contentEl.appendChild(this.#textareaEl);
-
-    this.#styleEl ??= createElement(
-      'style',
-      { dataset: 'editorCss', textContent: EDITOR_CSS },
-      shadowRoot
-    );
-
-    this.#disposes ??= [
+    this.#disposes = [
       addEventListener(document, 'selectionchange', () => {
-        if (this.#shouldIgnoreSelectionChange) {
+        const shadowRoot = this.#contentEl?.getRootNode();
+        if (
+          this.#shouldIgnoreSelectionChange ||
+          shadowRoot === undefined ||
+          !(shadowRoot instanceof ShadowRoot)
+        ) {
           return;
         }
 
@@ -428,22 +467,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         this.#syncTextareaState();
       }),
     ];
-
-    if (this.#selections !== undefined) {
-      this.setSelections(this.#selections);
-      this.#textareaEl.focus();
-    }
-
-    console.log(
-      '[triggerEdit]',
-      'renderRange:',
-      (renderRange?.startingLine ?? 0) +
-        '-' +
-        (renderRange?.totalLines ?? Infinity),
-      'of',
-      this.#textDocument.lineCount,
-      'lines'
-    );
   }
 
   #computeMouseSelectionDirection(): SelectionDirection {
@@ -487,26 +510,27 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       dark: this.#getThemeColorMap('dark'),
       light: this.#getThemeColorMap('light'),
     };
-
-    const { startingLine = 0, totalLines = Infinity } = this.#renderRange ?? {};
-    const renderRangeEndLine =
-      totalLines === Infinity
-        ? textDocument.lineCount
-        : Math.min(startingLine + totalLines, textDocument.lineCount);
-
-    const dirtyLines: Map<number, Array<HighlightedToken>> = new Map();
-
-    let line = lastChange.startLine;
-    let state = this.#buildStateStackCache(
+    const stateStackCache = this.#buildStateStackCache(
       textDocument,
       grammar,
       lastChange.startLine
     );
+
+    const { lineCount } = textDocument;
+    const { startingLine = 0, totalLines = Infinity } = this.#renderRange ?? {};
+    const renderRangeEndLine =
+      totalLines === Infinity
+        ? lineCount
+        : Math.min(startingLine + totalLines, lineCount);
+
+    let line = lastChange.startLine;
+    let state = stateStackCache[line];
     let settled = false;
+    let dirtyLines: Map<number, Array<HighlightedToken>> = new Map();
     for (; line < renderRangeEndLine; line++) {
       const lineText = textDocument.getLineText(line);
 
-      this.#stateStackCache![line] = state;
+      stateStackCache[line] = state;
 
       if (lineText.length > TOKENIZE_MAX_LINE_LENGTH) {
         console.warn(
@@ -530,17 +554,16 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       settled =
         line >= lastChange.endLine &&
         lastChange.lineDelta === 0 &&
-        this.#stateStackCache![line + 1] !== undefined &&
-        state.equals(this.#stateStackCache![line + 1]);
-
+        stateStackCache[line + 1] !== undefined &&
+        state.equals(stateStackCache[line + 1]);
       if (settled) {
         break;
       }
     }
     if (line < renderRangeEndLine) {
-      this.#stateStackCache![line + 1] = state;
+      stateStackCache[line + 1] = state;
     } else {
-      this.#stateStackCache![line] = state;
+      stateStackCache[line] = state;
     }
 
     // update line elements that have been changed in the document
@@ -635,10 +658,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
     if (newLineAnnotations !== undefined) {
       file.emitLineAnnotationsChange(newLineAnnotations);
-      this.#lineAnnotations = newLineAnnotations;
     }
 
-    if (!settled && line < textDocument.lineCount) {
+    if (!settled && line < lineCount) {
       requestAnimationFrame(() => {
         this.#backgroundTokenizer = new BackgroundTokenizer({
           grammar,
@@ -687,7 +709,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     textDocument: TextDocument,
     grammar: IGrammar,
     endLine: number
-  ): StateStack {
+  ): StateStack[] {
     const stateStackCache = (this.#stateStackCache ??= [INITIAL]);
     const boundedEndLine = Math.min(
       Math.max(0, endLine),
@@ -711,7 +733,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       }
     }
     stateStackCache[line] = state;
-    return stateStackCache[boundedEndLine] ?? INITIAL;
+    return stateStackCache;
   }
 
   #syncTextareaState() {

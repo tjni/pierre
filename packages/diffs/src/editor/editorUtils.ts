@@ -84,30 +84,6 @@ export function addEventListener(
   return () => el.removeEventListener(event, listener);
 }
 
-export function isCodeLineTarget(target?: EventTarget): target is HTMLElement {
-  if (target === undefined || !(target instanceof HTMLElement)) {
-    return false;
-  }
-  const { tagName, dataset } = target;
-  return (
-    (tagName === 'DIV' && dataset.line !== undefined) ||
-    (tagName === 'SPAN' && dataset.char !== undefined)
-  );
-}
-
-export function getLineIndentation(lineText: string): string {
-  let indentation = '';
-  for (let i = 0; i < lineText.length; i++) {
-    const char = lineText[i];
-    if (char === ' ' || char === '\t') {
-      indentation += char;
-    } else {
-      break;
-    }
-  }
-  return indentation;
-}
-
 export function extend<T extends object>(obj: T, attrs: Partial<T>): T {
   return Object.assign(obj, attrs);
 }
