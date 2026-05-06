@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { EditorSelection } from '../src/editor/editorSelection';
-import { SelectionDirection } from '../src/editor/editorSelection';
+import {
+  DirectionNone,
+  type SelectionDirection,
+} from '../src/editor/editorSelection';
 import { EditStack } from '../src/editor/editStack';
 
 function createSelection(
@@ -9,7 +12,7 @@ function createSelection(
   startCharacter: number,
   endLine: number,
   endCharacter: number,
-  direction: SelectionDirection = SelectionDirection.None
+  direction: SelectionDirection = DirectionNone
 ): EditorSelection {
   return {
     start: { line: startLine, character: startCharacter },
@@ -19,7 +22,7 @@ function createSelection(
 }
 
 function caret(character: number) {
-  return createSelection(0, character, 0, character, SelectionDirection.None);
+  return createSelection(0, character, 0, character, DirectionNone);
 }
 
 function source(text: string) {

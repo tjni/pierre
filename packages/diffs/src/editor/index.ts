@@ -22,9 +22,12 @@ import type { EditorSelection } from '../editor/editorSelection';
 import {
   comparePosition,
   convertSelection,
+  DirectionBackward,
+  DirectionForward,
+  DirectionNone,
   isCollapsedSelection,
   resolveIndentEdits,
-  SelectionDirection,
+  type SelectionDirection,
   selectionIntersects,
 } from '../editor/editorSelection';
 import {
@@ -447,16 +450,14 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     const startLine = Math.ceil(this.#selectionStartY / this.#lineHeight);
     const endLine = Math.ceil(this.#selectionEndY / this.#lineHeight);
     if (endLine !== startLine) {
-      return endLine > startLine
-        ? SelectionDirection.Forward
-        : SelectionDirection.Backward;
+      return endLine > startLine ? DirectionForward : DirectionBackward;
     }
     if (this.#selectionEndX !== this.#selectionStartX) {
       return this.#selectionEndX > this.#selectionStartX
-        ? SelectionDirection.Forward
-        : SelectionDirection.Backward;
+        ? DirectionForward
+        : DirectionBackward;
     }
-    return SelectionDirection.None;
+    return DirectionNone;
   }
 
   #rerender(newLineAnnotations?: LineAnnotation<LAnnotation>[] | undefined) {
@@ -759,8 +760,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         );
       } else {
         const isBackward =
-          getSelectionDirectionFromTextarea(textareaEl) ===
-          SelectionDirection.Backward;
+          getSelectionDirectionFromTextarea(textareaEl) === DirectionBackward;
         const anchorOffset =
           textareaSnapshot.offset +
           (isBackward ? selectionEnd : selectionStart);
@@ -919,7 +919,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
 
     const { start, end, direction } = selection;
-    const isBackward = direction === SelectionDirection.Backward;
+    const isBackward = direction === DirectionBackward;
     const line = isBackward ? start.line : end.line;
     const character = isBackward ? start.character : end.character;
     const left = Math.max(this.#charWidth, this.#getCharX(line, character));
@@ -1083,7 +1083,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     return {
       start: { line: 0, character: 0 },
       end: { line: lastLine, character: lastCharacter },
-      direction: SelectionDirection.Forward,
+      direction: DirectionForward,
     };
   }
 
@@ -1099,7 +1099,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     return {
       start: start,
       end: start,
-      direction: SelectionDirection.Forward,
+      direction: DirectionForward,
     };
   }
 

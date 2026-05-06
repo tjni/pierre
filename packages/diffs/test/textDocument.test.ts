@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { EditorSelection } from '../src/editor/editorSelection';
-import { SelectionDirection } from '../src/editor/editorSelection';
+import { DirectionNone } from '../src/editor/editorSelection';
 import { TextDocument, type TextEdit } from '../src/editor/textDocument';
 
 function doc(text: string) {
@@ -13,7 +13,7 @@ function caret(line: number, character: number) {
   return {
     start: position,
     end: position,
-    direction: SelectionDirection.None,
+    direction: DirectionNone,
   } satisfies EditorSelection;
 }
 

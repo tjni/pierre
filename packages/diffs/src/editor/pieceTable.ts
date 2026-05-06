@@ -1,21 +1,14 @@
 import type { Position, Range } from './textDocument';
 
-type Piece = {
-  readonly source: PieceSourceType;
-  readonly offset: number;
-  readonly length: number;
-};
-
-type PieceSegment = {
-  readonly start: number;
-  readonly end: number;
-  readonly text: string;
-  readonly lineOffsets: number[];
-};
-
-enum PieceSourceType {
-  Original = 0,
-  Added = 1,
+// A piece is a segment of text that is either original or added.
+class Piece {
+  static Original = 0;
+  static Added = 1;
+  constructor(
+    public readonly source: number,
+    public readonly offset: number,
+    public readonly length: number
+  ) {}
 }
 
 // A text buffer is a string with its line offsets.
@@ -78,13 +71,7 @@ export class PieceTable {
 
   constructor(originalText: string) {
     this.#original = new TextBuffer(originalText);
-    this.#setPieces([
-      {
-        source: PieceSourceType.Original,
-        offset: 0,
-        length: originalText.length,
-      },
-    ]);
+    this.#setPieces([new Piece(Piece.Original, 0, originalText.length)]);
   }
 
   get lineCount(): number {
@@ -196,11 +183,7 @@ export class PieceTable {
 
     const insertOffset = clamp(offset, 0, this.#length);
     const addOffset = this.#add.append(text);
-    const insertedPiece = {
-      source: PieceSourceType.Added,
-      offset: addOffset,
-      length: text.length,
-    };
+    const insertedPiece = new Piece(Piece.Added, addOffset, text.length);
     const pieces = this.#pieces();
     const nextPieces: Piece[] = [];
 
@@ -398,7 +381,12 @@ export class PieceTable {
   }
 
   #forEachPieceSegment(
-    callback: (segment: PieceSegment) => boolean | void
+    callback: (segment: {
+      readonly start: number;
+      readonly end: number;
+      readonly text: string;
+      readonly lineOffsets: number[];
+    }) => boolean | void
   ): void {
     this.#walk(this.#root, (node) => {
       const buffer = this.#bufferFor(node.piece.source);
@@ -446,8 +434,8 @@ export class PieceTable {
     return { nextLine: line, nextLineStart: lineStart };
   }
 
-  #bufferFor(source: PieceSourceType): TextBuffer {
-    return source === PieceSourceType.Original ? this.#original : this.#add;
+  #bufferFor(source: number): TextBuffer {
+    return source === Piece.Original ? this.#original : this.#add;
   }
 
   #pieces(): Piece[] {
@@ -474,7 +462,9 @@ export class PieceTable {
 
     this.#forEachPieceSegment((segment) => {
       length += segment.end - segment.start;
-      lineCount += lineFeedCount(segment);
+      lineCount +=
+        upperBound(segment.lineOffsets, segment.end) -
+        upperBound(segment.lineOffsets, segment.start);
     });
 
     this.#length = length;
@@ -680,13 +670,6 @@ function coalescePieces(pieces: Piece[]): Piece[] {
     coalescedPieces.push(piece);
   }
   return coalescedPieces;
-}
-
-function lineFeedCount(segment: PieceSegment): number {
-  return (
-    upperBound(segment.lineOffsets, segment.end) -
-    upperBound(segment.lineOffsets, segment.start)
-  );
 }
 
 // Returns the index of the first element in the array that is greater than the target.

@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  DirectionNone,
   type EditorSelection,
-  SelectionDirection,
+  type SelectionDirection,
 } from '../src/editor/editorSelection';
 import {
   createTextareaSnapshot,
@@ -15,7 +16,7 @@ function createSelection(
   startCharacter: number,
   endLine: number,
   endCharacter: number,
-  direction: SelectionDirection = SelectionDirection.None
+  direction: SelectionDirection = DirectionNone
 ): EditorSelection {
   return {
     start: { line: startLine, character: startCharacter },

@@ -1,6 +1,11 @@
 import type { LineAnnotation } from '../types';
 import { applyDocumentChangeToLineAnnotations } from './editorLineAnnotations';
-import { type EditorSelection, SelectionDirection } from './editorSelection';
+import {
+  DirectionBackward,
+  DirectionForward,
+  DirectionNone,
+  type EditorSelection,
+} from './editorSelection';
 import {
   type Position,
   type ResolvedTextEdit,
@@ -44,7 +49,7 @@ export function mapSelectionMove(
     return {
       start: newPosition,
       end: newPosition,
-      direction: SelectionDirection.None,
+      direction: DirectionNone,
     };
   });
 }
@@ -262,10 +267,10 @@ export function createSelectionFromAnchorAndFocusOffsets(
 ): EditorSelection {
   const direction =
     anchorOffset === focusOffset
-      ? SelectionDirection.None
+      ? DirectionNone
       : anchorOffset < focusOffset
-        ? SelectionDirection.Forward
-        : SelectionDirection.Backward;
+        ? DirectionForward
+        : DirectionBackward;
   const start = Math.min(anchorOffset, focusOffset);
   const end = Math.max(anchorOffset, focusOffset);
   return {
@@ -279,7 +284,7 @@ function getSelectionAnchorAndFocusOffsets(
   textDocument: TextDocument,
   selection: EditorSelection
 ): [anchorOffset: number, focusOffset: number] {
-  const isBackward = selection.direction === SelectionDirection.Backward;
+  const isBackward = selection.direction === DirectionBackward;
   return [
     textDocument.offsetAt(isBackward ? selection.end : selection.start),
     textDocument.offsetAt(isBackward ? selection.start : selection.end),

@@ -1,21 +1,24 @@
 import type { Position, Range, TextDocument, TextEdit } from './textDocument';
 
-export enum SelectionDirection {
-  Backward = -1,
-  None = 0,
-  Forward = 1,
-}
+export const DirectionBackward = -1;
+export const DirectionNone = 0;
+export const DirectionForward = 1;
 
-export type EditorSelection = Range & {
+export type SelectionDirection =
+  | typeof DirectionBackward
+  | typeof DirectionNone
+  | typeof DirectionForward;
+
+export interface EditorSelection extends Range {
   direction: SelectionDirection;
-};
+}
 
 /**
  * Converts a selection from a web selection to an editor selection.
  */
 export function convertSelection(
   composedRanges: StaticRange[],
-  direction: SelectionDirection = SelectionDirection.None
+  direction: SelectionDirection = DirectionNone
 ): EditorSelection | null {
   const range = composedRanges[composedRanges.length - 1];
   if (range === undefined) {

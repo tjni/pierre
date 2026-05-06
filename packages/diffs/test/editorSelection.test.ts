@@ -2,8 +2,9 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   convertSelection,
+  DirectionForward,
+  DirectionNone,
   type EditorSelection,
-  SelectionDirection,
   selectionIntersects,
 } from '../src/editor/editorSelection';
 
@@ -50,7 +51,7 @@ function editorSelection(
   return {
     start: { line: startLine, character: startCharacter },
     end: { line: endLine, character: endCharacter },
-    direction: SelectionDirection.Forward,
+    direction: DirectionForward,
   };
 }
 
@@ -168,7 +169,7 @@ describe('convertSelection', () => {
       {
         start: { line: 1, character: 0 },
         end: { line: 1, character: 0 },
-        direction: SelectionDirection.None,
+        direction: DirectionNone,
       }
     );
   });
@@ -179,7 +180,7 @@ describe('convertSelection', () => {
       {
         start: { line: 2, character: 0 },
         end: { line: 2, character: 0 },
-        direction: SelectionDirection.None,
+        direction: DirectionNone,
       }
     );
   });
@@ -190,14 +191,14 @@ describe('convertSelection', () => {
       {
         start: { line: 3, character: 0 },
         end: { line: 3, character: 0 },
-        direction: SelectionDirection.None,
+        direction: DirectionNone,
       }
     );
     expect(convertSelection(composedRange(line as unknown as Node, 2))).toEqual(
       {
         start: { line: 3, character: 0 },
         end: { line: 3, character: 0 },
-        direction: SelectionDirection.None,
+        direction: DirectionNone,
       }
     );
   });
@@ -208,7 +209,7 @@ describe('convertSelection', () => {
       {
         start: { line: 4, character: 0 },
         end: { line: 4, character: 0 },
-        direction: SelectionDirection.None,
+        direction: DirectionNone,
       }
     );
   });
@@ -221,7 +222,7 @@ describe('convertSelection', () => {
     ).toEqual({
       start: { line: 6, character: 2 },
       end: { line: 6, character: 2 },
-      direction: SelectionDirection.None,
+      direction: DirectionNone,
     });
   });
 
@@ -234,7 +235,7 @@ describe('convertSelection', () => {
     ).toEqual({
       start: { line: 7, character: 13 },
       end: { line: 7, character: 13 },
-      direction: SelectionDirection.None,
+      direction: DirectionNone,
     });
   });
 
@@ -246,7 +247,7 @@ describe('convertSelection', () => {
     ).toEqual({
       start: { line: 8, character: 0 },
       end: { line: 8, character: 0 },
-      direction: SelectionDirection.None,
+      direction: DirectionNone,
     });
   });
 
@@ -259,13 +260,13 @@ describe('convertSelection', () => {
     ).toEqual({
       start: { line: 5, character: 0 },
       end: { line: 5, character: 0 },
-      direction: SelectionDirection.None,
+      direction: DirectionNone,
     });
     expect(convertSelection(composedRange(icon as unknown as Node, 0))).toEqual(
       {
         start: { line: 5, character: 0 },
         end: { line: 5, character: 0 },
-        direction: SelectionDirection.None,
+        direction: DirectionNone,
       }
     );
   });

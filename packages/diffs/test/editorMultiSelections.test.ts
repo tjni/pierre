@@ -7,7 +7,12 @@ import {
   mapSelectionRangeMove,
 } from '../src/editor/editorMultiSelections';
 import type { EditorSelection } from '../src/editor/editorSelection';
-import { SelectionDirection } from '../src/editor/editorSelection';
+import {
+  DirectionBackward,
+  DirectionForward,
+  DirectionNone,
+  type SelectionDirection,
+} from '../src/editor/editorSelection';
 import { TextDocument } from '../src/editor/textDocument';
 import type { LineAnnotation } from '../src/types';
 
@@ -16,7 +21,7 @@ function createSelection(
   startCharacter: number,
   endLine: number,
   endCharacter: number,
-  direction: SelectionDirection = SelectionDirection.None
+  direction: SelectionDirection = DirectionNone
 ): EditorSelection {
   return {
     start: { line: startLine, character: startCharacter },
@@ -54,9 +59,9 @@ describe('mapSelectionTextChange', () => {
   test('replaces each selected range with the typed text', () => {
     const textDocument = new TextDocument('inmemory://1', 'foo bar baz');
     const selections = [
-      createSelection(0, 0, 0, 3, SelectionDirection.Forward),
-      createSelection(0, 4, 0, 7, SelectionDirection.Forward),
-      createSelection(0, 8, 0, 11, SelectionDirection.Forward),
+      createSelection(0, 0, 0, 3, DirectionForward),
+      createSelection(0, 4, 0, 7, DirectionForward),
+      createSelection(0, 8, 0, 11, DirectionForward),
     ];
     const { nextSelections } = applyTextChangeToSelections(
       textDocument,
@@ -180,15 +185,15 @@ describe('mapSelectionMove', () => {
   test('extends all selections when the primary selection grows', () => {
     const textDocument = new TextDocument('inmemory://1', 'abcd\nefgh');
     const selections = [
-      createSelection(0, 1, 0, 2, SelectionDirection.Forward),
-      createSelection(1, 1, 1, 2, SelectionDirection.Forward),
+      createSelection(0, 1, 0, 2, DirectionForward),
+      createSelection(1, 1, 1, 2, DirectionForward),
     ];
 
     expect(
       mapSelectionMove(textDocument, selections, { line: 1, character: 1 })
     ).toEqual([
-      createSelection(0, 1, 0, 1, SelectionDirection.None),
-      createSelection(1, 1, 1, 1, SelectionDirection.None),
+      createSelection(0, 1, 0, 1, DirectionNone),
+      createSelection(1, 1, 1, 1, DirectionNone),
     ]);
   });
 });
@@ -209,8 +214,8 @@ describe('mapSelectionRangeMove', () => {
         { line: 1, character: 3 }
       )
     ).toEqual([
-      createSelection(0, 1, 0, 3, SelectionDirection.Forward),
-      createSelection(1, 1, 1, 3, SelectionDirection.Forward),
+      createSelection(0, 1, 0, 3, DirectionForward),
+      createSelection(1, 1, 1, 3, DirectionForward),
     ]);
   });
 
@@ -229,8 +234,8 @@ describe('mapSelectionRangeMove', () => {
         { line: 1, character: 0 }
       )
     ).toEqual([
-      createSelection(0, 0, 0, 2, SelectionDirection.Backward),
-      createSelection(1, 0, 1, 2, SelectionDirection.Backward),
+      createSelection(0, 0, 0, 2, DirectionBackward),
+      createSelection(1, 0, 1, 2, DirectionBackward),
     ]);
   });
 });

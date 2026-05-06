@@ -1,4 +1,10 @@
-import { type EditorSelection, SelectionDirection } from './editorSelection';
+import {
+  DirectionBackward,
+  DirectionForward,
+  DirectionNone,
+  type EditorSelection,
+  type SelectionDirection,
+} from './editorSelection';
 import type { Position, ResolvedTextEdit, TextDocument } from './textDocument';
 
 export interface TextareaSnapshot {
@@ -122,19 +128,19 @@ export function getSelectionDirectionFromTextarea(
   textareaEl: HTMLTextAreaElement
 ): SelectionDirection {
   return textareaEl.selectionDirection === 'backward'
-    ? SelectionDirection.Backward
-    : SelectionDirection.Forward;
+    ? DirectionBackward
+    : DirectionForward;
 }
 
 export function toTextareaSelectionDirection(
   selection: EditorSelection
 ): HTMLTextAreaElement['selectionDirection'] {
   switch (selection.direction) {
-    case SelectionDirection.Backward:
+    case DirectionBackward:
       return 'forward';
-    case SelectionDirection.Forward:
+    case DirectionForward:
       return 'backward';
-    case SelectionDirection.None:
+    case DirectionNone:
       return 'none';
   }
 }

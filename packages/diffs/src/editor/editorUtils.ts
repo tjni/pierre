@@ -81,9 +81,7 @@ export function addEventListener(
   listener: EventListener
 ) {
   el.addEventListener(event, listener);
-  return () => {
-    el.removeEventListener(event, listener);
-  };
+  return () => el.removeEventListener(event, listener);
 }
 
 export function isCodeLineTarget(target?: EventTarget): target is HTMLElement {
