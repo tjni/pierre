@@ -1,12 +1,7 @@
 import { type IGrammar, INITIAL, type StateStack } from 'shiki/textmate';
 
-import {
-  areThemesAttached,
-  DEFAULT_THEMES,
-  getFiletypeFromFileName,
-  getHighlighterIfLoaded,
-} from '..';
 import type { File } from '../components/File';
+import { DEFAULT_THEMES } from '../constants';
 import {
   type EditorCommand,
   isPrimaryModifier,
@@ -38,6 +33,8 @@ import {
   round,
 } from '../editor/editorUtils';
 import { TextDocument, type TextEdit } from '../editor/textDocument';
+import { getHighlighterIfLoaded } from '../highlighter/shared_highlighter';
+import { areThemesAttached } from '../highlighter/themes/areThemesAttached';
 import type {
   DiffsEditor,
   DiffsHighlighter,
@@ -46,6 +43,7 @@ import type {
   LineAnnotation,
   RenderRange,
 } from '../types';
+import { getFiletypeFromFileName } from '../utils/getFiletypeFromFileName';
 import {
   EDITOR_CSS,
   TOKENIZE_MAX_LINE_LENGTH,
