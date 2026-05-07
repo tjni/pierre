@@ -311,16 +311,21 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       // this.#focusTextarea();
     }
 
-    console.log(
-      '[triggerEdit]',
-      'renderRange:',
-      (renderRange?.startingLine ?? 0) +
-        '-' +
-        (renderRange?.totalLines ?? Infinity),
-      'of',
-      this.#textDocument.lineCount,
-      'lines'
-    );
+    if (renderRange !== undefined) {
+      console.log(
+        '[diffs]',
+        'RenderRange:',
+        renderRange.startingLine +
+          '-' +
+          Math.min(
+            renderRange.startingLine + renderRange.totalLines,
+            this.#textDocument.lineCount
+          ),
+        'of',
+        this.#textDocument.lineCount,
+        'lines'
+      );
+    }
   }
 
   #initialize(): void {
@@ -505,24 +510,17 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     // - line inserts/deletes shift line numbers, so clear from startLine onward
     // - wrapped edits can change visual height, which shifts downstream line Y
     if (lastChange.lineDelta !== 0) {
-      for (const line of this.#wrapLineOffsetsCache.keys()) {
-        if (line >= lastChange.startLine) {
-          this.#wrapLineOffsetsCache.delete(line);
-        }
-      }
       for (const line of this.#lineYCache.keys()) {
         if (line >= lastChange.startLine) {
           this.#lineYCache.delete(line);
         }
       }
-    } else {
-      for (
-        let line = lastChange.startLine;
-        line <= lastChange.endLine;
-        line++
-      ) {
-        this.#wrapLineOffsetsCache.delete(line);
-        this.#lineYCache.delete(line);
+    }
+    if (this.#wrap) {
+      for (const line of this.#wrapLineOffsetsCache.keys()) {
+        if (line >= lastChange.startLine) {
+          this.#wrapLineOffsetsCache.delete(line);
+        }
       }
     }
 
