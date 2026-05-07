@@ -1267,6 +1267,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           this.#emitChange();
           if (undoResult?.selections !== undefined) {
             this.setSelections(undoResult.selections, false);
+            this.#focusTextarea();
           }
         }
         break;
@@ -1282,6 +1283,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           this.#emitChange();
           if (redoResult?.selections !== undefined) {
             this.setSelections(redoResult.selections, false);
+            this.#focusTextarea();
           }
         }
         break;
