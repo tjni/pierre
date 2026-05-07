@@ -3,9 +3,6 @@ export const TOKENIZE_MAX_LINE_LENGTH = 10000;
 export const TOKENIZE_LINES_PRE_TOKENIZE = 50;
 
 export const EDITOR_CSS = /* CSS */ `
-  ::selection {
-    background-color: transparent;
-  }
   @keyframes blinking {
     0% { opacity: 1; }
     50% { opacity: 0; }
@@ -17,11 +14,11 @@ export const EDITOR_CSS = /* CSS */ `
   [data-line]:not([data-selected-line]) {
     background-color: transparent;
   }
-  [data-gutter], [data-line-annotation] {
-    user-select: none;
-  }
   [data-content] {
     position: relative;
+  }
+  [data-content]::selection {
+    background-color: transparent;
   }
   [data-textarea], [data-caret], [data-selection-range] {
     position: absolute;

@@ -71,6 +71,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #charWidth = -1;
   #lineHeight = 20;
   #tabSize = 2;
+  #wrap = false;
 
   // file
   #file?: File<LAnnotation>;
@@ -87,7 +88,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   // cache
   #stateStackCache?: StateStack[];
   #lineYCache = new Map<number, number>();
-  #lastCharX?: [line: number, character: number, x: number];
+  #wrapLineOffsetsCache = new Map<number, Uint32Array>();
+  #lastCharX?: [line: number, character: number, x: number, wrapLine: number];
 
   // dom elements
   #contentEl?: HTMLElement;
@@ -139,6 +141,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     ) => void
   ): () => void {
     this.#file = file;
+    this.#wrap = file.options.overflow === 'wrap';
     this.#highlighter ??= areThemesAttached(
       file.options.theme ?? DEFAULT_THEMES
     )
@@ -175,14 +178,14 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       this.#updateTextarea(primarySelection);
     } else if (
       this.#textareaEl !== undefined &&
-      this.#textDocument !== undefined &&
-      this.#textareaSnapshot !== undefined
+      this.#textDocument !== undefined
     ) {
       const nextTextareaSnapshot = createTextareaSnapshot(
         this.#textDocument,
         primarySelection
       );
       const shouldSyncTextarea =
+        this.#textareaSnapshot === undefined ||
         nextTextareaSnapshot.text !== this.#textareaEl.value ||
         nextTextareaSnapshot.selectionStart !==
           this.#textareaEl.selectionStart ||
@@ -213,6 +216,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
     this.#stateStackCache = undefined;
     this.#lineYCache.clear();
+    this.#wrapLineOffsetsCache.clear();
     this.#lastCharX = undefined;
 
     this.#contentEl = undefined;
@@ -256,12 +260,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         Number(fontSize.slice(0, -2)) * Number(lineHeight.slice(0, -2))
       );
     }
-    if (lineHeighPx !== this.#lineHeight) {
-      this.#lineYCache.clear();
-    }
     this.#lastCharX = undefined;
     this.#lineHeight = lineHeighPx;
     this.#tabSize = Number(tabSize);
+    this.#wrap = this.#file?.options.overflow === 'wrap';
     this.#measureCtx ??=
       document.createElement('canvas').getContext('2d') ?? undefined;
     const font = fontSize + ' ' + fontFamily;
@@ -286,19 +288,17 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         fileContents.lang ?? getFiletypeFromFileName(fileContents.name)
       );
       this.#stateStackCache = undefined;
-      this.#lineYCache.clear();
-      this.#lastCharX = undefined;
       this.#shouldIgnoreSelectionChange = false;
       this.#textareaSnapshot = undefined;
       this.#selections = undefined;
       this.#reservedSelections = undefined;
     }
 
-    if (this.#lineAnnotations !== lineAnnotations) {
-      this.#lineAnnotations = lineAnnotations;
-      this.#lineYCache.clear();
-    }
+    this.#lineYCache.clear();
+    this.#wrapLineOffsetsCache.clear();
+    this.#lastCharX = undefined;
 
+    this.#lineAnnotations = lineAnnotations;
     this.#renderRange = renderRange;
     this.#prebuildStateStackCache();
 
@@ -310,7 +310,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
     if (this.#selections !== undefined) {
       this.setSelections(this.#selections);
-      this.#textareaEl?.focus();
+      // this.#focusTextarea();
     }
 
     console.log(
@@ -356,26 +356,17 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         if (
           this.#shouldIgnoreSelectionChange ||
           shadowRoot === undefined ||
-          !(shadowRoot instanceof ShadowRoot)
+          !(shadowRoot instanceof ShadowRoot) ||
+          shadowRoot.activeElement === null
         ) {
           return;
         }
 
-        // if caret position changes in textarea, sync the textarea state.
-        const textareaEl = this.#textareaEl;
-        const textareaSnapshot = this.#textareaSnapshot;
-        if (textareaEl !== undefined && textareaSnapshot !== undefined) {
-          const { selectionStart, selectionEnd } = textareaEl;
-          if (
-            (textareaSnapshot.selectionStart !== selectionStart ||
-              textareaSnapshot.selectionEnd !== selectionEnd) &&
-            textareaSnapshot.text === textareaEl.value
-          ) {
-            textareaSnapshot.selectionStart = selectionStart;
-            textareaSnapshot.selectionEnd = selectionEnd;
-            this.#syncTextareaState();
-            return;
-          }
+        // Chrome-based browsers fire document selectionchange when the
+        // textarea caret moves inside the shadow root.
+        if (shadowRoot.activeElement === this.#textareaEl) {
+          this.#onTextareaSelectionChange();
+          return;
         }
 
         const selectionRaw = document.getSelection();
@@ -438,7 +429,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         }
 
         this.#reservedSelections = undefined;
-        this.#textareaEl?.focus();
+        this.#focusTextarea();
       }),
 
       // Selection.getComposedRanges currently does not preserve the drag direction.
@@ -466,9 +457,17 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
         this.#syncTextareaState();
       }),
+
+      // Chrome-based browsers ignore selectionchange on textarea elements.
+      addEventListener(this.#textareaEl, 'selectionchange', () => {
+        this.#onTextareaSelectionChange();
+      }),
     ];
   }
 
+  // Shadow DOM selection ranges do not expose direction, so track mouse
+  // movement as a workaround.
+  // See https://github.com/mfreed7/shadow-dom-selection#part-1-add-selectiongetcomposedrange-and-selectiondirection
   #computeMouseSelectionDirection(): SelectionDirection {
     const startLine = Math.ceil(this.#selectionStartY / this.#lineHeight);
     const endLine = Math.ceil(this.#selectionEndY / this.#lineHeight);
@@ -502,6 +501,25 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       lastChange === undefined
     ) {
       return;
+    }
+
+    // Invalidate layout caches touched by the edit.
+    // - line inserts/deletes shift line numbers, so clear from startLine onward
+    // - wrapped edits can change visual height, which shifts downstream line Y
+    if (lastChange.lineDelta !== 0) {
+      for (const line of this.#wrapLineOffsetsCache.keys()) {
+        if (line >= lastChange.startLine) {
+          this.#wrapLineOffsetsCache.delete(line);
+        }
+      }
+      for (const line of this.#lineYCache.keys()) {
+        if (line >= lastChange.startLine) {
+          this.#lineYCache.delete(line);
+        }
+      }
+    } else {
+      this.#wrapLineOffsetsCache.delete(lastChange.startLine);
+      this.#lineYCache.delete(lastChange.startLine);
     }
 
     const t = performance.now();
@@ -740,16 +758,19 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     const textDocument = this.#textDocument;
     const textareaEl = this.#textareaEl;
     const textareaSnapshot = this.#textareaSnapshot;
+    const selections = this.#selections;
     if (
       textDocument === undefined ||
       textareaEl === undefined ||
-      textareaSnapshot === undefined
+      textareaSnapshot === undefined ||
+      selections === undefined
     ) {
       return;
     }
     const { selectionStart, selectionEnd, value } = textareaEl;
+
+    // Text in the textarea has been changed.
     if (value !== textareaSnapshot.text) {
-      // Text in the textarea has been changed.
       const change = resolveTextareaChange(
         textareaSnapshot,
         value,
@@ -757,48 +778,76 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         selectionEnd
       );
       const lineAnnotations = this.#lineAnnotations;
-      if (this.#selections !== undefined) {
-        const { nextSelections, newLineAnnotations } =
-          applyTextChangeToSelections(
-            textDocument,
-            this.#selections,
-            change,
-            lineAnnotations
-          );
-        this.#rerender(newLineAnnotations);
-        this.#emitChange();
-        this.setSelections(nextSelections, false);
-      }
-    } else if (this.#selections !== undefined) {
-      // Selection in the textarea changed, but no text change was made.
-      if (selectionStart === selectionEnd) {
-        this.setSelections(
-          mapSelectionMove(
-            textDocument,
-            this.#selections,
-            textDocument.positionAt(textareaSnapshot.offset + selectionStart)
-          ),
-          false
+      const { nextSelections, newLineAnnotations } =
+        applyTextChangeToSelections(
+          textDocument,
+          selections,
+          change,
+          lineAnnotations
         );
-      } else {
-        const isBackward =
-          getSelectionDirectionFromTextarea(textareaEl) === DirectionBackward;
-        const anchorOffset =
-          textareaSnapshot.offset +
-          (isBackward ? selectionEnd : selectionStart);
-        const focusOffset =
-          textareaSnapshot.offset +
-          (isBackward ? selectionStart : selectionEnd);
-        this.setSelections(
-          mapSelectionRangeMove(
-            textDocument,
-            this.#selections,
-            textDocument.positionAt(anchorOffset),
-            textDocument.positionAt(focusOffset)
-          ),
-          false
-        );
-      }
+      this.#rerender(newLineAnnotations);
+      this.#emitChange();
+      this.setSelections(nextSelections, false);
+      return;
+    }
+
+    // Selection in the textarea changed, but no text change was made.
+    if (selectionStart === selectionEnd) {
+      this.setSelections(
+        mapSelectionMove(
+          textDocument,
+          selections,
+          textDocument.positionAt(textareaSnapshot.offset + selectionStart)
+        ),
+        false
+      );
+    } else {
+      const isBackward =
+        getSelectionDirectionFromTextarea(textareaEl) === DirectionBackward;
+      const anchorOffset =
+        textareaSnapshot.offset + (isBackward ? selectionEnd : selectionStart);
+      const focusOffset =
+        textareaSnapshot.offset + (isBackward ? selectionStart : selectionEnd);
+      this.setSelections(
+        mapSelectionRangeMove(
+          textDocument,
+          selections,
+          textDocument.positionAt(anchorOffset),
+          textDocument.positionAt(focusOffset)
+        ),
+        false
+      );
+    }
+  }
+
+  #focusTextarea(): void {
+    this.#shouldIgnoreSelectionChange = true;
+    this.#textareaEl?.focus();
+    setTimeout(() => {
+      this.#shouldIgnoreSelectionChange = false;
+    }, 0);
+  }
+
+  #onTextareaSelectionChange() {
+    const textareaEl = this.#textareaEl;
+    const textareaSnapshot = this.#textareaSnapshot;
+    if (
+      textareaEl === undefined ||
+      textareaSnapshot === undefined ||
+      this.#shouldIgnoreSelectionChange
+    ) {
+      return;
+    }
+
+    const { selectionStart, selectionEnd } = textareaEl;
+    if (
+      (textareaSnapshot.selectionStart !== selectionStart ||
+        textareaSnapshot.selectionEnd !== selectionEnd) &&
+      textareaSnapshot.text === textareaEl.value
+    ) {
+      textareaSnapshot.selectionStart = selectionStart;
+      textareaSnapshot.selectionEnd = selectionEnd;
+      this.#syncTextareaState();
     }
   }
 
@@ -854,7 +903,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     const cacheMap = new Map<string, HTMLElement>();
     selections.forEach((selection) => {
       if (selections.length > 1 || !isCollapsedSelection(selection)) {
-        this.#renderSelectionRange(selection, fragment, cacheMap);
+        this.#renderSelection(selection, fragment, cacheMap);
       }
       this.#renderCaret(selection, fragment, cacheMap);
     });
@@ -864,7 +913,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#selectionEls = cacheMap;
   }
 
-  #renderSelectionRange(
+  #renderSelection(
     selection: EditorSelection,
     fragment: DocumentFragment,
     cacheMap: Map<string, HTMLElement>
@@ -874,51 +923,103 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
 
     const { start, end } = selection;
-    const selectionEls = this.#selectionEls;
 
     for (let ln = start.line; ln <= end.line; ln++) {
       if (!this.#isLineVisible(ln)) {
         continue;
       }
+
       const lineText = this.#textDocument.getLineText(ln);
-      const lineLength = lineText.length;
       const startChar = ln === start.line ? start.character : 0;
-      const endChar = ln === end.line ? end.character : lineLength;
-      const spacing =
-        ln === end.line || (startChar === endChar && ln !== start.line)
-          ? 0
-          : this.#charWidth;
-      const cacheKey = `selection-${ln}-${startChar}-${endChar}`;
+      const endChar = ln === end.line ? end.character : lineText.length;
+
+      if (this.#wrap) {
+        const paddingInline = this.#charWidth; // 1ch, align to diff css: padding-inline: 1ch
+        const contentWidth = this.#getContentWidth();
+        const textWidth = 2 * paddingInline + this.#measureTextWidth(lineText);
+        if (textWidth > contentWidth) {
+          this.#renderWrappedSelection(
+            selection,
+            ln,
+            lineText,
+            startChar,
+            endChar,
+            paddingInline,
+            fragment,
+            cacheMap
+          );
+          continue;
+        }
+      }
 
       let left = 0;
       let width = 0;
-      let rangeEl: HTMLElement | undefined;
       if (startChar === endChar && startChar === 0) {
         left = this.#charWidth;
         width = ln === end.line ? 0 : this.#charWidth;
       } else {
-        left = this.#getCharX(ln, startChar);
-        width = endChar === startChar ? 0 : this.#getCharX(ln, endChar) - left;
+        left = this.#getCharX(ln, startChar)[0];
+        width =
+          endChar === startChar ? 0 : this.#getCharX(ln, endChar)[0] - left;
       }
+      this.#renderSelectionRange(
+        selection,
+        ln,
+        0,
+        startChar,
+        endChar,
+        width,
+        left,
+        fragment,
+        cacheMap
+      );
+    }
+  }
 
-      const css = `width:${width + spacing}px;transform:translateY(${this.#getLineY(ln)}px) translateX(${left}px);`;
+  // Render one selection range div for a single visual line. `applyEolSpacing`
+  // controls whether the trailing one-character "line continuation" marker is
+  // appended at the end. For wrapped logical lines this must be false on every
+  // visual segment except the last one, since an intra-line wrap is not a real
+  // newline and shouldn't visually extend past the wrapped content.
+  #renderSelectionRange(
+    selection: EditorSelection,
+    ln: number,
+    wrapLine: number,
+    startChar: number,
+    endChar: number,
+    width: number,
+    left: number,
+    fragment: DocumentFragment,
+    cacheMap: Map<string, HTMLElement>,
+    applyEolSpacing = true
+  ) {
+    const spacing =
+      !applyEolSpacing ||
+      selection.end.line === ln ||
+      (startChar === endChar && ln !== selection.start.line)
+        ? 0
+        : this.#charWidth;
+    const css = `width:${width + spacing}px;transform:translateY(${this.#getLineY(ln) + wrapLine * this.#lineHeight}px) translateX(${left}px);`;
+    const cacheKey = 'selection-range-' + css;
+    const selectionEls = this.#selectionEls;
 
-      if (selectionEls?.has(cacheKey) === true) {
-        rangeEl = selectionEls.get(cacheKey)!;
-        selectionEls.delete(cacheKey);
-        rangeEl.style.cssText = css;
-      } else {
-        for (const [key, el] of selectionEls?.entries() ?? []) {
-          if (key.startsWith(`selection-${ln}-`)) {
-            rangeEl = el;
-            selectionEls?.delete(key);
-            el.style.cssText = css;
-            break;
-          }
+    let rangeEl: HTMLElement | undefined;
+    if (selectionEls?.has(cacheKey) === true) {
+      rangeEl = selectionEls.get(cacheKey)!;
+      selectionEls.delete(cacheKey);
+    } else {
+      for (const [key, el] of selectionEls?.entries() ?? []) {
+        if (key.startsWith(`selection-${ln}-`)) {
+          rangeEl = el;
+          selectionEls?.delete(key);
+          el.style.cssText = css;
+          break;
         }
       }
+    }
 
-      rangeEl ??= createElement(
+    if (rangeEl === undefined) {
+      rangeEl = createElement(
         'div',
         {
           dataset: 'selectionRange',
@@ -926,8 +1027,99 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         },
         fragment
       );
+    } else if (rangeEl.parentElement !== this.#contentEl) {
+      fragment.appendChild(rangeEl);
+    }
 
-      cacheMap.set(cacheKey, rangeEl);
+    cacheMap.set(cacheKey, rangeEl);
+  }
+
+  // Render the selection on a wrapped logical line by splitting it into one
+  // selection-range div per visual sub-line. For each wrap segment, we compute
+  // the intersection with the line's selection range and render the slice in
+  // segment-local coordinates so left/width line up with the visually wrapped
+  // text. Zero-width slices that fall on intermediate segment boundaries are
+  // skipped to avoid duplicate markers across consecutive visual lines.
+  #renderWrappedSelection(
+    selection: EditorSelection,
+    line: number,
+    lineText: string,
+    startChar: number,
+    endChar: number,
+    paddingInline: number,
+    fragment: DocumentFragment,
+    cacheMap: Map<string, HTMLElement>
+  ) {
+    const wrapOffsets = this.#wrapLineText(line);
+    const segmentCount = wrapOffsets.length - 1;
+    const lastSegmentIndex = segmentCount - 1;
+
+    for (let w = 0; w < segmentCount; w++) {
+      const segmentStart = wrapOffsets[w];
+      const segmentEnd = wrapOffsets[w + 1];
+      const wrapStartChar = Math.max(startChar, segmentStart);
+      const wrapEndChar = Math.min(endChar, segmentEnd);
+
+      // Selection range doesn't reach this visual segment.
+      if (wrapStartChar > wrapEndChar) {
+        continue;
+      }
+
+      // Zero-width slices on segment boundaries can appear on two consecutive
+      // segments (end of one, start of the next). Only render at the natural
+      // anchor positions: the very beginning of the first visual line, or the
+      // very end of the last visual line.
+      if (wrapStartChar === wrapEndChar) {
+        const isAtLineStart = wrapStartChar === 0 && w === 0;
+        const isAtLineEnd =
+          wrapEndChar === lineText.length && w === lastSegmentIndex;
+        if (!isAtLineStart && !isAtLineEnd) {
+          continue;
+        }
+      }
+
+      let segmentLeft: number;
+      let segmentWidth: number;
+      if (wrapStartChar === 0 && wrapEndChar === 0) {
+        // Empty range pinned to line start (e.g. multi-line selection ending
+        // with end.character === 0). Mirrors the non-wrap path.
+        segmentLeft = paddingInline;
+        segmentWidth = line === selection.end.line ? 0 : paddingInline;
+      } else {
+        const prefixInSegment = lineText.slice(segmentStart, wrapStartChar);
+        const prefixAsciiWidth =
+          this.#getExpandedAsciiTextWidth(prefixInSegment);
+        segmentLeft =
+          paddingInline +
+          (prefixAsciiWidth !== -1
+            ? prefixAsciiWidth
+            : this.#measureTextWidth(prefixInSegment));
+
+        if (wrapStartChar === wrapEndChar) {
+          segmentWidth = 0;
+        } else {
+          const selectionInSegment = lineText.slice(wrapStartChar, wrapEndChar);
+          const selectionAsciiWidth =
+            this.#getExpandedAsciiTextWidth(selectionInSegment);
+          segmentWidth =
+            selectionAsciiWidth !== -1
+              ? selectionAsciiWidth
+              : this.#measureTextWidth(selectionInSegment);
+        }
+      }
+
+      this.#renderSelectionRange(
+        selection,
+        line,
+        w,
+        wrapStartChar,
+        wrapEndChar,
+        segmentWidth,
+        segmentLeft,
+        fragment,
+        cacheMap,
+        w === lastSegmentIndex
+      );
     }
   }
 
@@ -944,13 +1136,13 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     const isBackward = direction === DirectionBackward;
     const line = isBackward ? start.line : end.line;
     const character = isBackward ? start.character : end.character;
-    const left = Math.max(this.#charWidth, this.#getCharX(line, character));
+    const [left, wrapLine] = this.#getCharX(line, character);
     const caretEl = createElement(
       'div',
       {
         dataset: 'caret',
         style: {
-          transform: `translateY(${this.#getLineY(line)}px) translateX(${left - 1}px)`,
+          transform: `translateY(${this.#getLineY(line) + wrapLine * this.#lineHeight}px) translateX(${left - 1}px)`,
         },
       },
       fragment
@@ -1202,47 +1394,78 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       return cachedY;
     }
 
+    // cold(slow) path: measure line top position from DOM causes reflow
     const y = this.#getLineElement(line)?.offsetTop ?? 0;
     this.#lineYCache.set(line, y);
     return y;
   }
 
-  // get character left position in line
-  #getCharX(line: number, character: number) {
+  // Return the visual position for a character. Wrapped lines include the
+  // visual line index so carets can be placed on the correct row.
+  #getCharX(line: number, char: number): [x: number, wrapLine: number] {
     if (
       this.#lastCharX !== undefined &&
       this.#lastCharX[0] === line &&
-      this.#lastCharX[1] === character
+      this.#lastCharX[1] === char
     ) {
-      return this.#lastCharX[2];
+      return [this.#lastCharX[2], this.#lastCharX[3]];
     }
 
     const lineText = this.#textDocument?.getLineText(line);
-    const paddingInline = this.#charWidth; // align to diff css: padding-inline: 1ch
-    if (lineText === undefined || lineText.length === 0 || character <= 0) {
-      return paddingInline;
+    const paddingInline = this.#charWidth;
+    if (lineText === undefined || lineText.length === 0 || char <= 0) {
+      return [paddingInline, 0];
     }
 
-    const boundedCharacter = Math.min(character, lineText.length);
+    const boundedCharacter = Math.min(char, lineText.length);
     const textBeforeCharacter = lineText.slice(0, boundedCharacter);
     const asciiWidth = this.#getExpandedAsciiTextWidth(textBeforeCharacter);
 
     let left = 0;
-    if (asciiWidth !== -1 || this.#file?.options.overflow === 'wrap') {
+    let wrapLine = 0;
+    if (asciiWidth !== -1) {
       left = paddingInline + asciiWidth;
     } else {
       left = paddingInline + this.#measureTextWidth(textBeforeCharacter);
     }
 
-    if (this.#lastCharX !== undefined) {
-      this.#lastCharX[0] = line;
-      this.#lastCharX[1] = character;
-      this.#lastCharX[2] = left;
-    } else {
-      this.#lastCharX = [line, character, left];
+    if (this.#wrap) {
+      const contentWidth = this.#getContentWidth();
+      const width = 2 * paddingInline + this.#measureTextWidth(lineText);
+      if (width > contentWidth) {
+        const wrapOffsets = this.#wrapLineText(line);
+        for (let w = 0; w + 1 < wrapOffsets.length; w++) {
+          const segmentStart = wrapOffsets[w];
+          const segmentEnd = wrapOffsets[w + 1];
+          if (boundedCharacter <= segmentEnd) {
+            wrapLine = w;
+            const prefixInSegment = lineText.slice(
+              segmentStart,
+              boundedCharacter
+            );
+            const segmentAsciiWidth =
+              this.#getExpandedAsciiTextWidth(prefixInSegment);
+            if (segmentAsciiWidth !== -1) {
+              left = paddingInline + segmentAsciiWidth;
+            } else {
+              left = paddingInline + this.#measureTextWidth(prefixInSegment);
+            }
+            break;
+          }
+        }
+      }
     }
 
-    return left;
+    if (this.#lastCharX !== undefined) {
+      this.#lastCharX[0] = line;
+      this.#lastCharX[1] = char;
+      this.#lastCharX[2] = left;
+      this.#lastCharX[3] = wrapLine;
+    } else {
+      this.#lastCharX = [line, char, left, wrapLine];
+    }
+
+    return [left, wrapLine];
   }
 
   #getExpandedAsciiTextWidth(text: string) {
@@ -1265,6 +1488,129 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       ' '.repeat(this.#tabSize)
     );
     return this.#measureCtx.measureText(textWithExpandedTabs).width;
+  }
+
+  #getContentWidth() {
+    const diffsColumnContentWidth =
+      this.#contentEl?.parentElement?.style.getPropertyValue(
+        '--diffs-column-content-width'
+      ) ?? '';
+    if (
+      diffsColumnContentWidth.length > 2 &&
+      diffsColumnContentWidth.endsWith('px')
+    ) {
+      return Number(diffsColumnContentWidth.slice(0, -2));
+    }
+    return this.#contentEl?.offsetWidth ?? 0;
+  }
+
+  // Compute how a logical line of text is broken into visual lines when line
+  // wrapping is enabled.
+  #wrapLineText(line: number): Uint32Array {
+    const cachedOffsets = this.#wrapLineOffsetsCache.get(line);
+    if (cachedOffsets !== undefined) {
+      return cachedOffsets;
+    }
+
+    const lineText = this.#textDocument?.getLineText(line);
+    if (lineText === undefined || lineText.length === 0) {
+      const offsets = new Uint32Array([0]);
+      this.#wrapLineOffsetsCache.set(line, offsets);
+      return offsets;
+    }
+
+    const div = createElement(
+      'div',
+      {
+        style: {
+          position: 'absolute',
+          top: '0',
+          left: '0',
+          width: '100%',
+          visibility: 'hidden',
+          pointerEvents: 'none',
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+          paddingInline: '1ch',
+          font: 'inherit',
+        },
+        textContent: lineText,
+      },
+      this.#contentEl
+    );
+    const textNode = div.firstChild as Text;
+    const range = document.createRange();
+    const starts: number[] = [];
+    const ends: number[] = [];
+    const hasNonWhitespace: boolean[] = [];
+
+    try {
+      let currentHasNonWhitespace = false;
+      let lastTop = Number.NEGATIVE_INFINITY;
+
+      for (let i = 0; i < lineText.length; i++) {
+        range.setStart(textNode, i);
+        range.setEnd(textNode, i + 1);
+
+        // A new visual line starts whenever the character's top edge moves
+        // below the previous character's top edge.
+        const { top } = range.getBoundingClientRect();
+        if (top > lastTop) {
+          if (starts.length > 0) {
+            ends.push(i);
+            hasNonWhitespace.push(currentHasNonWhitespace);
+          }
+          starts.push(i);
+          currentHasNonWhitespace = false;
+          lastTop = top;
+        }
+
+        const ch = lineText.charAt(i);
+        if (ch !== ' ' && ch !== '\t') {
+          currentHasNonWhitespace = true;
+        }
+      }
+
+      ends.push(lineText.length);
+      hasNonWhitespace.push(currentHasNonWhitespace);
+
+      // The browser treats leading indentation before an unbreakable token as
+      // its own visual line (the indentation sits on line N, the broken word
+      // begins on line N+1). For wrap-line accounting we want the indentation
+      // to stay attached to the content it precedes, so merge any
+      // whitespace-only line into the line that follows it.
+      const mergedStarts: number[] = [];
+      const mergedEnds: number[] = [];
+      const mergedWhitespaceOnly: boolean[] = [];
+      for (let i = 0; i < starts.length; i++) {
+        const start = starts[i];
+        const end = ends[i];
+        const isWhitespaceOnly = !hasNonWhitespace[i] && end > start;
+
+        const prevIndex = mergedStarts.length - 1;
+        if (prevIndex >= 0) {
+          if (mergedWhitespaceOnly[prevIndex] === true) {
+            mergedEnds[prevIndex] = end;
+            mergedWhitespaceOnly[prevIndex] = isWhitespaceOnly;
+            continue;
+          }
+        }
+
+        mergedStarts.push(start);
+        mergedEnds.push(end);
+        mergedWhitespaceOnly.push(isWhitespaceOnly);
+      }
+
+      const offsets = new Uint32Array(mergedStarts.length + 1);
+      for (let i = 0; i < mergedStarts.length; i++) {
+        offsets[i] = mergedStarts[i]!;
+      }
+      offsets[mergedStarts.length] = lineText.length;
+      this.#wrapLineOffsetsCache.set(line, offsets);
+      return offsets;
+    } finally {
+      div.remove();
+    }
   }
 
   // check if the web selection belongs to editor
