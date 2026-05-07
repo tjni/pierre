@@ -516,8 +516,14 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         }
       }
     } else {
-      this.#wrapLineOffsetsCache.delete(lastChange.startLine);
-      this.#lineYCache.delete(lastChange.startLine);
+      for (
+        let line = lastChange.startLine;
+        line <= lastChange.endLine;
+        line++
+      ) {
+        this.#wrapLineOffsetsCache.delete(line);
+        this.#lineYCache.delete(line);
+      }
     }
 
     const t = performance.now();
