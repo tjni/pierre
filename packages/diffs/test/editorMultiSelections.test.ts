@@ -146,6 +146,46 @@ describe('mapSelectionTextChange', () => {
     expect(nextSelections).toEqual([createSelection(1, 0, 1, 0)]);
   });
 
+  test('copies leading indentation onto the new line after Enter', () => {
+    const textDocument = new TextDocument('inmemory://1', '  foo\nbar');
+    const selections = [createSelection(0, 5, 0, 5)];
+    const { nextSelections } = applyTextChangeToSelections(
+      textDocument,
+      selections,
+      {
+        start: 5,
+        end: 5,
+        text: '\n',
+      }
+    );
+
+    expect(textDocument.getText()).toBe('  foo\n  \nbar');
+    expect(nextSelections).toEqual([createSelection(1, 2, 1, 2)]);
+  });
+
+  test('uses each line’s indent when inserting a newline at multiple carets', () => {
+    const textDocument = new TextDocument('inmemory://1', '  a\n\tb');
+    const selections = [
+      createSelection(0, 3, 0, 3),
+      createSelection(1, 2, 1, 2),
+    ];
+    const { nextSelections } = applyTextChangeToSelections(
+      textDocument,
+      selections,
+      {
+        start: 6,
+        end: 6,
+        text: '\n',
+      }
+    );
+
+    expect(textDocument.getText()).toBe('  a\n  \n\tb\n\t');
+    expect(nextSelections).toEqual([
+      createSelection(1, 2, 1, 2),
+      createSelection(3, 1, 3, 1),
+    ]);
+  });
+
   test('moves the caret to the previous line end after deleting a line break', () => {
     const textDocument = new TextDocument('inmemory://1', 'foo\n\nbar');
     const selections = [createSelection(1, 0, 1, 0)];

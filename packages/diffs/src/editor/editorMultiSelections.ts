@@ -133,21 +133,26 @@ export function applyTextChangeToSelections<LAnnotation>(
     if (mergedGroup === undefined) {
       return;
     }
+    const newText = expandSingleNewlineInsert(
+      textDocument,
+      change.text,
+      mergedGroup.start
+    );
     edits.push({
       range: {
         start: textDocument.positionAt(mergedGroup.start),
         end: textDocument.positionAt(mergedGroup.end),
       },
-      newText: change.text,
+      newText,
     });
     const nextOffsets: [number, number] = [
-      mergedGroup.start + offsetDelta + change.text.length,
-      mergedGroup.start + offsetDelta + change.text.length,
+      mergedGroup.start + offsetDelta + newText.length,
+      mergedGroup.start + offsetDelta + newText.length,
     ];
     for (const index of mergedGroup.indices) {
       nextSelectionOffsets[index] = nextOffsets;
     }
-    offsetDelta += change.text.length - (mergedGroup.end - mergedGroup.start);
+    offsetDelta += newText.length - (mergedGroup.end - mergedGroup.start);
     mergedGroup = undefined;
   };
   for (const entry of ordered) {
@@ -229,16 +234,21 @@ export function applyTextReplaceToSelections<LAnnotation>(
       throw new Error('Overlapping multi-selection edits are not supported');
     }
     previousEditEnd = entry.end;
+    const newText = expandSingleNewlineInsert(
+      textDocument,
+      entry.text,
+      entry.start
+    );
     edits.push({
       range: {
         start: textDocument.positionAt(entry.start),
         end: textDocument.positionAt(entry.end),
       },
-      newText: entry.text,
+      newText,
     });
     nextSelectionOffsets[entry.index] =
-      entry.start + offsetDelta + entry.text.length;
-    offsetDelta += entry.text.length - (entry.end - entry.start);
+      entry.start + offsetDelta + newText.length;
+    offsetDelta += newText.length - (entry.end - entry.start);
   }
   textDocument.applyEdits(edits, true, selections, undefined, lineAnnotations);
   const nextSelections = nextSelectionOffsets.map((offset) =>
@@ -289,4 +299,28 @@ function getSelectionAnchorAndFocusOffsets(
     textDocument.offsetAt(isBackward ? selection.end : selection.start),
     textDocument.offsetAt(isBackward ? selection.start : selection.end),
   ];
+}
+
+/** When the user inserts a lone line break, copy the current line's indentation onto the new line. */
+function expandSingleNewlineInsert(
+  textDocument: TextDocument,
+  insertText: string,
+  insertStartOffset: number
+): string {
+  if (insertText !== '\n' && insertText !== '\r\n') {
+    return insertText;
+  }
+  const line = textDocument.positionAt(insertStartOffset).line;
+  const lineText = textDocument.getLineText(line);
+  let indentLen = 0;
+  for (; indentLen < lineText.length; indentLen++) {
+    const ch = lineText[indentLen];
+    if (ch !== ' ' && ch !== '\t') {
+      break;
+    }
+  }
+  if (indentLen === 0) {
+    return insertText;
+  }
+  return '\n' + lineText.slice(0, indentLen);
 }
