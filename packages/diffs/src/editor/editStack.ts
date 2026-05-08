@@ -1,3 +1,4 @@
+import type { LineAnnotation } from '../types';
 import type { EditorSelection } from './editorSelection';
 import type { ResolvedTextEdit } from './textDocument';
 
@@ -8,7 +9,7 @@ interface EditSource {
   getTextSlice(start: number, end: number): string;
 }
 
-interface EditStackEntry {
+interface EditStackEntry<LAnnotation> {
   /** Forward offset edits from the entry's base text to its final text. */
   forwardEdits: ResolvedTextEdit[];
   /** Inverse offset edits from the entry's final text back to its base text. */
@@ -22,18 +23,18 @@ interface EditStackEntry {
   /** Selection after the transaction (restored on redo). */
   selectionsAfter?: EditorSelection[];
   /** Line annotations before the transaction (restored on undo). */
-  lineAnnotationsBefore?: unknown[];
+  lineAnnotationsBefore?: LineAnnotation<LAnnotation>[];
   /** Line annotations after the transaction (restored on redo). */
-  lineAnnotationsAfter?: unknown[];
+  lineAnnotationsAfter?: LineAnnotation<LAnnotation>[];
 }
 
 export interface EditStackOptions {
   maxEntries?: number;
 }
 
-export class EditStack {
-  #undoStack: EditStackEntry[] = [];
-  #redoStack: EditStackEntry[] = [];
+export class EditStack<LAnnotation> {
+  #undoStack: EditStackEntry<LAnnotation>[] = [];
+  #redoStack: EditStackEntry<LAnnotation>[] = [];
   #maxEntries: number;
 
   constructor(options?: EditStackOptions) {
@@ -63,8 +64,8 @@ export class EditStack {
     versionAfter: number,
     selectionsBefore: EditorSelection[],
     selectionsAfter?: EditorSelection[],
-    lineAnnotationsBefore?: unknown[],
-    lineAnnotationsAfter?: unknown[]
+    lineAnnotationsBefore?: LineAnnotation<LAnnotation>[],
+    lineAnnotationsAfter?: LineAnnotation<LAnnotation>[]
   ): void {
     const forwardEdits = [...resolvedEdits].sort((a, b) => a.start - b.start);
     const inverseEdits = buildInverseOffsetEdits(source, forwardEdits);
@@ -95,7 +96,9 @@ export class EditStack {
     }
   }
 
-  setLastUndoLineAnnotationsAfter(lineAnnotations: unknown[]): void {
+  setLastUndoLineAnnotationsAfter(
+    lineAnnotations: LineAnnotation<LAnnotation>[]
+  ): void {
     const lastEntry = this.#undoStack[this.#undoStack.length - 1];
     if (lastEntry !== undefined) {
       lastEntry.lineAnnotationsAfter = lineAnnotations.slice();
@@ -103,7 +106,7 @@ export class EditStack {
   }
 
   /** Moves the latest undo entry to the redo stack and returns it, or `undefined` if empty. */
-  popUndoToRedo(): EditStackEntry | void {
+  popUndoToRedo(): EditStackEntry<LAnnotation> | void {
     const entry = this.#undoStack.pop();
     if (entry !== undefined) {
       this.#redoStack.push(entry);
@@ -112,7 +115,7 @@ export class EditStack {
   }
 
   /** Moves the latest redo entry back to the undo stack and returns it, or `undefined` if empty. */
-  popRedoToUndo(): EditStackEntry | void {
+  popRedoToUndo(): EditStackEntry<LAnnotation> | void {
     const entry = this.#redoStack.pop();
     if (entry !== undefined) {
       this.#undoStack.push(entry);

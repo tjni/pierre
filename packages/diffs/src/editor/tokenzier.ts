@@ -15,7 +15,7 @@ import type { TextDocument } from './textDocument';
 export interface BackgroundTokenizerOptions {
   grammar: IGrammar;
   colorMap: { dark: string[]; light: string[] };
-  textDocument: TextDocument;
+  textDocument: TextDocument<unknown>;
   onTokenize: (result: { lines: Map<number, Array<HighlightedToken>> }) => void;
   linesPreTokenize?: number; // default to 50
 }
@@ -24,7 +24,7 @@ export interface BackgroundTokenizerOptions {
 export class BackgroundTokenizer {
   #grammar: IGrammar;
   #colorMap: { dark: string[]; light: string[] };
-  #textDocument: TextDocument;
+  #textDocument: TextDocument<unknown>;
   #messageKey: string;
   #onMessage: (event: MessageEvent) => void;
   #onTokenize: (result: {

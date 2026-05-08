@@ -1,3 +1,4 @@
+import type { LineAnnotation } from '../types';
 import { type EditorSelection } from './editorSelection';
 import { EditStack } from './editStack';
 import { PieceTable } from './pieceTable';
@@ -106,20 +107,19 @@ export interface TextDocumentChange {
 /**
  * A vscode-languageserver-textdocument compatible text document.
  */
-export class TextDocument {
+export class TextDocument<LAnnotation> {
   #uri: string;
   #languageId: string;
   #version: number;
   #pieceTable: PieceTable;
-  #editStack: EditStack;
-  #lastChange?: TextDocumentChange;
+  #editStack: EditStack<LAnnotation>;
 
   constructor(
     uri: string,
     text: string,
     languageId = 'plaintext',
     version = 0,
-    editStack: EditStack = new EditStack()
+    editStack: EditStack<LAnnotation> = new EditStack()
   ) {
     this.#uri = new URL(uri, 'file://').toString();
     this.#languageId = languageId;
@@ -142,10 +142,6 @@ export class TextDocument {
 
   get lineCount(): number {
     return this.#pieceTable.lineCount;
-  }
-
-  get lastChange(): TextDocumentChange | undefined {
-    return this.#lastChange;
   }
 
   get canUndo(): boolean {
@@ -192,9 +188,9 @@ export class TextDocument {
     updateHistory = false,
     selectionsBefore?: EditorSelection[],
     selectionsAfter?: EditorSelection[],
-    lineAnnotationsBefore?: unknown[],
-    lineAnnotationsAfter?: unknown[]
-  ): void {
+    lineAnnotationsBefore?: LineAnnotation<LAnnotation>[],
+    lineAnnotationsAfter?: LineAnnotation<LAnnotation>[]
+  ): TextDocumentChange | undefined {
     if (edits.length === 0) {
       return;
     }
@@ -213,45 +209,55 @@ export class TextDocument {
         lineAnnotationsAfter
       );
     }
-    this.#lastChange = this.#applyResolvedEdits(resolvedEdits);
     this.#version++;
+    return this.#applyResolvedEdits(resolvedEdits);
   }
 
   setLastUndoSelectionsAfter(selections: EditorSelection[]): void {
     this.#editStack.setLastUndoSelectionsAfter(selections);
   }
 
-  setLastUndoLineAnnotationsAfter(lineAnnotations: unknown[]): void {
+  setLastUndoLineAnnotationsAfter(
+    lineAnnotations: LineAnnotation<LAnnotation>[]
+  ): void {
     this.#editStack.setLastUndoLineAnnotationsAfter(lineAnnotations);
   }
 
   undo():
-    | { selections?: EditorSelection[]; lineAnnotations?: unknown[] }
+    | {
+        change?: TextDocumentChange;
+        selections: EditorSelection[];
+        lineAnnotations?: LineAnnotation<LAnnotation>[];
+      }
     | undefined {
     const entry = this.#editStack.popUndoToRedo();
     if (entry === undefined) {
-      this.#lastChange = undefined;
       return undefined;
     }
-    this.#lastChange = this.#applyResolvedEdits(entry.inverseEdits);
+    const change = this.#applyResolvedEdits(entry.inverseEdits);
     this.#version = entry.versionBefore;
     return {
+      change,
       selections: cloneSelections(entry.selectionsBefore),
       lineAnnotations: entry.lineAnnotationsBefore?.slice(),
     };
   }
 
   redo():
-    | { selections?: EditorSelection[]; lineAnnotations?: unknown[] }
+    | {
+        change?: TextDocumentChange;
+        selections?: EditorSelection[];
+        lineAnnotations?: LineAnnotation<LAnnotation>[];
+      }
     | undefined {
     const entry = this.#editStack.popRedoToUndo();
     if (entry === undefined) {
-      this.#lastChange = undefined;
       return undefined;
     }
-    this.#lastChange = this.#applyResolvedEdits(entry.forwardEdits);
+    const change = this.#applyResolvedEdits(entry.forwardEdits);
     this.#version = entry.versionAfter;
     return {
+      change,
       selections:
         entry.selectionsAfter !== undefined
           ? cloneSelections(entry.selectionsAfter)
@@ -291,7 +297,7 @@ export class TextDocument {
       this.#pieceTable.insert(edit.text, edit.start);
     }
     const lineCount = this.#pieceTable.lineCount;
-    const change = {
+    const change: TextDocumentChange = {
       startLine: changedLineRange.startLine,
       endLine: Math.min(changedLineRange.endLine, Math.max(0, lineCount - 1)),
       previousLineCount,
@@ -301,7 +307,7 @@ export class TextDocument {
     Object.defineProperty(change, 'startCharacter', {
       value: startPosition.character,
     });
-    return change as TextDocumentChange;
+    return change;
   }
 
   #computeChangedLineRange(edits: ResolvedTextEdit[]): {

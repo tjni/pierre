@@ -18,7 +18,6 @@ import {
   type SelectionDirection,
 } from '../src/editor/editorSelection';
 import { TextDocument } from '../src/editor/textDocument';
-import type { LineAnnotation } from '../src/types';
 
 type MockNode = {
   nodeType: number;
@@ -735,36 +734,6 @@ describe('applyTextReplaceToSelections', () => {
       createSelection(1, 2, 1, 2),
       createSelection(2, 2, 2, 2),
     ]);
-  });
-
-  test('updates line annotations after replacements that insert lines', () => {
-    const textDocument = new TextDocument('inmemory://1', 'x\ny\nz');
-    const selections = [createSelection(0, 1, 0, 1)];
-    const annotations: LineAnnotation<string>[] = [
-      { lineNumber: 1, metadata: 'x' },
-      { lineNumber: 2, metadata: 'y' },
-    ];
-
-    const { newLineAnnotations } = applyTextReplaceToSelections(
-      textDocument,
-      selections,
-      ['\ninserted'],
-      annotations
-    );
-
-    expect(textDocument.getText()).toBe('x\ninserted\ny\nz');
-    expect(newLineAnnotations).toEqual([
-      { lineNumber: 1, metadata: 'x' },
-      { lineNumber: 3, metadata: 'y' },
-    ]);
-    expect(textDocument.undo()).toEqual({
-      selections,
-      lineAnnotations: annotations,
-    });
-    expect(textDocument.redo()).toEqual({
-      selections: [createSelection(1, 8, 1, 8)],
-      lineAnnotations: newLineAnnotations,
-    });
   });
 });
 

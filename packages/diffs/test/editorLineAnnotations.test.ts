@@ -13,7 +13,7 @@ describe('applyDocumentChangeToLineAnnotations', () => {
       { lineNumber: 3, metadata: 'three' },
     ];
 
-    textDocument.applyEdits([
+    const change = textDocument.applyEdits([
       {
         range: {
           start: { line: 1, character: 0 },
@@ -23,12 +23,7 @@ describe('applyDocumentChangeToLineAnnotations', () => {
       },
     ]);
 
-    expect(
-      applyDocumentChangeToLineAnnotations(
-        textDocument.lastChange!,
-        annotations
-      )
-    ).toEqual([
+    expect(applyDocumentChangeToLineAnnotations(change!, annotations)).toEqual([
       { lineNumber: 1, metadata: 'one' },
       { lineNumber: 2, metadata: 'three' },
     ]);
@@ -42,7 +37,7 @@ describe('applyDocumentChangeToLineAnnotations', () => {
       { lineNumber: 3, metadata: 'three' },
     ];
 
-    textDocument.applyEdits([
+    const change = textDocument.applyEdits([
       {
         range: {
           start: { line: 1, character: 0 },
@@ -52,12 +47,7 @@ describe('applyDocumentChangeToLineAnnotations', () => {
       },
     ]);
 
-    expect(
-      applyDocumentChangeToLineAnnotations(
-        textDocument.lastChange!,
-        annotations
-      )
-    ).toEqual([
+    expect(applyDocumentChangeToLineAnnotations(change!, annotations)).toEqual([
       { lineNumber: 1, metadata: 'one' },
       { lineNumber: 3, metadata: 'two' },
       { lineNumber: 4, metadata: 'three' },
@@ -70,7 +60,7 @@ describe('applyDocumentChangeToLineAnnotations', () => {
       { lineNumber: 1, metadata: 'one' },
     ];
 
-    textDocument.applyEdits([
+    const change = textDocument.applyEdits([
       {
         range: {
           start: { line: 2, character: 0 },
@@ -80,11 +70,8 @@ describe('applyDocumentChangeToLineAnnotations', () => {
       },
     ]);
 
-    expect(
-      applyDocumentChangeToLineAnnotations(
-        textDocument.lastChange!,
-        annotations
-      )
-    ).toBe(undefined);
+    expect(applyDocumentChangeToLineAnnotations(change!, annotations)).toBe(
+      undefined
+    );
   });
 });

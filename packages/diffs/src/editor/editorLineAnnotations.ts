@@ -4,27 +4,27 @@ import type { TextDocumentChange } from './textDocument';
 // Updates 1-based line annotations after the document has applied an edit,
 // returning undefined when no annotation moved or was deleted.
 export function applyDocumentChangeToLineAnnotations<T>(
-  lastChange: TextDocumentChange,
+  change: TextDocumentChange,
   lineAnnotations: readonly LineAnnotation<T>[]
 ): LineAnnotation<T>[] | undefined {
-  if (lastChange.lineDelta === 0) {
+  if (change.lineDelta === 0) {
     return undefined;
   }
 
-  const startCharacter = lastChange.startCharacter ?? 0;
-  const removedLineCount = Math.max(0, -lastChange.lineDelta);
+  const startCharacter = change.startCharacter ?? 0;
+  const removedLineCount = Math.max(0, -change.lineDelta);
   const deletedStartLine =
     removedLineCount === 0
       ? undefined
-      : lastChange.startLine + (startCharacter === 0 ? 0 : 1);
+      : change.startLine + (startCharacter === 0 ? 0 : 1);
   const deletedEndLine =
     deletedStartLine === undefined
       ? undefined
       : deletedStartLine + removedLineCount;
   const shiftFromLine =
     removedLineCount > 0
-      ? lastChange.startLine + removedLineCount
-      : lastChange.startLine + (startCharacter === 0 ? 0 : 1);
+      ? change.startLine + removedLineCount
+      : change.startLine + (startCharacter === 0 ? 0 : 1);
   const nextLineAnnotations: LineAnnotation<T>[] = [];
   let changed = false;
 
@@ -43,7 +43,7 @@ export function applyDocumentChangeToLineAnnotations<T>(
     if (line >= shiftFromLine) {
       nextLineAnnotations.push({
         ...annotation,
-        lineNumber: line + lastChange.lineDelta + 1,
+        lineNumber: line + change.lineDelta + 1,
       });
       changed = true;
       continue;

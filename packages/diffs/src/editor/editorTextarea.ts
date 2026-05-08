@@ -17,7 +17,7 @@ export interface TextareaSnapshot {
 }
 
 export function createTextareaSnapshot(
-  textDocument: TextDocument,
+  textDocument: TextDocument<unknown>,
   primarySelection: EditorSelection
 ): TextareaSnapshot {
   const startLine = Math.max(0, primarySelection.start.line - 1);
@@ -181,7 +181,7 @@ export function toTextareaSelectionDirection(
 // Aligns a column with `TextDocument.offsetAt` / `positionAt` so textarea indices match backing text
 // (DOM may report past end for empty lines that render a placeholder space).
 function normalizeCharacterForDocument(
-  textDocument: TextDocument,
+  textDocument: TextDocument<unknown>,
   position: Position
 ): number {
   return textDocument.positionAt(textDocument.offsetAt(position)).character;

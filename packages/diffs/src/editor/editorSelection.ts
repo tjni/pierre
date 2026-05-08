@@ -1,10 +1,10 @@
 import type { LineAnnotation } from '../types';
-import { applyDocumentChangeToLineAnnotations } from './editorLineAnnotations';
 import type {
   Position,
   Range,
   ResolvedTextEdit,
   TextDocument,
+  TextDocumentChange,
   TextEdit,
 } from './textDocument';
 
@@ -44,7 +44,7 @@ export function convertSelection(
  * Resolves the indent edits for a selection.
  */
 export function resolveIndentEdits(
-  textDocument: TextDocument,
+  textDocument: TextDocument<unknown>,
   selection: EditorSelection,
   tabSize: number,
   outdent: boolean
@@ -114,7 +114,7 @@ export function resolveIndentEdits(
  * Maps a selection move to a new selection.
  */
 export function mapSelectionMove(
-  textDocument: TextDocument,
+  textDocument: TextDocument<unknown>,
   selections: readonly EditorSelection[],
   nextPosition: Position
 ): EditorSelection[] {
@@ -158,7 +158,7 @@ export function mapSelectionMove(
  * Maps a selection range move to a new selection.
  */
 export function mapSelectionRangeMove(
-  textDocument: TextDocument,
+  textDocument: TextDocument<unknown>,
   selections: readonly EditorSelection[],
   nextAnchor: Position,
   nextFocus: Position
@@ -188,18 +188,18 @@ export function mapSelectionRangeMove(
  * Applies a text change to a selection.
  */
 export function applyTextChangeToSelections<LAnnotation>(
-  textDocument: TextDocument,
+  textDocument: TextDocument<LAnnotation>,
   selections: EditorSelection[],
-  change: ResolvedTextEdit,
+  edit: ResolvedTextEdit,
   lineAnnotations?: LineAnnotation<LAnnotation>[],
   tabSize = 2
 ): {
   nextSelections: EditorSelection[];
-  newLineAnnotations: LineAnnotation<LAnnotation>[] | undefined;
+  change?: TextDocumentChange;
 } {
   const primarySelection = selections[selections.length - 1];
   if (primarySelection === undefined) {
-    return { nextSelections: [], newLineAnnotations: undefined };
+    return { nextSelections: [] };
   }
   const primaryStartOffset = textDocument.offsetAt(primarySelection.start);
   const primaryEndOffset = textDocument.offsetAt(primarySelection.end);
@@ -224,7 +224,7 @@ export function applyTextChangeToSelections<LAnnotation>(
     });
   const adjustedChange = normalizeLeadingIndentDeleteChange(
     textDocument,
-    change,
+    edit,
     primarySelection,
     tabSize
   );
@@ -288,37 +288,32 @@ export function applyTextChangeToSelections<LAnnotation>(
     };
   }
   finalizeMergedGroup();
-  textDocument.applyEdits(edits, true, selections, undefined, lineAnnotations);
+  const change = textDocument.applyEdits(
+    edits,
+    true,
+    selections,
+    undefined,
+    lineAnnotations
+  );
   const nextSelections = nextSelectionOffsets.map((offsets) =>
     createSelectionFromAnchorAndFocusOffsets(textDocument, ...offsets)
   );
   textDocument.setLastUndoSelectionsAfter(nextSelections);
 
-  let newLineAnnotations: LineAnnotation<LAnnotation>[] | undefined;
-  if (lineAnnotations !== undefined && textDocument.lastChange !== undefined) {
-    newLineAnnotations = applyDocumentChangeToLineAnnotations<LAnnotation>(
-      textDocument.lastChange,
-      lineAnnotations
-    );
-    if (newLineAnnotations !== undefined) {
-      textDocument.setLastUndoLineAnnotationsAfter(newLineAnnotations);
-    }
-  }
-
-  return { nextSelections, newLineAnnotations };
+  return { nextSelections, change };
 }
 
 /**
  * Applies a text replace to a selection.
  */
 export function applyTextReplaceToSelections<LAnnotation>(
-  textDocument: TextDocument,
+  textDocument: TextDocument<LAnnotation>,
   selections: EditorSelection[],
   texts: readonly string[],
   lineAnnotations?: LineAnnotation<LAnnotation>[]
 ): {
   nextSelections: EditorSelection[];
-  newLineAnnotations: LineAnnotation<LAnnotation>[] | undefined;
+  change?: TextDocumentChange;
 } {
   if (selections.length !== texts.length) {
     throw new Error(
@@ -370,24 +365,18 @@ export function applyTextReplaceToSelections<LAnnotation>(
       entry.start + offsetDelta + newText.length;
     offsetDelta += newText.length - (entry.end - entry.start);
   }
-  textDocument.applyEdits(edits, true, selections, undefined, lineAnnotations);
+  const change = textDocument.applyEdits(
+    edits,
+    true,
+    selections,
+    undefined,
+    lineAnnotations
+  );
   const nextSelections = nextSelectionOffsets.map((offset) =>
     createSelectionFromAnchorAndFocusOffsets(textDocument, offset, offset)
   );
   textDocument.setLastUndoSelectionsAfter(nextSelections);
-
-  let newLineAnnotations: LineAnnotation<LAnnotation>[] | undefined;
-  if (lineAnnotations !== undefined && textDocument.lastChange !== undefined) {
-    newLineAnnotations = applyDocumentChangeToLineAnnotations<LAnnotation>(
-      textDocument.lastChange,
-      lineAnnotations
-    );
-    if (newLineAnnotations !== undefined) {
-      textDocument.setLastUndoLineAnnotationsAfter(newLineAnnotations);
-    }
-  }
-
-  return { nextSelections, newLineAnnotations };
+  return { nextSelections, change };
 }
 
 /**
@@ -464,7 +453,7 @@ export function comparePosition(a: Position, b: Position): number {
  * Creates a selection from anchor and focus offsets.
  */
 export function createSelectionFromAnchorAndFocusOffsets(
-  textDocument: TextDocument,
+  textDocument: TextDocument<unknown>,
   anchorOffset: number,
   focusOffset: number
 ): EditorSelection {
@@ -487,7 +476,7 @@ export function createSelectionFromAnchorAndFocusOffsets(
  * Extends a selection.
  */
 export function extendSelections(
-  textDocument: TextDocument,
+  textDocument: TextDocument<unknown>,
   selections: readonly EditorSelection[]
 ): EditorSelection[] | undefined {
   if (selections.length === 0) {
@@ -538,7 +527,7 @@ export function extendSelections(
 
 // Expands a zero-width selection to the word-like segment that contains the caret.
 function expandCollapsedSelectionToWord(
-  textDocument: TextDocument,
+  textDocument: TextDocument<unknown>,
   selection: EditorSelection
 ): EditorSelection | undefined {
   const { line, character } = selection.start;
@@ -640,7 +629,7 @@ function findNextNonOverlappingSubstring(
 }
 
 function getSelectionAnchorAndFocusOffsets(
-  textDocument: TextDocument,
+  textDocument: TextDocument<unknown>,
   selection: EditorSelection
 ): [anchorOffset: number, focusOffset: number] {
   const isBackward = selection.direction === DirectionBackward;
@@ -652,7 +641,7 @@ function getSelectionAnchorAndFocusOffsets(
 
 /** When the user inserts a lone line break, copy the current line's indentation onto the new line. */
 function expandSingleNewlineInsert(
-  textDocument: TextDocument,
+  textDocument: TextDocument<unknown>,
   insertText: string,
   insertStartOffset: number
 ): string {
@@ -677,7 +666,7 @@ function expandSingleNewlineInsert(
 // Expands a backspace over leading spaces into one soft-tab width so mixed hard/soft indentation
 // behaves like the explicit outdent command.
 function normalizeLeadingIndentDeleteChange(
-  textDocument: TextDocument,
+  textDocument: TextDocument<unknown>,
   change: ResolvedTextEdit,
   primarySelection: EditorSelection,
   tabSize: number

@@ -104,7 +104,7 @@ describe('TextDocument', () => {
 
   test('applyEdits single replacement', () => {
     const d = doc('hello world');
-    d.applyEdits([
+    const change = d.applyEdits([
       {
         range: {
           start: { line: 0, character: 6 },
@@ -113,7 +113,6 @@ describe('TextDocument', () => {
         newText: 'you',
       },
     ]);
-    const change = d.lastChange;
     expect(d.getText()).toBe('hello you');
     expect(change).toEqual({
       startLine: 0,
@@ -162,7 +161,7 @@ describe('TextDocument', () => {
 
   test('applyEdits preserves line breaks around edited line', () => {
     const d = doc('a\nb\nc');
-    d.applyEdits([
+    const change = d.applyEdits([
       {
         range: {
           start: { line: 1, character: 0 },
@@ -173,7 +172,7 @@ describe('TextDocument', () => {
     ]);
     expect(d.getText()).toBe('a\nB\nc');
     expect(d.lineCount).toBe(3);
-    expect(d.lastChange).toEqual({
+    expect(change).toEqual({
       startLine: 1,
       endLine: 1,
       previousLineCount: 3,
@@ -182,9 +181,9 @@ describe('TextDocument', () => {
     });
   });
 
-  test('applyEdits reports inserted lines in lastChange', () => {
+  test('applyEdits reports inserted lines in returned change', () => {
     const d = doc('a');
-    d.applyEdits([
+    const change = d.applyEdits([
       {
         range: {
           start: { line: 0, character: 1 },
@@ -194,7 +193,7 @@ describe('TextDocument', () => {
       },
     ]);
     expect(d.getText()).toBe('a\nb');
-    expect(d.lastChange).toEqual({
+    expect(change).toEqual({
       startLine: 0,
       endLine: 1,
       previousLineCount: 1,
@@ -203,9 +202,9 @@ describe('TextDocument', () => {
     });
   });
 
-  test('applyEdits reports line deletions in lastChange', () => {
+  test('applyEdits reports line deletions in returned change', () => {
     const d = doc('a\nb\nc');
-    d.applyEdits([
+    const change = d.applyEdits([
       {
         range: {
           start: { line: 0, character: 1 },
@@ -215,7 +214,7 @@ describe('TextDocument', () => {
       },
     ]);
     expect(d.getText()).toBe('ac');
-    expect(d.lastChange).toEqual({
+    expect(change).toEqual({
       startLine: 0,
       endLine: 0,
       previousLineCount: 3,
@@ -414,9 +413,9 @@ describe('TextDocument', () => {
     expect(d.canUndo).toBe(true);
     expect(d.canRedo).toBe(false);
 
-    d.undo();
+    const undoResult = d.undo();
     expect(d.getText()).toBe('a');
-    expect(d.lastChange).toEqual({
+    expect(undoResult?.change).toEqual({
       startLine: 0,
       endLine: 0,
       previousLineCount: 1,
@@ -426,9 +425,9 @@ describe('TextDocument', () => {
     expect(d.canUndo).toBe(false);
     expect(d.canRedo).toBe(true);
 
-    d.redo();
+    const redoResult = d.redo();
     expect(d.getText()).toBe('ab');
-    expect(d.lastChange).toEqual({
+    expect(redoResult?.change).toEqual({
       startLine: 0,
       endLine: 0,
       previousLineCount: 1,
@@ -529,8 +528,8 @@ describe('TextDocument', () => {
       [selectionAfter]
     );
 
-    expect(d.undo()).toEqual({ selections: [selectionBefore] });
-    expect(d.redo()).toEqual({ selections: [selectionAfter] });
+    expect(d.undo()?.selections).toEqual([selectionBefore]);
+    expect(d.redo()?.selections).toEqual([selectionAfter]);
   });
 
   test('undo and redo preserve multiple selections', () => {
@@ -559,7 +558,7 @@ describe('TextDocument', () => {
       selectionsAfter
     );
 
-    expect(d.undo()).toEqual({ selections: selectionsBefore });
-    expect(d.redo()).toEqual({ selections: selectionsAfter });
+    expect(d.undo()?.selections).toEqual(selectionsBefore);
+    expect(d.redo()?.selections).toEqual(selectionsAfter);
   });
 });
