@@ -22,39 +22,40 @@ const SHORTCUTS: Partial<Record<string, EditorCommand>> = {
 export function resolveEditorCommandFromKeyboardEvent(
   event: KeyboardEvent
 ): EditorCommand | undefined {
-  if (event.altKey) {
+  const hasPrimaryModifier = isPrimaryModifier(event);
+  const { shiftKey, altKey, key } = event;
+  if (altKey) {
     return undefined;
   }
 
-  const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
-  const hasPrimaryModifier = isPrimaryModifier(event);
   const isMac = isMacLike();
+  const normalizedKey = key.length === 1 ? key.toLowerCase() : key;
 
-  if (!hasPrimaryModifier && key === 'Tab') {
-    return event.shiftKey ? 'outdent' : 'indent';
+  if (!hasPrimaryModifier && normalizedKey === 'Tab') {
+    return shiftKey ? 'outdent' : 'indent';
   }
 
   if (!hasPrimaryModifier) {
     return undefined;
   }
 
-  if (key === 'z') {
-    return event.shiftKey ? 'redo' : 'undo';
+  if (normalizedKey === 'z') {
+    return shiftKey ? 'redo' : 'undo';
   }
 
-  if (!isMac && key === 'y') {
+  if (!isMac && normalizedKey === 'y') {
     return 'redo';
   }
 
-  if (key === 'Home' || (isMac && key === 'ArrowUp')) {
+  if (normalizedKey === 'Home' || (isMac && normalizedKey === 'ArrowUp')) {
     return 'documentStart';
   }
 
-  if (key === 'End' || (isMac && key === 'ArrowDown')) {
+  if (normalizedKey === 'End' || (isMac && normalizedKey === 'ArrowDown')) {
     return 'documentEnd';
   }
 
-  return SHORTCUTS[key];
+  return SHORTCUTS[normalizedKey];
 }
 
 export function isPrimaryModifier({
