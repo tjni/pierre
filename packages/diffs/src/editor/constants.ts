@@ -3,6 +3,9 @@ export const TOKENIZE_MAX_LINE_LENGTH = 10000;
 export const TOKENIZE_LINES_PRE_TOKENIZE = 50;
 
 export const EDITOR_CSS = /* CSS */ `
+  ::selection {
+    background-color: transparent;
+  }
   @keyframes blinking {
     0% { opacity: 1; }
     50% { opacity: 0; }
@@ -17,10 +20,6 @@ export const EDITOR_CSS = /* CSS */ `
   [data-content] {
     position: relative;
   }
-  [data-content]::selection,
-  [data-textarea]::selection  {
-    background-color: transparent;
-  }
   [data-textarea], [data-caret], [data-selection-range] {
     position: absolute;
     top: 0;
@@ -32,6 +31,7 @@ export const EDITOR_CSS = /* CSS */ `
     top: -1lh;
     padding: 0;
     padding-inline: 1ch;
+    tab-size: var(--diffs-tab-size, 2);
     font: inherit;
     color: transparent;
     background-color: transparent;
