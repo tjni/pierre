@@ -456,15 +456,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         }
       }),
 
-      addEventListener(document, 'mouseup', (e) => {
+      addEventListener(document, 'mouseup', () => {
         mouseEventDisposes.forEach((dispose) => dispose());
         mouseEventDisposes.length = 0;
-
-        const target = e.composedPath()[0];
-        if (!targetBelongsCodeLine(target)) {
-          return;
-        }
-
         this.#reservedSelections = undefined;
         this.#focusTextarea();
       }),
