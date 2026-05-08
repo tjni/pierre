@@ -17,7 +17,8 @@ export const EDITOR_CSS = /* CSS */ `
   [data-content] {
     position: relative;
   }
-  [data-content]::selection {
+  [data-content]::selection,
+  [data-textarea]::selection  {
     background-color: transparent;
   }
   [data-textarea], [data-caret], [data-selection-range] {

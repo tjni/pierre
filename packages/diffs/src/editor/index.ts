@@ -849,10 +849,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
   #focusTextarea(): void {
     this.#shouldIgnoreSelectionChange = true;
-    this.#textareaEl?.focus();
-    this.#textareaEl?.scrollIntoView({
-      block: 'nearest',
-      inline: 'nearest',
+    this.#textareaEl?.focus({
+      preventScroll: true,
     });
     setTimeout(() => {
       this.#shouldIgnoreSelectionChange = false;
