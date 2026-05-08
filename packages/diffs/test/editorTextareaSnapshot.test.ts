@@ -54,6 +54,37 @@ describe('resolveTextChange', () => {
     });
   });
 
+  test('keeps the textarea selection range when neighbour characters match the diff', () => {
+    const line0 = '    "a": "catalog:",';
+    const line1 = '    "b": "catalog:",';
+    const line2 = '    "c": "catalog:",';
+    const textDocument = new TextDocument(
+      'inmemory://1',
+      [line0, line1, line2].join('\n')
+    );
+    const snippet = createTextareaSnapshot(
+      textDocument,
+      createSelection(1, 4, 1, 38, DirectionNone)
+    );
+
+    const deleted =
+      snippet.text.slice(0, snippet.selectionStart) +
+      snippet.text.slice(snippet.selectionEnd);
+
+    expect(
+      resolveTextareaChange(
+        snippet,
+        deleted,
+        snippet.selectionStart,
+        snippet.selectionStart
+      )
+    ).toEqual({
+      start: snippet.offset + snippet.selectionStart,
+      end: snippet.offset + snippet.selectionEnd,
+      text: '',
+    });
+  });
+
   test('clamps caret column on empty lines so textarea slice matches the document', () => {
     const textDocument = new TextDocument('inmemory://1', 'a\n\nb');
     const valid = createTextareaSnapshot(

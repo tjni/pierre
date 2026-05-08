@@ -74,6 +74,34 @@ export function resolveTextareaChange(
   const originalLength = original.length;
   const nextLength = newView.length;
 
+  // When the snapshot still has the pre-edit range, prefer it over prefix/suffix inference.
+  // Otherwise the diff can shift by one when the same character appears on both sides of
+  // the removed span (e.g. deleting between two `"` quotes in JSON).
+  const trustStart = textareaSnapshot.selectionStart;
+  const trustEnd = textareaSnapshot.selectionEnd;
+  if (trustStart !== trustEnd) {
+    const deleteLen = trustEnd - trustStart;
+    const insLen = nextLength - originalLength + deleteLen;
+    if (
+      insLen >= 0 &&
+      trustStart >= 0 &&
+      trustEnd <= originalLength &&
+      trustStart + insLen <= nextLength
+    ) {
+      const inserted = newView.slice(trustStart, trustStart + insLen);
+      if (
+        original.slice(0, trustStart) + inserted + original.slice(trustEnd) ===
+        newView
+      ) {
+        return {
+          start: textareaSnapshot.offset + trustStart,
+          end: textareaSnapshot.offset + trustEnd,
+          text: inserted,
+        };
+      }
+    }
+  }
+
   if (
     selectionStart === selectionEnd &&
     textareaSnapshot.selectionStart === textareaSnapshot.selectionEnd
