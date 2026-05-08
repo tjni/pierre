@@ -539,6 +539,63 @@ describe('applyTextChangeToSelections', () => {
     expect(textDocument.getText()).toBe('foo\nbar');
     expect(nextSelections).toEqual([createSelection(0, 3, 0, 3)]);
   });
+
+  test('deletes one hard tab when backspacing in leading indentation', () => {
+    const textDocument = new TextDocument('inmemory://1', '\tfoo');
+    const selections = [createSelection(0, 1, 0, 1)];
+    const { nextSelections } = applyTextChangeToSelections(
+      textDocument,
+      selections,
+      {
+        start: 0,
+        end: 1,
+        text: '',
+      },
+      undefined,
+      2
+    );
+
+    expect(textDocument.getText()).toBe('foo');
+    expect(nextSelections).toEqual([createSelection(0, 0, 0, 0)]);
+  });
+
+  test('deletes one soft tab when backspacing in leading indentation', () => {
+    const textDocument = new TextDocument('inmemory://1', '    foo');
+    const selections = [createSelection(0, 4, 0, 4)];
+    const { nextSelections } = applyTextChangeToSelections(
+      textDocument,
+      selections,
+      {
+        start: 3,
+        end: 4,
+        text: '',
+      },
+      undefined,
+      4
+    );
+
+    expect(textDocument.getText()).toBe('foo');
+    expect(nextSelections).toEqual([createSelection(0, 0, 0, 0)]);
+  });
+
+  test('does not expand deletion outside leading indentation', () => {
+    const textDocument = new TextDocument('inmemory://1', '  foo');
+    const selections = [createSelection(0, 3, 0, 3)];
+    const { nextSelections } = applyTextChangeToSelections(
+      textDocument,
+      selections,
+      {
+        start: 2,
+        end: 3,
+        text: '',
+      },
+      undefined,
+      2
+    );
+
+    expect(textDocument.getText()).toBe('  oo');
+    expect(nextSelections).toEqual([createSelection(0, 2, 0, 2)]);
+  });
 });
 
 describe('mapSelectionMove', () => {

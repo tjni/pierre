@@ -183,7 +183,8 @@ export function applyTextChangeToSelections<LAnnotation>(
   textDocument: TextDocument,
   selections: EditorSelection[],
   change: ResolvedTextEdit,
-  lineAnnotations?: LineAnnotation<LAnnotation>[]
+  lineAnnotations?: LineAnnotation<LAnnotation>[],
+  tabSize = 2
 ): {
   nextSelections: EditorSelection[];
   newLineAnnotations: LineAnnotation<LAnnotation>[] | undefined;
@@ -194,8 +195,6 @@ export function applyTextChangeToSelections<LAnnotation>(
   }
   const primaryStartOffset = textDocument.offsetAt(primarySelection.start);
   const primaryEndOffset = textDocument.offsetAt(primarySelection.end);
-  const relativeStart = change.start - primaryStartOffset;
-  const relativeEnd = change.end - primaryEndOffset;
   const ordered = selections
     .map((selection, index) => ({
       selection,
@@ -215,6 +214,12 @@ export function applyTextChangeToSelections<LAnnotation>(
       }
       return a.index - b.index;
     });
+  const adjustedChange = normalizeLeadingIndentDeleteChange(
+    textDocument,
+    change,
+    primarySelection,
+    tabSize
+  );
   const edits: TextEdit[] = [];
   const nextSelectionOffsets: Array<[number, number]> = Array.from({
     length: selections.length,
@@ -233,7 +238,7 @@ export function applyTextChangeToSelections<LAnnotation>(
     }
     const newText = expandSingleNewlineInsert(
       textDocument,
-      change.text,
+      adjustedChange.text,
       mergedGroup.start
     );
     edits.push({
@@ -254,8 +259,14 @@ export function applyTextChangeToSelections<LAnnotation>(
     mergedGroup = undefined;
   };
   for (const entry of ordered) {
-    const startOffset = Math.max(0, entry.start + relativeStart);
-    const endOffset = Math.max(startOffset, entry.end + relativeEnd);
+    const startOffset = Math.max(
+      0,
+      entry.start + (adjustedChange.start - primaryStartOffset)
+    );
+    const endOffset = Math.max(
+      startOffset,
+      entry.end + (adjustedChange.end - primaryEndOffset)
+    );
     if (mergedGroup !== undefined && startOffset < mergedGroup.end) {
       mergedGroup.end = Math.max(mergedGroup.end, endOffset);
       mergedGroup.indices.push(entry.index);
@@ -461,6 +472,49 @@ function expandSingleNewlineInsert(
     return insertText;
   }
   return '\n' + lineText.slice(0, indentLen);
+}
+
+// Expands a backspace over leading spaces into one soft-tab width so mixed hard/soft indentation
+// behaves like the explicit outdent command.
+function normalizeLeadingIndentDeleteChange(
+  textDocument: TextDocument,
+  change: ResolvedTextEdit,
+  primarySelection: EditorSelection,
+  tabSize: number
+): ResolvedTextEdit {
+  if (
+    change.text !== '' ||
+    change.start !== change.end - 1 ||
+    primarySelection.start.line !== primarySelection.end.line ||
+    primarySelection.start.character !== primarySelection.end.character
+  ) {
+    return change;
+  }
+  const caretPosition = textDocument.positionAt(change.end);
+  if (caretPosition.character === 0) {
+    return change;
+  }
+  const primaryOffset = textDocument.offsetAt(primarySelection.start);
+  if (change.end !== primaryOffset) {
+    return change;
+  }
+  const lineText = textDocument.getLineText(caretPosition.line);
+  const leadingText = lineText.slice(0, caretPosition.character);
+  if (/[^ \t]/.test(leadingText)) {
+    return change;
+  }
+  if (lineText[caretPosition.character - 1] === '\t') {
+    return change;
+  }
+  const softTabStart = Math.max(0, caretPosition.character - tabSize);
+  const softTabText = lineText.slice(softTabStart, caretPosition.character);
+  if (softTabText.length === tabSize && /^ +$/.test(softTabText)) {
+    return {
+      ...change,
+      start: change.end - softTabText.length,
+    };
+  }
+  return change;
 }
 
 function boundaryToPosition(node: Node, offset: number): Position | null {

@@ -783,7 +783,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           textDocument,
           selections,
           change,
-          lineAnnotations
+          lineAnnotations,
+          this.#tabSize
         );
       this.#rerender(newLineAnnotations);
       this.#emitChange();
