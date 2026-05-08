@@ -401,6 +401,27 @@ export function isCollapsedSelection(selection: EditorSelection): boolean {
 }
 
 /**
+ * Merges two selections into one range that covers both.
+ */
+export function mergeSelections(
+  a: EditorSelection,
+  b: EditorSelection
+): EditorSelection {
+  const start = comparePosition(a.start, b.start) <= 0 ? a.start : b.start;
+  const end = comparePosition(a.end, b.end) >= 0 ? a.end : b.end;
+  const anchorA = a.direction === DirectionBackward ? a.end : a.start;
+  const focusB = b.direction === DirectionBackward ? b.start : b.end;
+  const anchorVsFocus = comparePosition(anchorA, focusB);
+  const direction: SelectionDirection =
+    anchorVsFocus === 0
+      ? DirectionNone
+      : anchorVsFocus < 0
+        ? DirectionForward
+        : DirectionBackward;
+  return { start, end, direction };
+}
+
+/**
  * Checks if two selections intersect.
  */
 export function selectionIntersects(

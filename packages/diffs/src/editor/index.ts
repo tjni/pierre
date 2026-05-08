@@ -20,6 +20,7 @@ import {
   isCollapsedSelection,
   mapSelectionMove,
   mapSelectionRangeMove,
+  mergeSelections,
   resolveIndentEdits,
   type SelectionDirection,
   selectionIntersects,
@@ -360,52 +361,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
     this.#disposes = [
       addEventListener(document, 'selectionchange', () => {
-        const shadowRoot = this.#contentEl?.getRootNode();
-        if (
-          this.#shouldIgnoreSelectionChange ||
-          shadowRoot === undefined ||
-          !(shadowRoot instanceof ShadowRoot) ||
-          shadowRoot.activeElement === null
-        ) {
-          return;
-        }
-
-        // Chrome-based browsers fire document selectionchange when the
-        // textarea caret moves inside the shadow root.
-        if (shadowRoot.activeElement === this.#textareaEl) {
-          this.#onTextareaSelectionChange();
-          return;
-        }
-
-        const selectionRaw = document.getSelection();
-        const composedRange = selectionRaw?.getComposedRanges({
-          shadowRoots: [shadowRoot],
-        })?.[0];
-
-        if (
-          composedRange === undefined ||
-          !this.#rangeBelongsToEditor(composedRange)
-        ) {
-          return;
-        }
-
-        const selection = convertSelection(
-          composedRange,
-          this.#computeMouseSelectionDirection()
-        );
-        if (selection !== null) {
-          this.#textareaSnapshot = undefined;
-          if (this.#reservedSelections !== undefined) {
-            this.setSelections([
-              ...this.#reservedSelections.filter(
-                (reservedSelection) =>
-                  !selectionIntersects(reservedSelection, selection)
-              ),
-              selection,
-            ]);
-          } else {
-            this.setSelections([selection]);
-          }
+        if (!this.#shouldIgnoreSelectionChange) {
+          this.#onSelectionChange();
         }
       }),
 
@@ -427,6 +384,15 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         this.#selectionStartX = e.clientX;
         this.#selectionEndX = e.clientX;
         this.#selectionEndY = e.clientY;
+
+        // when the user is using the 'Shift' key to create a selection
+        // hide the textarea element or the selection will be created in the textarea
+        if (e.shiftKey) {
+          this.#shouldIgnoreSelectionChange = true;
+          if (this.#textareaEl !== undefined) {
+            this.#textareaEl.style.visibility = 'hidden';
+          }
+        }
 
         mouseEventDisposes.push(
           // `Selection.getComposedRanges` currently does not preserve the drag direction.
@@ -456,10 +422,17 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         }
       }),
 
-      addEventListener(document, 'mouseup', () => {
+      addEventListener(document, 'mouseup', (e) => {
         mouseEventDisposes.forEach((dispose) => dispose());
         mouseEventDisposes.length = 0;
         this.#reservedSelections = undefined;
+        if (e.shiftKey) {
+          this.#onSelectionChange(true);
+          this.#shouldIgnoreSelectionChange = false;
+          if (this.#textareaEl !== undefined) {
+            this.#textareaEl.style.visibility = 'visible';
+          }
+        }
         this.#focusTextarea();
       }),
 
@@ -849,6 +822,61 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     setTimeout(() => {
       this.#shouldIgnoreSelectionChange = false;
     }, 0);
+  }
+
+  #onSelectionChange(append = false) {
+    const shadowRoot = this.#contentEl?.getRootNode();
+    if (
+      shadowRoot === undefined ||
+      !(shadowRoot instanceof ShadowRoot) ||
+      shadowRoot.activeElement === null
+    ) {
+      return;
+    }
+
+    // Chrome-based browsers fire document selectionchange when the
+    // textarea caret moves inside the shadow root.
+    if (shadowRoot.activeElement === this.#textareaEl) {
+      this.#onTextareaSelectionChange();
+      return;
+    }
+
+    const selectionRaw = document.getSelection();
+    const composedRange = selectionRaw?.getComposedRanges({
+      shadowRoots: [shadowRoot],
+    })?.[0];
+
+    if (
+      composedRange === undefined ||
+      !this.#rangeBelongsToEditor(composedRange)
+    ) {
+      return;
+    }
+
+    const selection = convertSelection(
+      composedRange,
+      this.#computeMouseSelectionDirection()
+    );
+    if (selection !== null) {
+      this.#textareaSnapshot = undefined;
+      if (append) {
+        const primarySelection = this.#selections?.at(-1);
+        if (primarySelection !== undefined) {
+          const newSelection = mergeSelections(primarySelection, selection);
+          this.setSelections([newSelection]);
+        }
+      } else if (this.#reservedSelections !== undefined) {
+        this.setSelections([
+          ...this.#reservedSelections.filter(
+            (reservedSelection) =>
+              !selectionIntersects(reservedSelection, selection)
+          ),
+          selection,
+        ]);
+      } else {
+        this.setSelections([selection]);
+      }
+    }
   }
 
   #onTextareaSelectionChange() {

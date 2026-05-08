@@ -10,6 +10,7 @@ import {
   extendSelections,
   mapSelectionMove,
   mapSelectionRangeMove,
+  mergeSelections,
   selectionIntersects,
 } from '../src/editor/editorSelection';
 import {
@@ -363,6 +364,47 @@ describe('selectionIntersects', () => {
         editorSelection(0, 3, 0, 3)
       )
     ).toBe(false);
+  });
+});
+
+describe('concatSelections', () => {
+  test('covers both ranges and uses forward direction when a anchor precedes b focus', () => {
+    const a = createSelection(0, 2, 0, 4, DirectionForward);
+    const b = createSelection(0, 6, 0, 8, DirectionForward);
+    expect(mergeSelections(a, b)).toEqual({
+      start: { line: 0, character: 2 },
+      end: { line: 0, character: 8 },
+      direction: DirectionForward,
+    });
+  });
+
+  test('uses backward direction when a anchor lies after b focus in the document', () => {
+    const a = createSelection(0, 0, 0, 10, DirectionBackward);
+    const b = createSelection(0, 4, 0, 6, DirectionForward);
+    expect(mergeSelections(a, b)).toEqual({
+      start: { line: 0, character: 0 },
+      end: { line: 0, character: 10 },
+      direction: DirectionBackward,
+    });
+  });
+
+  test('unions ranges when b lies before a in the file and picks backward when a anchor follows b focus', () => {
+    const a = createSelection(1, 0, 1, 5, DirectionForward);
+    const b = createSelection(0, 2, 0, 4, DirectionForward);
+    expect(mergeSelections(a, b)).toEqual({
+      start: { line: 0, character: 2 },
+      end: { line: 1, character: 5 },
+      direction: DirectionBackward,
+    });
+  });
+
+  test('returns a collapsed selection with no direction when both inputs are the same caret', () => {
+    const caret = createSelection(0, 3, 0, 3, DirectionNone);
+    expect(mergeSelections(caret, caret)).toEqual({
+      start: { line: 0, character: 3 },
+      end: { line: 0, character: 3 },
+      direction: DirectionNone,
+    });
   });
 });
 
