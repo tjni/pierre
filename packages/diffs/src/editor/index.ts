@@ -16,6 +16,7 @@ import {
   DirectionBackward,
   DirectionForward,
   DirectionNone,
+  extendSelections,
   isCollapsedSelection,
   mapSelectionMove,
   mapSelectionRangeMove,
@@ -849,6 +850,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #focusTextarea(): void {
     this.#shouldIgnoreSelectionChange = true;
     this.#textareaEl?.focus();
+    this.#textareaEl?.scrollIntoView({
+      block: 'nearest',
+      inline: 'nearest',
+    });
     setTimeout(() => {
       this.#shouldIgnoreSelectionChange = false;
     }, 0);
@@ -1226,6 +1231,20 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           return;
         }
         this.#replaceSelectionText(text);
+        break;
+      }
+
+      case 'extendSelection': {
+        const selections = this.#selections;
+        const textDocument = this.#textDocument;
+        if (selections === undefined || textDocument === undefined) {
+          break;
+        }
+        const next = extendSelections(textDocument, selections);
+        if (next !== undefined) {
+          this.setSelections(next, false);
+          this.#focusTextarea();
+        }
         break;
       }
 

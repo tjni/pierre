@@ -7,6 +7,7 @@ import {
   DirectionForward,
   DirectionNone,
   type EditorSelection,
+  extendSelections,
   mapSelectionMove,
   mapSelectionRangeMove,
   selectionIntersects,
@@ -721,6 +722,78 @@ describe('applyTextReplaceToSelections', () => {
     expect(textDocument.redo()).toEqual({
       selections: [createSelection(1, 8, 1, 8)],
       lineAnnotations: newLineAnnotations,
+    });
+  });
+});
+
+describe('computeExtendSelection', () => {
+  test('returns undefined for empty selections', () => {
+    const doc = new TextDocument('inmemory://x', 'hello');
+    expect(extendSelections(doc, [])).toBeUndefined();
+  });
+
+  test('ignores non-collapsed selections with different text', () => {
+    const doc = new TextDocument('inmemory://x', 'aa bb');
+    const selections: EditorSelection[] = [
+      createSelection(0, 0, 0, 2),
+      createSelection(0, 3, 0, 5),
+    ];
+    expect(extendSelections(doc, selections)).toBeUndefined();
+  });
+
+  test('expands a collapsed caret to the surrounding word', () => {
+    const doc = new TextDocument('inmemory://x', "'foobar'");
+    const caret = createSelection(0, 4, 0, 4);
+    const next = extendSelections(doc, [caret]);
+    expect(next).toEqual([
+      {
+        start: { line: 0, character: 1 },
+        end: { line: 0, character: 7 },
+        direction: DirectionForward,
+      },
+    ]);
+  });
+
+  test('adds the next matching range when one occurrence is selected', () => {
+    const doc = new TextDocument('inmemory://x', 'foo x foo');
+    const first = createSelection(0, 0, 0, 3);
+    const afterFirst = extendSelections(doc, [first]);
+    expect(afterFirst).toEqual([
+      first,
+      {
+        start: { line: 0, character: 6 },
+        end: { line: 0, character: 9 },
+        direction: DirectionForward,
+      },
+    ]);
+    expect(extendSelections(doc, afterFirst!)).toBeUndefined();
+  });
+
+  test('wraps to an earlier occurrence after the last match in the file', () => {
+    const doc = new TextDocument('inmemory://x', 'foo bar foo');
+    const secondFoo = createSelection(0, 8, 0, 11);
+    const wrapped = extendSelections(doc, [secondFoo]);
+    expect(wrapped).toEqual([
+      secondFoo,
+      {
+        start: { line: 0, character: 0 },
+        end: { line: 0, character: 3 },
+        direction: DirectionForward,
+      },
+    ]);
+  });
+
+  test('allows multiple selections when every range has the same text', () => {
+    const doc = new TextDocument('inmemory://x', 'ab ab ab');
+    const a = createSelection(0, 0, 0, 2);
+    const b = createSelection(0, 3, 0, 5);
+    const two = [a, b];
+    const third = extendSelections(doc, two);
+    expect(third?.length).toBe(3);
+    expect(third?.[2]).toEqual({
+      start: { line: 0, character: 6 },
+      end: { line: 0, character: 8 },
+      direction: DirectionForward,
     });
   });
 });

@@ -40,6 +40,9 @@ export function convertSelection(
   };
 }
 
+/**
+ * Resolves the indent edits for a selection.
+ */
 export function resolveIndentEdits(
   textDocument: TextDocument,
   selection: EditorSelection,
@@ -107,6 +110,9 @@ export function resolveIndentEdits(
   return [edits, newSelection];
 }
 
+/**
+ * Maps a selection move to a new selection.
+ */
 export function mapSelectionMove(
   textDocument: TextDocument,
   selections: readonly EditorSelection[],
@@ -148,6 +154,9 @@ export function mapSelectionMove(
   });
 }
 
+/**
+ * Maps a selection range move to a new selection.
+ */
 export function mapSelectionRangeMove(
   textDocument: TextDocument,
   selections: readonly EditorSelection[],
@@ -175,6 +184,9 @@ export function mapSelectionRangeMove(
   });
 }
 
+/**
+ * Applies a text change to a selection.
+ */
 export function applyTextChangeToSelections<LAnnotation>(
   textDocument: TextDocument,
   selections: EditorSelection[],
@@ -296,6 +308,9 @@ export function applyTextChangeToSelections<LAnnotation>(
   return { nextSelections, newLineAnnotations };
 }
 
+/**
+ * Applies a text replace to a selection.
+ */
 export function applyTextReplaceToSelections<LAnnotation>(
   textDocument: TextDocument,
   selections: EditorSelection[],
@@ -375,6 +390,9 @@ export function applyTextReplaceToSelections<LAnnotation>(
   return { nextSelections, newLineAnnotations };
 }
 
+/**
+ * Checks if a selection is collapsed.
+ */
 export function isCollapsedSelection(selection: EditorSelection): boolean {
   return (
     selection.start.line === selection.end.line &&
@@ -382,6 +400,9 @@ export function isCollapsedSelection(selection: EditorSelection): boolean {
   );
 }
 
+/**
+ * Checks if two selections intersect.
+ */
 export function selectionIntersects(
   a: EditorSelection,
   b: EditorSelection
@@ -408,6 +429,9 @@ export function selectionIntersects(
   );
 }
 
+/**
+ * Compares two positions.
+ */
 export function comparePosition(a: Position, b: Position): number {
   if (a.line !== b.line) {
     return a.line - b.line;
@@ -415,6 +439,9 @@ export function comparePosition(a: Position, b: Position): number {
   return a.character - b.character;
 }
 
+/**
+ * Creates a selection from anchor and focus offsets.
+ */
 export function createSelectionFromAnchorAndFocusOffsets(
   textDocument: TextDocument,
   anchorOffset: number,
@@ -433,6 +460,162 @@ export function createSelectionFromAnchorAndFocusOffsets(
     end: textDocument.positionAt(end),
     direction,
   };
+}
+
+/**
+ * Extends a selection.
+ */
+export function extendSelections(
+  textDocument: TextDocument,
+  selections: readonly EditorSelection[]
+): EditorSelection[] | undefined {
+  if (selections.length === 0) {
+    return undefined;
+  }
+
+  const allCollapsed = selections.every(isCollapsedSelection);
+  if (allCollapsed) {
+    const expanded: EditorSelection[] = [];
+    for (const sel of selections) {
+      const word = expandCollapsedSelectionToWord(textDocument, sel);
+      if (word === undefined) {
+        return undefined;
+      }
+      expanded.push(word);
+    }
+    return expanded;
+  }
+
+  const texts = selections.map((s) => textDocument.getText(s));
+  const needle = texts[0];
+  if (needle.length === 0 || texts.some((t) => t !== needle)) {
+    return undefined;
+  }
+
+  const occupied = selections.map(
+    (s) =>
+      [textDocument.offsetAt(s.start), textDocument.offsetAt(s.end)] as [
+        number,
+        number,
+      ]
+  );
+  const nextOffset = findNextNonOverlappingSubstring(
+    textDocument.getText(),
+    needle,
+    occupied
+  );
+  if (nextOffset === undefined) {
+    return undefined;
+  }
+  const added = createSelectionFromAnchorAndFocusOffsets(
+    textDocument,
+    nextOffset,
+    nextOffset + needle.length
+  );
+  return [...selections, added];
+}
+
+// Expands a zero-width selection to the word-like segment that contains the caret.
+function expandCollapsedSelectionToWord(
+  textDocument: TextDocument,
+  selection: EditorSelection
+): EditorSelection | undefined {
+  const { line, character } = selection.start;
+  const lineText = textDocument.getLineText(line);
+  const ch = Math.max(0, Math.min(character, lineText.length));
+  const span = expandCollapsedLineWord(lineText, ch);
+  if (span === undefined) {
+    return undefined;
+  }
+  return {
+    start: { line, character: span.start },
+    end: { line, character: span.end },
+    direction: DirectionForward,
+  };
+}
+
+function expandCollapsedLineWord(
+  lineText: string,
+  character: number
+): { start: number; end: number } | undefined {
+  const segmenter = new Intl.Segmenter(undefined, {
+    granularity: 'word',
+  });
+  for (const seg of segmenter.segment(lineText)) {
+    if (seg.isWordLike !== true) {
+      continue;
+    }
+    const lo = seg.index;
+    const hi = lo + seg.segment.length;
+    if (character >= lo && character < hi) {
+      return { start: lo, end: hi };
+    }
+  }
+  for (const seg of segmenter.segment(lineText)) {
+    if (seg.isWordLike !== true) {
+      continue;
+    }
+    const lo = seg.index;
+    const hi = lo + seg.segment.length;
+    if (lo >= character) {
+      return { start: lo, end: hi };
+    }
+  }
+  let best: { start: number; end: number } | undefined;
+  for (const seg of segmenter.segment(lineText)) {
+    if (seg.isWordLike !== true) {
+      continue;
+    }
+    const lo = seg.index;
+    const hi = lo + seg.segment.length;
+    if (hi <= character) {
+      best = { start: lo, end: hi };
+    }
+  }
+  return best;
+}
+
+function findNextNonOverlappingSubstring(
+  doc: string,
+  needle: string,
+  occupied: readonly [number, number][]
+): number | undefined {
+  if (needle.length === 0) {
+    return undefined;
+  }
+  const pivot = Math.max(...occupied.map(([, end]) => end));
+  const isFree = (start: number): boolean => {
+    const end = start + needle.length;
+    return !occupied.some(([s0, s1]) => start < s1 && s0 < end);
+  };
+
+  let pos = pivot;
+  while (pos <= doc.length - needle.length) {
+    const idx = doc.indexOf(needle, pos);
+    if (idx === -1) {
+      break;
+    }
+    if (isFree(idx)) {
+      return idx;
+    }
+    pos = idx + 1;
+  }
+
+  pos = 0;
+  while (pos < pivot && pos <= doc.length - needle.length) {
+    const idx = doc.indexOf(needle, pos);
+    if (idx === -1) {
+      break;
+    }
+    if (idx >= pivot) {
+      break;
+    }
+    if (isFree(idx)) {
+      return idx;
+    }
+    pos = idx + 1;
+  }
+  return undefined;
 }
 
 function getSelectionAnchorAndFocusOffsets(

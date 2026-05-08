@@ -8,13 +8,15 @@ export type EditorCommand =
   | 'documentEnd'
   | 'undo'
   | 'redo'
-  | 'selectAll';
+  | 'selectAll'
+  | 'extendSelection';
 
 const SHORTCUTS: Partial<Record<string, EditorCommand>> = {
   a: 'selectAll',
   c: 'copy',
   v: 'paste',
   x: 'cut',
+  d: 'extendSelection',
 };
 
 export function resolveEditorCommandFromKeyboardEvent(
