@@ -306,7 +306,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
     if (this.#selections !== undefined) {
       this.setSelections(this.#selections);
-      // this.#focusTextarea();
+      this.#focusTextarea();
     }
 
     if (renderRange !== undefined) {
@@ -327,7 +327,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   }
 
   #initialize(): void {
-    const isCodeLineTarget = (target?: EventTarget): target is HTMLElement => {
+    const mouseEventDisposes: (() => void)[] = [];
+    const targetBelongsCodeLine = (
+      target?: EventTarget
+    ): target is HTMLElement => {
       if (target === undefined || !(target instanceof HTMLElement)) {
         return false;
       }
@@ -337,10 +340,12 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         (tagName === 'SPAN' && dataset.char !== undefined)
       );
     };
+
     this.#styleEl = createElement('style', {
       dataset: 'editorCss',
       textContent: EDITOR_CSS,
     });
+
     this.#textareaEl = extend(
       createElement('textarea', { dataset: 'textarea' }),
       {
@@ -351,6 +356,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         wrap: 'off',
       }
     );
+
     this.#disposes = [
       addEventListener(document, 'selectionchange', () => {
         const shadowRoot = this.#contentEl?.getRootNode();
@@ -371,19 +377,19 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         }
 
         const selectionRaw = document.getSelection();
-        const composedRanges = selectionRaw?.getComposedRanges({
+        const composedRange = selectionRaw?.getComposedRanges({
           shadowRoots: [shadowRoot],
-        });
+        })?.[0];
 
         if (
-          composedRanges === undefined ||
-          !this.#selectionBelongsToEditor(composedRanges)
+          composedRange === undefined ||
+          !this.#rangeBelongsToEditor(composedRange)
         ) {
           return;
         }
 
         const selection = convertSelection(
-          composedRanges,
+          composedRange,
           this.#computeMouseSelectionDirection()
         );
         if (selection !== null) {
@@ -403,7 +409,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       }),
 
       addEventListener(document, 'mousedown', (e) => {
-        if (!isCodeLineTarget(e.composedPath()[0])) {
+        const target = e.composedPath()[0];
+        if (!targetBelongsCodeLine(target)) {
           return;
         }
 
@@ -415,32 +422,50 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           this.#reservedSelections = undefined;
         }
 
-        if (!e.shiftKey) {
-          this.#selectionStartY = e.clientY;
-          this.#selectionStartX = e.clientX;
-        }
+        this.#selectionStartY = e.clientY;
+        this.#selectionStartX = e.clientX;
         this.#selectionEndX = e.clientX;
         this.#selectionEndY = e.clientY;
+
+        mouseEventDisposes.push(
+          // `Selection.getComposedRanges` currently does not preserve the drag direction.
+          // The workaround is to check the mousemove event to determine the direction of the drag operation.
+          addEventListener(document, 'mousemove', (e) => {
+            if ((e.buttons & 1) !== 1) {
+              return;
+            }
+            this.#selectionEndX = e.clientX;
+            this.#selectionEndY = e.clientY;
+          })
+        );
+
+        if (this.#contentEl !== undefined) {
+          mouseEventDisposes.push(
+            // `Selection.getComposedRanges` sets the `startContainer` to the first line element of
+            // the content element when the mouse leaves the content element.
+            // Set `shouldIgnoreSelectionChange` to true to avoid the glitch bug.
+            // TODO(@ije): update the seletion when mouse moving on the gutter.
+            addEventListener(this.#contentEl, 'mouseleave', () => {
+              this.#shouldIgnoreSelectionChange = true;
+            }),
+            addEventListener(this.#contentEl, 'mouseenter', () => {
+              this.#shouldIgnoreSelectionChange = false;
+            })
+          );
+        }
       }),
 
       addEventListener(document, 'mouseup', (e) => {
+        mouseEventDisposes.forEach((dispose) => dispose());
+        mouseEventDisposes.length = 0;
+
         const target = e.composedPath()[0];
-        if (!isCodeLineTarget(target)) {
+        if (!targetBelongsCodeLine(target)) {
           return;
         }
 
         this.#reservedSelections = undefined;
         this.#focusTextarea();
-      }),
-
-      // Selection.getComposedRanges currently does not preserve the drag direction.
-      // The workaround is to check the mousemove event to determine the direction of the drag operation.
-      addEventListener(document, 'mousemove', (e) => {
-        if ((e.buttons & 1) !== 1) {
-          return;
-        }
-        this.#selectionEndX = e.clientX;
-        this.#selectionEndY = e.clientY;
       }),
 
       addEventListener(this.#textareaEl, 'keydown', (e) => {
@@ -1617,17 +1642,15 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   }
 
   // check if the web selection belongs to editor
-  #selectionBelongsToEditor(composedRanges: StaticRange[]) {
+  #rangeBelongsToEditor(range: StaticRange) {
     const contentEl = this.#contentEl;
     if (contentEl === undefined) {
       return false;
     }
-    return composedRanges.every((range) => {
-      return (
-        contentEl.contains(range.startContainer) &&
-        contentEl.contains(range.endContainer)
-      );
-    });
+    return (
+      contentEl.contains(range.startContainer) &&
+      contentEl.contains(range.endContainer)
+    );
   }
 }
 

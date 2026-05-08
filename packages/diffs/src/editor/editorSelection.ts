@@ -25,13 +25,9 @@ export interface EditorSelection extends Range {
  * Converts a selection from a web selection to an editor selection.
  */
 export function convertSelection(
-  composedRanges: StaticRange[],
+  range: StaticRange,
   direction: SelectionDirection = DirectionNone
 ): EditorSelection | null {
-  const range = composedRanges[composedRanges.length - 1];
-  if (range === undefined) {
-    return null;
-  }
   const start = boundaryToPosition(range.startContainer, range.startOffset);
   const end = boundaryToPosition(range.endContainer, range.endOffset);
   if (start === null || end === null) {

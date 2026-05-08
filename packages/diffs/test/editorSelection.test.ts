@@ -40,16 +40,14 @@ function composedRange(
   startOffset: number,
   endContainer = startContainer,
   endOffset = startOffset
-): StaticRange[] {
-  return [
-    {
-      startContainer,
-      startOffset,
-      endContainer,
-      endOffset,
-      collapsed: startContainer === endContainer && startOffset === endOffset,
-    } as StaticRange,
-  ];
+): StaticRange {
+  return {
+    startContainer,
+    startOffset,
+    endContainer,
+    endOffset,
+    collapsed: startContainer === endContainer && startOffset === endOffset,
+  } as StaticRange;
 }
 
 function editorSelection(
