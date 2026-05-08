@@ -127,9 +127,14 @@ export function resolveTextareaChange(
 export function getSelectionDirectionFromTextarea(
   textareaEl: HTMLTextAreaElement
 ): SelectionDirection {
-  return textareaEl.selectionDirection === 'backward'
-    ? DirectionBackward
-    : DirectionForward;
+  switch (textareaEl.selectionDirection) {
+    case 'backward':
+      return DirectionBackward;
+    case 'forward':
+      return DirectionForward;
+    case 'none':
+      return DirectionNone;
+  }
 }
 
 export function toTextareaSelectionDirection(
@@ -145,7 +150,8 @@ export function toTextareaSelectionDirection(
   }
 }
 
-/** Aligns a column with `TextDocument.offsetAt` / `positionAt` so textarea indices match backing text (DOM may report past end for empty lines that render a placeholder space). */
+// Aligns a column with `TextDocument.offsetAt` / `positionAt` so textarea indices match backing text
+// (DOM may report past end for empty lines that render a placeholder space).
 function normalizeCharacterForDocument(
   textDocument: TextDocument,
   position: Position

@@ -60,6 +60,7 @@ export class BackgroundTokenizer {
     this.#isStopped = false;
     this.#lastLine = startLine;
     this.#lastState = state;
+    // use `postMessage` instead of `setTimeout(fn, 0)` to avoid 4ms delay
     postMessage(this.#messageKey);
   }
 

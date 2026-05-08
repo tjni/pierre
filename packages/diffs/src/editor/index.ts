@@ -7,20 +7,18 @@ import {
   isPrimaryModifier,
   resolveEditorCommandFromKeyboardEvent,
 } from '../editor/editorCommand';
+import type { EditorSelection } from '../editor/editorSelection';
 import {
   applyTextChangeToSelections,
   applyTextReplaceToSelections,
-  mapSelectionMove,
-  mapSelectionRangeMove,
-} from '../editor/editorMultiSelections';
-import type { EditorSelection } from '../editor/editorSelection';
-import {
   comparePosition,
   convertSelection,
   DirectionBackward,
   DirectionForward,
   DirectionNone,
   isCollapsedSelection,
+  mapSelectionMove,
+  mapSelectionRangeMove,
   resolveIndentEdits,
   type SelectionDirection,
   selectionIntersects,
