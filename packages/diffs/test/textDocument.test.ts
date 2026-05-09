@@ -463,6 +463,41 @@ describe('TextDocument', () => {
     expect(d.getText()).toBe('ab');
   });
 
+  test('contiguous forward deletes coalesce into one undo step', () => {
+    const d = doc('abc');
+    d.applyEdits(
+      [
+        {
+          range: {
+            start: { line: 0, character: 1 },
+            end: { line: 0, character: 2 },
+          },
+          newText: '',
+        },
+      ],
+      true,
+      [caret(0, 1)]
+    );
+    d.applyEdits(
+      [
+        {
+          range: {
+            start: { line: 0, character: 1 },
+            end: { line: 0, character: 2 },
+          },
+          newText: '',
+        },
+      ],
+      true,
+      [caret(0, 1)]
+    );
+
+    expect(d.getText()).toBe('a');
+
+    d.undo();
+    expect(d.getText()).toBe('abc');
+  });
+
   test('multi-cursor contiguous inserts coalesce into one undo step', () => {
     const d = doc('ab\ncd');
     d.applyEdits(
@@ -553,6 +588,55 @@ describe('TextDocument', () => {
       ],
       true,
       [caret(0, 2), caret(1, 2)]
+    );
+
+    expect(d.getText()).toBe('a\nd');
+
+    d.undo();
+    expect(d.getText()).toBe('abc\ndef');
+  });
+
+  test('multi-cursor contiguous forward deletes coalesce into one undo step', () => {
+    const d = doc('abc\ndef');
+    d.applyEdits(
+      [
+        {
+          range: {
+            start: { line: 0, character: 1 },
+            end: { line: 0, character: 2 },
+          },
+          newText: '',
+        },
+        {
+          range: {
+            start: { line: 1, character: 1 },
+            end: { line: 1, character: 2 },
+          },
+          newText: '',
+        },
+      ],
+      true,
+      [caret(0, 1), caret(1, 1)]
+    );
+    d.applyEdits(
+      [
+        {
+          range: {
+            start: { line: 0, character: 1 },
+            end: { line: 0, character: 2 },
+          },
+          newText: '',
+        },
+        {
+          range: {
+            start: { line: 1, character: 1 },
+            end: { line: 1, character: 2 },
+          },
+          newText: '',
+        },
+      ],
+      true,
+      [caret(0, 1), caret(1, 1)]
     );
 
     expect(d.getText()).toBe('a\nd');

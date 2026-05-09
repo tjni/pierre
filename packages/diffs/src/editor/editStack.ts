@@ -1,6 +1,10 @@
 import type { LineAnnotation } from '../types';
 import type { EditorSelection } from './editorSelection';
-import type { ResolvedTextEdit, TextDocument } from './textDocument';
+import type {
+  ResolvedTextEdit,
+  TextDocument,
+  TextDocumentChange,
+} from './textDocument';
 
 /** Largest number of undo or redo entries kept; oldest entries drop first once exceeded. */
 const DEFAULT_EDIT_STACK_MAX_ENTRIES = 100;
@@ -150,4 +154,192 @@ export function createEditStackEntry<LAnnotation>(
     lineAnnotationsBefore: lineAnnotationsBefore?.slice(),
     lineAnnotationsAfter: lineAnnotationsAfter?.slice(),
   };
+}
+
+/** Determines if the change matches following modes:
+ * - 'insert': simple typing
+ * - 'backspace': backward delete
+ * - 'delete': forward delete
+ */
+export function shouldCoalesceEditStackEntry<LAnnotation>(
+  previousEntry: EditStackEntry<LAnnotation> | undefined,
+  nextEntry: EditStackEntry<LAnnotation>,
+  change: TextDocumentChange
+): boolean {
+  if (previousEntry === undefined || change.lineDelta !== 0) {
+    return false;
+  }
+  if (
+    previousEntry.forwardEdits.length === 0 ||
+    previousEntry.forwardEdits.length !== previousEntry.inverseEdits.length ||
+    previousEntry.forwardEdits.length !== nextEntry.forwardEdits.length ||
+    nextEntry.forwardEdits.length !== nextEntry.inverseEdits.length
+  ) {
+    return false;
+  }
+  let mode: 'insert' | 'backspace' | 'delete' | undefined;
+  for (let i = 0; i < previousEntry.forwardEdits.length; i++) {
+    const previousForward = previousEntry.forwardEdits[i];
+    const previousInverse = previousEntry.inverseEdits[i];
+    const nextForward = nextEntry.forwardEdits[i];
+    const nextInverse = nextEntry.inverseEdits[i];
+    const mappedNextStart = mapOffsetAfterForwardBatchToBefore(
+      nextForward.start,
+      previousEntry.forwardEdits
+    );
+    const previousWasInsert =
+      previousForward.start === previousForward.end &&
+      previousForward.text.length > 0 &&
+      previousInverse.text.length === 0;
+    const nextIsInsert =
+      nextForward.start === nextForward.end &&
+      nextForward.text.length > 0 &&
+      nextInverse.text.length === 0;
+    if (previousWasInsert && nextIsInsert) {
+      const mappedNextEnd = mapOffsetAfterForwardBatchToBefore(
+        nextForward.end,
+        previousEntry.forwardEdits
+      );
+      if (
+        mappedNextStart !== previousForward.start ||
+        mappedNextEnd !== previousForward.end
+      ) {
+        return false;
+      }
+      mode ??= 'insert';
+      if (mode !== 'insert') {
+        return false;
+      }
+      continue;
+    }
+    const previousWasDelete =
+      previousForward.text.length === 0 &&
+      previousForward.end > previousForward.start &&
+      previousInverse.text.length > 0;
+    const nextIsDelete =
+      nextForward.text.length === 0 &&
+      nextForward.end > nextForward.start &&
+      nextInverse.text.length > 0;
+    if (previousWasDelete && nextIsDelete) {
+      if (mappedNextStart === previousForward.end) {
+        mode ??= 'delete';
+        if (mode !== 'delete') {
+          return false;
+        }
+        continue;
+      }
+      if (
+        mappedNextStart + (nextForward.end - nextForward.start) !==
+        previousForward.start
+      ) {
+        return false;
+      }
+      mode ??= 'backspace';
+      if (mode !== 'backspace') {
+        return false;
+      }
+      continue;
+    }
+    return false;
+  }
+  return mode !== undefined;
+}
+
+// Coalesce edit stack entries for simple typing and single-character deletes.
+export function coalesceEditStackEntries<LAnnotation>(
+  previousEntry: EditStackEntry<LAnnotation>,
+  nextEntry: EditStackEntry<LAnnotation>
+): EditStackEntry<LAnnotation> {
+  const forwardEdits: ResolvedTextEdit[] = [];
+  const replacedTexts: string[] = [];
+  for (let i = 0; i < previousEntry.forwardEdits.length; i++) {
+    const previousForward = previousEntry.forwardEdits[i];
+    const previousInverse = previousEntry.inverseEdits[i];
+    const nextForward = nextEntry.forwardEdits[i];
+    const nextInverse = nextEntry.inverseEdits[i];
+    const mappedNextStart = mapOffsetAfterForwardBatchToBefore(
+      nextForward.start,
+      previousEntry.forwardEdits
+    );
+
+    if (previousForward.text.length > 0) {
+      forwardEdits.push({
+        start: previousForward.start,
+        end: previousForward.end,
+        text: previousForward.text + nextForward.text,
+      });
+      replacedTexts.push(previousInverse.text);
+      continue;
+    }
+
+    if (mappedNextStart === previousForward.end) {
+      forwardEdits.push({
+        start: previousForward.start,
+        end: mappedNextStart + (nextForward.end - nextForward.start),
+        text: '',
+      });
+      replacedTexts.push(previousInverse.text + nextInverse.text);
+      continue;
+    }
+
+    forwardEdits.push({
+      start: Math.min(previousForward.start, mappedNextStart),
+      end: previousForward.end,
+      text: '',
+    });
+    replacedTexts.push(nextInverse.text + previousInverse.text);
+  }
+
+  return {
+    forwardEdits,
+    inverseEdits: buildInverseEditsFromReplacedTexts(
+      forwardEdits,
+      replacedTexts
+    ),
+    versionBefore: previousEntry.versionBefore,
+    versionAfter: nextEntry.versionAfter,
+    selectionsBefore: previousEntry.selectionsBefore?.slice(),
+    selectionsAfter: nextEntry.selectionsAfter?.slice(),
+    lineAnnotationsBefore: previousEntry.lineAnnotationsBefore?.slice(),
+    lineAnnotationsAfter: nextEntry.lineAnnotationsAfter?.slice(),
+  };
+}
+
+function buildInverseEditsFromReplacedTexts(
+  forwardEdits: readonly ResolvedTextEdit[],
+  replacedTexts: readonly string[]
+): ResolvedTextEdit[] {
+  const inverseEdits: ResolvedTextEdit[] = [];
+  for (let i = 0, offsetDelta = 0; i < forwardEdits.length; i++) {
+    const edit = forwardEdits[i];
+    const startAfterEdit = edit.start + offsetDelta;
+    inverseEdits.push({
+      start: startAfterEdit,
+      end: startAfterEdit + edit.text.length,
+      text: replacedTexts[i],
+    });
+    offsetDelta += edit.text.length - (edit.end - edit.start);
+  }
+  return inverseEdits;
+}
+
+function mapOffsetAfterForwardBatchToBefore(
+  offsetAfter: number,
+  forwardEdits: readonly ResolvedTextEdit[]
+): number {
+  let offset = offsetAfter;
+  for (const edit of forwardEdits) {
+    const oldLength = edit.end - edit.start;
+    const newLength = edit.text.length;
+    const delta = newLength - oldLength;
+    if (offset < edit.start) {
+      continue;
+    }
+    if (offset >= edit.start + newLength) {
+      offset -= delta;
+      continue;
+    }
+    offset = edit.start + Math.min(offset - edit.start, oldLength);
+  }
+  return offset;
 }
