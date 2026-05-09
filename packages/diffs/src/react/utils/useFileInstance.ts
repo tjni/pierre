@@ -104,15 +104,9 @@ export function useFileInstance<LAnnotation>({
         lineAnnotations,
         prerenderedHTML,
       });
-      if (editable && editor != null) {
-        editor.edit(instanceRef.current, onChange);
-      }
     } else {
       if (instanceRef.current == null) {
         throw new Error('File: A File instance should exist when unmounting');
-      }
-      if (editable && editor != null) {
-        editor.cleanUp();
       }
       instanceRef.current.cleanUp();
       instanceRef.current = null;
