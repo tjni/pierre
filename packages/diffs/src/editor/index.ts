@@ -63,7 +63,9 @@ import {
 } from './editorTextarea';
 import { BackgroundTokenizer, tokenizeLine } from './tokenzier';
 
-export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
+export class Editor<
+  LAnnotation = undefined,
+> implements DiffsEditor<LAnnotation> {
   #disposes?: (() => void)[];
   #onChange?: (
     file: FileContents,

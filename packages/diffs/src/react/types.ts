@@ -60,4 +60,9 @@ export interface FileProps<LAnnotation> {
   style?: CSSProperties;
   prerenderedHTML?: string;
   disableWorkerPool?: boolean;
+  editable?: boolean;
+  onChange?: (
+    file: FileContents,
+    lineAnnotations?: LineAnnotation<LAnnotation>[]
+  ) => void;
 }

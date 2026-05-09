@@ -19,6 +19,7 @@ import type {
 } from '../../types';
 import { areOptionsEqual } from '../../utils/areOptionsEqual';
 import { noopRender } from '../constants';
+import { useEditor } from '../EditorContext';
 import { useVirtualizer } from '../Virtualizer';
 import { WorkerPoolContext } from '../WorkerPoolContext';
 import { useStableCallback } from './useStableCallback';
@@ -36,6 +37,11 @@ interface UseFileInstanceProps<LAnnotation> {
   hasGutterRenderUtility: boolean;
   hasCustomHeader: boolean;
   disableWorkerPool: boolean;
+  editable: boolean;
+  onChange?: (
+    file: FileContents,
+    lineAnnotations?: LineAnnotation<LAnnotation>[]
+  ) => void;
 }
 
 interface UseFileInstanceReturn {
@@ -53,9 +59,12 @@ export function useFileInstance<LAnnotation>({
   hasGutterRenderUtility,
   hasCustomHeader,
   disableWorkerPool,
+  editable,
+  onChange,
 }: UseFileInstanceProps<LAnnotation>): UseFileInstanceReturn {
   const simpleVirtualizer = useVirtualizer();
   const poolManager = useContext(WorkerPoolContext);
+  const editor = useEditor<LAnnotation>();
   const instanceRef = useRef<
     File<LAnnotation> | VirtualizedFile<LAnnotation> | null
   >(null);
@@ -95,9 +104,15 @@ export function useFileInstance<LAnnotation>({
         lineAnnotations,
         prerenderedHTML,
       });
+      if (editable && editor != null) {
+        editor.edit(instanceRef.current, onChange);
+      }
     } else {
       if (instanceRef.current == null) {
         throw new Error('File: A File instance should exist when unmounting');
+      }
+      if (editable && editor != null) {
+        editor.cleanUp();
       }
       instanceRef.current.cleanUp();
       instanceRef.current = null;
@@ -121,6 +136,16 @@ export function useFileInstance<LAnnotation>({
       instanceRef.current.setSelectedLines(selectedLines);
     }
   });
+
+  useIsometricEffect(() => {
+    if (editable && editor != null && instanceRef.current != null) {
+      editor.edit(instanceRef.current, onChange);
+      return () => {
+        editor.cleanUp();
+      };
+    }
+    return undefined;
+  }, [editable, editor, onChange]);
 
   const getHoveredLine = useCallback(():
     | GetHoveredLineResult<'file'>
