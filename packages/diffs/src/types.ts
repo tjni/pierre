@@ -744,9 +744,9 @@ export interface AppliedThemeStyleCache {
 }
 
 export interface DiffsEditor<LAnnotation> {
-  triggerEdit(
+  syncFile(
     fileContainer: HTMLElement,
-    file: FileContents,
+    fileContents: FileContents,
     lineAnnotations: LineAnnotation<LAnnotation>[] | undefined,
     renderRange: RenderRange | undefined
   ): void;

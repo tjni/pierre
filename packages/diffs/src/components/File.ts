@@ -177,7 +177,7 @@ export class File<LAnnotation = undefined> {
 
   public setEditor(editor: DiffsEditor<LAnnotation>): void {
     if (this.fileContainer != null && this.file != null) {
-      editor.triggerEdit(
+      editor.syncFile(
         this.fileContainer,
         this.file,
         this.lineAnnotations,
@@ -391,6 +391,27 @@ export class File<LAnnotation = undefined> {
     return file != null ? this.fileRenderer.getLineCount(file) : 0;
   }
 
+  public emitDirtyLines(lines: Map<number, Array<HighlightedToken>>): void {
+    this.fileRenderer.emitDirtyLines(lines);
+  }
+
+  public emitLineCountChange(lineCount: number): void {
+    const result = this.fileRenderer.emitLineCountChange(
+      lineCount,
+      this.renderRange
+    );
+    if (result != null && this.code != null) {
+      const { gutterAST, rowCount } = result;
+      const columns = this.getColumns(this.code);
+      if (columns != null) {
+        columns.gutter.innerHTML =
+          this.fileRenderer.renderPartialHTML(gutterAST);
+        columns.content.style.gridRow = `span ${rowCount}`;
+        columns.gutter.style.gridRow = `span ${rowCount}`;
+      }
+    }
+  }
+
   public emitLineAnnotationsChange(
     newLineAnnotations: LineAnnotation<LAnnotation>[]
   ): void {
@@ -420,7 +441,7 @@ export class File<LAnnotation = undefined> {
         columns.gutter.style.gridRow = `span ${rowCount}`;
         this.renderAnnotations();
         if (this.fileContainer != null && this.file != null) {
-          this.editor?.triggerEdit(
+          this.editor?.syncFile(
             this.fileContainer,
             this.file,
             this.lineAnnotations,
@@ -429,27 +450,6 @@ export class File<LAnnotation = undefined> {
         }
       }
     }
-  }
-
-  public emitLineCountChange(lineCount: number): void {
-    const result = this.fileRenderer.emitLineCountChange(
-      lineCount,
-      this.renderRange
-    );
-    if (result != null && this.code != null) {
-      const { gutterAST, rowCount } = result;
-      const columns = this.getColumns(this.code);
-      if (columns != null) {
-        columns.gutter.innerHTML =
-          this.fileRenderer.renderPartialHTML(gutterAST);
-        columns.content.style.gridRow = `span ${rowCount}`;
-        columns.gutter.style.gridRow = `span ${rowCount}`;
-      }
-    }
-  }
-
-  public emitTokenize(lines: Map<number, Array<HighlightedToken>>): void {
-    this.fileRenderer.emitTokenize(lines);
   }
 
   public render({
@@ -583,7 +583,7 @@ export class File<LAnnotation = undefined> {
       this.resizeManager.setup(pre, overflow === 'wrap');
       this.renderAnnotations();
       this.renderGutterUtility();
-      this.editor?.triggerEdit(
+      this.editor?.syncFile(
         fileContainer,
         file,
         this.lineAnnotations,

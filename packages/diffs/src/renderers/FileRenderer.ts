@@ -192,58 +192,14 @@ export class FileRenderer<LAnnotation = undefined> {
     );
   }
 
-  public emitLineAnnotationsChange(
-    newLineAnnotations: LineAnnotation<LAnnotation>[],
-    renderRange: RenderRange = DEFAULT_RENDER_RANGE
-  ): FileRenderResult | undefined {
-    const renderCache = this.renderCache;
-    if (renderCache == null || renderCache.result == null) {
-      return undefined;
-    }
-    this.setLineAnnotations(newLineAnnotations);
-    return this.processFileResult(
-      renderCache.file,
-      renderRange,
-      renderCache.result
-    );
-  }
-
-  public emitLineCountChange(
-    lineCount: number,
-    renderRange: RenderRange = DEFAULT_RENDER_RANGE
-  ): FileRenderResult | undefined {
-    const renderCache = this.renderCache;
-    if (renderCache == null || renderCache.result == null) {
-      return undefined;
-    }
-    const prevCodeLines = renderCache.result.code.length;
-    renderCache.result.code.length = lineCount;
-    for (let i = prevCodeLines; i < lineCount; i++) {
-      renderCache.result.code[i] = {
-        type: 'element',
-        tagName: 'div',
-        properties: {
-          'data-line': i + 1,
-          'data-line-type': 'context',
-          'data-line-index': i,
-        },
-        children: [{ type: 'text', value: ' ' }],
-      };
-    }
-    this.alternateLineCount.set(renderCache.file, lineCount);
-    return this.processFileResult(
-      renderCache.file,
-      renderRange,
-      renderCache.result
-    );
-  }
-
-  public emitTokenize(lines: Map<number, Array<HighlightedToken>>): void {
+  public emitDirtyLines(
+    dirtyLines: Map<number, Array<HighlightedToken>>
+  ): void {
     const renderCache = this.renderCache;
     if (renderCache == null || renderCache.result == null) {
       return;
     }
-    for (const [line, tokens] of lines) {
+    for (const [line, tokens] of dirtyLines) {
       renderCache.result.code[line] = {
         type: 'element',
         tagName: 'div',
@@ -276,6 +232,52 @@ export class FileRenderer<LAnnotation = undefined> {
         }),
       };
     }
+  }
+
+  public emitLineCountChange(
+    lineCount: number,
+    renderRange: RenderRange = DEFAULT_RENDER_RANGE
+  ): FileRenderResult | undefined {
+    const renderCache = this.renderCache;
+    if (renderCache == null || renderCache.result == null) {
+      return undefined;
+    }
+    const prevCodeLines = renderCache.result.code.length;
+    renderCache.result.code.length = lineCount;
+    for (let i = prevCodeLines; i < lineCount; i++) {
+      renderCache.result.code[i] = {
+        type: 'element',
+        tagName: 'div',
+        properties: {
+          'data-line': i + 1,
+          'data-line-type': 'context',
+          'data-line-index': i,
+        },
+        children: [{ type: 'text', value: ' ' }],
+      };
+    }
+    this.alternateLineCount.set(renderCache.file, lineCount);
+    return this.processFileResult(
+      renderCache.file,
+      renderRange,
+      renderCache.result
+    );
+  }
+
+  public emitLineAnnotationsChange(
+    newLineAnnotations: LineAnnotation<LAnnotation>[],
+    renderRange: RenderRange = DEFAULT_RENDER_RANGE
+  ): FileRenderResult | undefined {
+    const renderCache = this.renderCache;
+    if (renderCache == null || renderCache.result == null) {
+      return undefined;
+    }
+    this.setLineAnnotations(newLineAnnotations);
+    return this.processFileResult(
+      renderCache.file,
+      renderRange,
+      renderCache.result
+    );
   }
 
   public renderFile(

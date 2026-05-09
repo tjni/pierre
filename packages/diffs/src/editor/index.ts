@@ -238,7 +238,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#reservedSelections = undefined;
   }
 
-  triggerEdit(
+  syncFile(
     fileContainer: HTMLElement,
     fileContents: FileContents,
     lineAnnotations: LineAnnotation<LAnnotation>[] | undefined,
@@ -667,11 +667,14 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       }
     }
 
-    file.emitTokenize(dirtyLines);
+    file.emitDirtyLines(dirtyLines);
     if (lastChange.lineDelta !== 0) {
       file.emitLineCountChange(lastChange.lineCount);
     }
-    if (nextLineAnnotations !== undefined) {
+    if (
+      nextLineAnnotations !== undefined &&
+      nextLineAnnotations !== this.#lineAnnotations
+    ) {
       file.emitLineAnnotationsChange(nextLineAnnotations);
     }
 
@@ -682,7 +685,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           colorMap,
           textDocument,
           onTokenize: (result) => {
-            file.emitTokenize(result.lines);
+            file.emitDirtyLines(result.lines);
           },
         });
         this.#backgroundTokenizer.scheduleTokenize(line, state);
