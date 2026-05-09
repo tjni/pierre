@@ -4,6 +4,7 @@ import {
   applyTextChangeToSelections,
   applyTextReplaceToSelections,
   convertSelection,
+  createSelectionFrom,
   DirectionForward,
   DirectionNone,
   type EditorSelection,
@@ -404,6 +405,32 @@ describe('concatSelections', () => {
       end: { line: 0, character: 3 },
       direction: DirectionNone,
     });
+  });
+});
+
+describe('createSelectionFrom', () => {
+  test('keeps forward direction when drag focus moves after anchor', () => {
+    const start = createSelection(2, 3, 2, 3, DirectionNone);
+    const current = createSelection(2, 3, 2, 8, DirectionNone);
+    expect(createSelectionFrom(start, current)).toEqual(
+      createSelection(2, 3, 2, 8, DirectionForward)
+    );
+  });
+
+  test('produces backward direction when drag focus moves before anchor', () => {
+    const start = createSelection(2, 8, 2, 8, DirectionNone);
+    const current = createSelection(2, 3, 2, 8, DirectionNone);
+    expect(createSelectionFrom(start, current)).toEqual(
+      createSelection(2, 3, 2, 8, DirectionBackward)
+    );
+  });
+
+  test('uses backward start anchor when selection already has direction', () => {
+    const start = createSelection(1, 2, 1, 6, DirectionBackward);
+    const current = createSelection(1, 0, 1, 6, DirectionNone);
+    expect(createSelectionFrom(start, current)).toEqual(
+      createSelection(1, 0, 1, 6, DirectionBackward)
+    );
   });
 });
 

@@ -13,6 +13,7 @@ import {
   applyTextReplaceToSelections,
   comparePosition,
   convertSelection,
+  createSelectionFrom,
   DirectionBackward,
   DirectionForward,
   DirectionNone,
@@ -22,7 +23,6 @@ import {
   mapSelectionRangeMove,
   mergeSelections,
   resolveIndentEdits,
-  type SelectionDirection,
   selectionIntersects,
 } from '../editor/editorSelection';
 import {
@@ -102,12 +102,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #measureCtx?: CanvasRenderingContext2D;
 
   // state
-  #selectionStartX = 0;
-  #selectionStartY = 0;
-  #selectionEndX = 0;
-  #selectionEndY = 0;
   #shouldIgnoreSelectionChange = false;
   #textareaSnapshot?: TextareaSnapshot;
+  #selectionStart: EditorSelection | undefined;
   #reservedSelections?: EditorSelection[];
   #selections?: EditorSelection[];
 
@@ -234,6 +231,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
     this.#shouldIgnoreSelectionChange = false;
     this.#textareaSnapshot = undefined;
+    this.#selectionStart = undefined;
     this.#selections = undefined;
     this.#reservedSelections = undefined;
   }
@@ -313,7 +311,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
     if (this.#selections !== undefined) {
       this.setSelections(this.#selections);
-      this.#focusTextarea();
+      if (this.#selectionStart === undefined) {
+        this.#focusTextarea();
+      }
     }
 
     if (renderRange !== undefined) {
@@ -385,11 +385,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           this.#reservedSelections = undefined;
         }
 
-        this.#selectionStartY = e.clientY;
-        this.#selectionStartX = e.clientX;
-        this.#selectionEndX = e.clientX;
-        this.#selectionEndY = e.clientY;
-
         // when the user is using the 'Shift' key to create a selection
         // hide the textarea element or the selection will be created in the textarea
         if (e.shiftKey && this.#textareaEl !== undefined) {
@@ -399,18 +394,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
             this.#onSelectionChange(true);
           });
         }
-
-        mouseEventDisposes.push(
-          // `Selection.getComposedRanges` currently does not preserve the drag direction.
-          // The workaround is to check the mousemove event to determine the direction of the drag operation.
-          addEventListener(document, 'mousemove', (e) => {
-            if ((e.buttons & 1) !== 1) {
-              return;
-            }
-            this.#selectionEndX = e.clientX;
-            this.#selectionEndY = e.clientY;
-          })
-        );
 
         if (this.#contentEl !== undefined) {
           mouseEventDisposes.push(
@@ -431,6 +414,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       addEventListener(document, 'mouseup', (e) => {
         mouseEventDisposes.forEach((dispose) => dispose());
         mouseEventDisposes.length = 0;
+        this.#selectionStart = undefined;
         this.#reservedSelections = undefined;
         if (e.shiftKey && this.#textareaEl !== undefined) {
           this.#shouldIgnoreSelectionChange = false;
@@ -460,23 +444,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         this.#onTextareaSelectionChange();
       }),
     ];
-  }
-
-  // Shadow DOM selection ranges do not expose direction, so track mouse
-  // movement as a workaround.
-  // See https://github.com/mfreed7/shadow-dom-selection#part-1-add-selectiongetcomposedrange-and-selectiondirection
-  #computeMouseSelectionDirection(): SelectionDirection {
-    const startLine = Math.ceil(this.#selectionStartY / this.#lineHeight);
-    const endLine = Math.ceil(this.#selectionEndY / this.#lineHeight);
-    if (endLine !== startLine) {
-      return endLine > startLine ? DirectionForward : DirectionBackward;
-    }
-    if (this.#selectionEndX !== this.#selectionStartX) {
-      return this.#selectionEndX > this.#selectionStartX
-        ? DirectionForward
-        : DirectionBackward;
-    }
-    return DirectionNone;
   }
 
   #rerender(
@@ -861,29 +828,37 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       return;
     }
 
-    const selection = convertSelection(
-      composedRange,
-      this.#computeMouseSelectionDirection()
-    );
-    if (selection !== null) {
-      this.#textareaSnapshot = undefined;
-      if (append) {
-        const primarySelection = this.#selections?.at(-1);
-        if (primarySelection !== undefined) {
-          const newSelection = mergeSelections(primarySelection, selection);
-          this.setSelections([newSelection]);
-        }
-      } else if (this.#reservedSelections !== undefined) {
-        this.setSelections([
-          ...this.#reservedSelections.filter(
-            (reservedSelection) =>
-              !selectionIntersects(reservedSelection, selection)
-          ),
-          selection,
-        ]);
+    let selection = convertSelection(composedRange, DirectionNone);
+    if (selection === undefined) {
+      return;
+    }
+
+    if (this.#selectionStart === undefined) {
+      this.#selectionStart = selection;
+    } else {
+      selection = createSelectionFrom(this.#selectionStart, selection);
+    }
+
+    this.#textareaSnapshot = undefined;
+
+    if (append) {
+      const primarySelection = this.#selections?.at(-1);
+      if (primarySelection !== undefined) {
+        const newSelection = mergeSelections(primarySelection, selection);
+        this.setSelections([newSelection]);
       } else {
         this.setSelections([selection]);
       }
+    } else if (this.#reservedSelections !== undefined) {
+      this.setSelections([
+        ...this.#reservedSelections.filter(
+          (reservedSelection) =>
+            !selectionIntersects(reservedSelection, selection)
+        ),
+        selection,
+      ]);
+    } else {
+      this.setSelections([selection]);
     }
   }
 

@@ -27,11 +27,11 @@ export interface EditorSelection extends Range {
 export function convertSelection(
   range: StaticRange,
   direction: SelectionDirection = DirectionNone
-): EditorSelection | null {
+): EditorSelection | undefined {
   const start = boundaryToPosition(range.startContainer, range.startOffset);
   const end = boundaryToPosition(range.endContainer, range.endOffset);
   if (start === null || end === null) {
-    return null;
+    return undefined;
   }
   return {
     start,
@@ -392,28 +392,7 @@ export function isCollapsedSelection(selection: EditorSelection): boolean {
 }
 
 /**
- * Merges two selections into one range that covers both.
- */
-export function mergeSelections(
-  a: EditorSelection,
-  b: EditorSelection
-): EditorSelection {
-  const start = comparePosition(a.start, b.start) <= 0 ? a.start : b.start;
-  const end = comparePosition(a.end, b.end) >= 0 ? a.end : b.end;
-  const anchorA = a.direction === DirectionBackward ? a.end : a.start;
-  const focusB = b.direction === DirectionBackward ? b.start : b.end;
-  const anchorVsFocus = comparePosition(anchorA, focusB);
-  const direction: SelectionDirection =
-    anchorVsFocus === 0
-      ? DirectionNone
-      : anchorVsFocus < 0
-        ? DirectionForward
-        : DirectionBackward;
-  return { start, end, direction };
-}
-
-/**
- * Checks if two selections intersect.
+ * Checks whether selections `a` and `b` intersect.
  */
 export function selectionIntersects(
   a: EditorSelection,
@@ -472,6 +451,65 @@ export function createSelectionFromAnchorAndFocusOffsets(
     end: textDocument.positionAt(end),
     direction,
   };
+}
+
+/**
+ * Creates a selection from a start and current selection.
+ */
+export function createSelectionFrom(
+  start: EditorSelection,
+  current: EditorSelection
+): EditorSelection {
+  const anchor =
+    start.direction === DirectionBackward ? start.end : start.start;
+  const currentStartOrder = comparePosition(anchor, current.start);
+  const currentEndOrder = comparePosition(anchor, current.end);
+  let focus = current.end;
+  if (currentStartOrder <= 0) {
+    focus = current.end;
+  } else if (currentEndOrder >= 0) {
+    focus = current.start;
+  } else {
+    // When the original anchor sits inside `current`, keep whichever edge
+    // stayed at the anchor so drag direction remains stable.
+    const anchorAtStart = currentStartOrder === 0;
+    focus = anchorAtStart ? current.end : current.start;
+  }
+  const anchorVsFocus = comparePosition(anchor, focus);
+  const direction: SelectionDirection =
+    anchorVsFocus === 0
+      ? DirectionNone
+      : anchorVsFocus < 0
+        ? DirectionForward
+        : DirectionBackward;
+  const selectionStart = anchorVsFocus <= 0 ? anchor : focus;
+  const selectionEnd = anchorVsFocus <= 0 ? focus : anchor;
+  return {
+    start: selectionStart,
+    end: selectionEnd,
+    direction,
+  };
+}
+
+/**
+ * Merges two selections into one range that covers both.
+ */
+export function mergeSelections(
+  a: EditorSelection,
+  b: EditorSelection
+): EditorSelection {
+  const start = comparePosition(a.start, b.start) <= 0 ? a.start : b.start;
+  const end = comparePosition(a.end, b.end) >= 0 ? a.end : b.end;
+  const anchorA = a.direction === DirectionBackward ? a.end : a.start;
+  const focusB = b.direction === DirectionBackward ? b.start : b.end;
+  const anchorVsFocus = comparePosition(anchorA, focusB);
+  const direction: SelectionDirection =
+    anchorVsFocus === 0
+      ? DirectionNone
+      : anchorVsFocus < 0
+        ? DirectionForward
+        : DirectionBackward;
+  return { start, end, direction };
 }
 
 /**
