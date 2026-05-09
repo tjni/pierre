@@ -153,49 +153,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     return () => this.cleanUp();
   }
 
-  setSelections(selections: EditorSelection[], resetTextarea = true): void {
-    const primarySelection = selections.at(-1);
-    if (primarySelection === undefined) {
-      return;
-    }
-    if (resetTextarea) {
-      this.#textareaSnapshot = undefined;
-    }
-    this.#file?.setSelectedLines(null);
-    if (isCollapsedSelection(primarySelection)) {
-      const line = primarySelection.end.line + 1;
-      this.#file?.setSelectedLines({
-        start: line,
-        end: line,
-      });
-    }
-    const shouldUpdateTextarea =
-      Math.max(0, primarySelection.start.line - 1) !==
-      this.#textareaSnapshot?.startLine;
-    this.#selections = selections;
-    this.#renderSelections(selections);
-    if (shouldUpdateTextarea) {
-      this.#updateTextarea(primarySelection);
-    } else if (
-      this.#textareaEl !== undefined &&
-      this.#textDocument !== undefined
-    ) {
-      const nextTextareaSnapshot = createTextareaSnapshot(
-        this.#textDocument,
-        primarySelection
-      );
-      const shouldSyncTextarea =
-        this.#textareaSnapshot === undefined ||
-        nextTextareaSnapshot.text !== this.#textareaEl.value ||
-        nextTextareaSnapshot.selectionStart !==
-          this.#textareaEl.selectionStart ||
-        nextTextareaSnapshot.selectionEnd !== this.#textareaEl.selectionEnd;
-      if (shouldSyncTextarea) {
-        this.#updateTextarea(primarySelection);
-      } else {
-        this.#textareaSnapshot = nextTextareaSnapshot;
-      }
-    }
+  setSelections(selections: EditorSelection[]): void {
+    this.#setSelections(selections);
+    this.#focusTextarea();
   }
 
   cleanUp(): void {
@@ -203,6 +163,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#disposes = undefined;
     this.#onChange = undefined;
 
+    this.#file?.removeEditor();
     this.#file = undefined;
     this.#fileContents = undefined;
     this.#lineAnnotations = undefined;
@@ -310,7 +271,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       this.#contentEl?.appendChild(this.#textareaEl);
     }
     if (this.#selections !== undefined) {
-      this.setSelections(this.#selections);
+      this.#setSelections(this.#selections);
       if (this.#selectionStart === undefined) {
         this.#focusTextarea();
       }
@@ -762,7 +723,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
     // Selection in the textarea changed, but no text change was made.
     if (selectionStart === selectionEnd) {
-      this.setSelections(
+      this.#setSelections(
         mapSelectionMove(
           textDocument,
           selections,
@@ -777,7 +738,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         textareaSnapshot.offset + (isBackward ? selectionEnd : selectionStart);
       const focusOffset =
         textareaSnapshot.offset + (isBackward ? selectionStart : selectionEnd);
-      this.setSelections(
+      this.#setSelections(
         mapSelectionRangeMove(
           textDocument,
           selections,
@@ -845,12 +806,12 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       const primarySelection = this.#selections?.at(-1);
       if (primarySelection !== undefined) {
         const newSelection = mergeSelections(primarySelection, selection);
-        this.setSelections([newSelection]);
+        this.#setSelections([newSelection]);
       } else {
-        this.setSelections([selection]);
+        this.#setSelections([selection]);
       }
     } else if (this.#reservedSelections !== undefined) {
-      this.setSelections([
+      this.#setSelections([
         ...this.#reservedSelections.filter(
           (reservedSelection) =>
             !selectionIntersects(reservedSelection, selection)
@@ -858,7 +819,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         selection,
       ]);
     } else {
-      this.setSelections([selection]);
+      this.#setSelections([selection]);
     }
   }
 
@@ -907,6 +868,51 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     setTimeout(() => {
       this.#shouldIgnoreSelectionChange = false;
     }, 0);
+  }
+
+  #setSelections(selections: EditorSelection[], resetTextarea = true): void {
+    const primarySelection = selections.at(-1);
+    if (primarySelection === undefined) {
+      return;
+    }
+    if (resetTextarea) {
+      this.#textareaSnapshot = undefined;
+    }
+    this.#file?.setSelectedLines(null);
+    if (isCollapsedSelection(primarySelection)) {
+      const line = primarySelection.end.line + 1;
+      this.#file?.setSelectedLines({
+        start: line,
+        end: line,
+      });
+    }
+    const shouldUpdateTextarea =
+      Math.max(0, primarySelection.start.line - 1) !==
+      this.#textareaSnapshot?.startLine;
+    this.#selections = selections;
+    this.#renderSelections(selections);
+    if (shouldUpdateTextarea) {
+      this.#updateTextarea(primarySelection);
+    } else if (
+      this.#textareaEl !== undefined &&
+      this.#textDocument !== undefined
+    ) {
+      const nextTextareaSnapshot = createTextareaSnapshot(
+        this.#textDocument,
+        primarySelection
+      );
+      const shouldSyncTextarea =
+        this.#textareaSnapshot === undefined ||
+        nextTextareaSnapshot.text !== this.#textareaEl.value ||
+        nextTextareaSnapshot.selectionStart !==
+          this.#textareaEl.selectionStart ||
+        nextTextareaSnapshot.selectionEnd !== this.#textareaEl.selectionEnd;
+      if (shouldSyncTextarea) {
+        this.#updateTextarea(primarySelection);
+      } else {
+        this.#textareaSnapshot = nextTextareaSnapshot;
+      }
+    }
   }
 
   #renderSelections(selections: EditorSelection[]) {
@@ -1164,7 +1170,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   async #runCommand(command: EditorCommand) {
     switch (command) {
       case 'selectAll':
-        this.setSelections([this.#getFullSelection()]);
+        this.#setSelections([this.#getFullSelection()]);
         break;
 
       case 'copy':
@@ -1204,7 +1210,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         }
         const next = extendSelections(textDocument, selections);
         if (next !== undefined) {
-          this.setSelections(next, false);
+          this.#setSelections(next, false);
           this.#focusTextarea();
         }
         break;
@@ -1260,7 +1266,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           const atEnd = command === 'documentEnd';
           const anchor = createElement('span');
           const root = this.#contentEl?.getRootNode() as Element | undefined;
-          this.setSelections([this.#getDocumentBoundarySelection(atEnd)]);
+          this.#setSelections([this.#getDocumentBoundarySelection(atEnd)]);
           if (root !== undefined) {
             if (atEnd) {
               root.appendChild(anchor);
@@ -1418,7 +1424,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
     this.#rerender(change, lineAnnotations);
     if (selections !== undefined) {
-      this.setSelections(selections, false);
+      this.#setSelections(selections, false);
     }
   }
 

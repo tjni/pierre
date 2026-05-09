@@ -176,6 +176,7 @@ export class File<LAnnotation = undefined> {
   }
 
   public setEditor(editor: DiffsEditor<LAnnotation>): void {
+    this.editor?.cleanUp();
     if (this.fileContainer != null && this.file != null) {
       editor.syncFile(
         this.fileContainer,
@@ -185,6 +186,10 @@ export class File<LAnnotation = undefined> {
       );
     }
     this.editor = editor;
+  }
+
+  public removeEditor(): void {
+    this.editor = undefined;
   }
 
   private handleHighlightRender = (): void => {
