@@ -48,7 +48,7 @@ import {
 const DEMO_THEME: DiffsThemeNames | ThemesType = DEFAULT_THEMES;
 const WORKER_POOL = true;
 const VIRTUALIZE = true;
-const CRAZY_FILE = true;
+const CRAZY_FILE = false;
 const LARGE_CONFLICT_FILE = false;
 
 const FileStreamCodeConfigs: FileStreamCodeConfigsItem[] = [
@@ -675,7 +675,7 @@ if (renderFileButton != null) {
 
     virtualizer?.setup(globalThis.document);
     const wrap = getWrapped();
-    const editor = new Editor();
+    const editor = new Editor<LineCommentMetadata>();
     const fileContainer = document.createElement(DIFFS_TAG_NAME);
     wrapper.appendChild(fileContainer);
     let instance:
@@ -702,7 +702,9 @@ if (renderFileButton != null) {
         );
         const editableToggle = createToggle('Editable', false, (checked) => {
           if (checked) {
-            editor.edit(instance);
+            editor.edit(instance, (file, lineAnnotations) => {
+              console.log('change', file, lineAnnotations);
+            });
             editor.setSelections([
               {
                 start: {
@@ -926,7 +928,7 @@ function createToggle(
   });
   label.dataset.collapser = '';
   label.appendChild(input);
-  label.append(labelText);
+  label.appendChild(document.createTextNode(` ${labelText}`));
   return label;
 }
 
