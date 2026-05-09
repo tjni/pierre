@@ -139,10 +139,7 @@ export function useFileInstance<LAnnotation>({
 
   useIsometricEffect(() => {
     if (editable && editor != null && instanceRef.current != null) {
-      editor.edit(instanceRef.current, onChange);
-      return () => {
-        editor.cleanUp();
-      };
+      return editor.edit(instanceRef.current, onChange);
     }
     return undefined;
   }, [editable, editor, onChange]);
