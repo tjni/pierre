@@ -277,91 +277,16 @@ function CodeViewInner<LAnnotation = undefined>(
       : undefined;
   });
 
-  useIsometricEffect(() => {
-    const {
-      instance,
-      controlled: prevControlled,
-      items: prevItems,
-      managedOptions: prevManagedOptions,
-      slotCoordinator: prevSlotCoordinator,
-    } = cachedDataRef.current;
-    if (instance == null) {
-      return;
-    }
-
-    try {
-      cachedDataRef.current.disableFlushSync = true;
-      let shouldRender = false;
-
-      if (!areOptionsEqual(managedOptions, prevManagedOptions)) {
-        cachedDataRef.current.managedOptions = managedOptions;
-        instance.setOptions(managedOptions);
-        shouldRender = true;
-      }
-
-      if (prevControlled !== controlled) {
-        console.error(
-          'CodeView: cannot switch between controlled and uncontrolled modes. Remount with a new key instead.'
-        );
-        return;
-      }
-
-      if (controlled) {
-        if (controlledItems !== prevItems) {
-          if (areItemListsEqual(prevItems, controlledItems)) {
-            cachedDataRef.current.items = controlledItems;
-          } else if (isAppendOnlyItemUpdate(prevItems, controlledItems)) {
-            cachedDataRef.current.items = controlledItems;
-            instance.addItems(controlledItems.slice(prevItems.length));
-          } else {
-            cachedDataRef.current.items = controlledItems;
-            instance.setItems(controlledItems);
-            shouldRender = true;
-          }
-        }
-      }
-      // If uncontrolled, we should only ever set items once, and just depend
-      // on imperative instance changes going forward
-      else if (prevItems == null) {
-        const seedItems = initialItems ?? [];
-        cachedDataRef.current.items = seedItems;
-        if (seedItems.length > 0) {
-          instance.setItems(seedItems);
-          shouldRender = true;
-        }
-      }
-
-      if (selectedLines !== undefined) {
-        instance.setSelectedLines(selectedLines, { notify: false });
-      }
-
-      const slotPublish = instance.setSlotCoordinator(slotCoordinator);
-      let forceInlinePublish = false;
-      if (slotCoordinator !== prevSlotCoordinator) {
-        if (slotCoordinator == null || prevSlotCoordinator == null) {
-          forceInlinePublish = true;
-        }
-        cachedDataRef.current.slotCoordinator = slotCoordinator;
-      }
-
-      if (shouldRender || slotPublish) {
-        instance.render(true);
-      }
-
-      // FIXME(amadeus): This feels kinda bad and flakey with regards to how
-      // other things are working... it makes me think that we should
-      // re-architect the slotCoordinator a bit, and maybe DON'T make it an
-      // undefineable thing...
-      if (slotPublish && slotCoordinator == null) {
-        slotContentStore.publish(undefined);
-      }
-
-      if (forceInlinePublish) {
-        forceUpdate({});
-      }
-    } finally {
-      cachedDataRef.current.disableFlushSync = false;
-    }
+  useCodeViewEffects({
+    cachedDataRef,
+    controlled,
+    controlledItems,
+    forceUpdate,
+    initialItems,
+    managedOptions,
+    selectedLines,
+    slotContentStore,
+    slotCoordinator,
   });
 
   // Setup the ref handler
@@ -467,6 +392,118 @@ function CodeViewInner<LAnnotation = undefined>(
       )}
     </>
   );
+}
+
+interface UseCodeViewInstanceUpdatesProps<LAnnotation> {
+  cachedDataRef: { current: CachedDataRef<LAnnotation> };
+  controlled: boolean;
+  controlledItems: readonly CodeViewItem<LAnnotation>[] | undefined;
+  forceUpdate(value: unknown): void;
+  initialItems: readonly CodeViewItem<LAnnotation>[] | undefined;
+  managedOptions: CodeViewOptions<LAnnotation> | undefined;
+  selectedLines: CodeViewLineSelection | null | undefined;
+  slotContentStore: ManagedContentStore<LAnnotation>;
+  slotCoordinator: CodeViewCoordinator<LAnnotation> | undefined;
+}
+
+// Reconciles React props into the imperative CodeView instance after each render.
+function useCodeViewEffects<LAnnotation>({
+  cachedDataRef,
+  controlled,
+  controlledItems,
+  forceUpdate,
+  initialItems,
+  managedOptions,
+  selectedLines,
+  slotContentStore,
+  slotCoordinator,
+}: UseCodeViewInstanceUpdatesProps<LAnnotation>): void {
+  useIsometricEffect(() => {
+    const {
+      instance,
+      controlled: prevControlled,
+      items: prevItems,
+      managedOptions: prevManagedOptions,
+      slotCoordinator: prevSlotCoordinator,
+    } = cachedDataRef.current;
+    if (instance == null) {
+      return;
+    }
+
+    try {
+      cachedDataRef.current.disableFlushSync = true;
+      let shouldRender = false;
+
+      if (!areOptionsEqual(managedOptions, prevManagedOptions)) {
+        cachedDataRef.current.managedOptions = managedOptions;
+        instance.setOptions(managedOptions);
+        shouldRender = true;
+      }
+
+      if (prevControlled !== controlled) {
+        console.error(
+          'CodeView: cannot switch between controlled and uncontrolled modes. Remount with a new key instead.'
+        );
+        return;
+      }
+
+      if (controlledItems !== undefined) {
+        if (controlledItems !== prevItems) {
+          if (areItemListsEqual(prevItems, controlledItems)) {
+            cachedDataRef.current.items = controlledItems;
+          } else if (isAppendOnlyItemUpdate(prevItems, controlledItems)) {
+            cachedDataRef.current.items = controlledItems;
+            instance.addItems(controlledItems.slice(prevItems.length));
+          } else {
+            cachedDataRef.current.items = controlledItems;
+            instance.setItems(controlledItems);
+            shouldRender = true;
+          }
+        }
+      }
+      // If uncontrolled, we should only ever set items once, and just depend
+      // on imperative instance changes going forward
+      else if (prevItems == null) {
+        const seedItems = initialItems ?? [];
+        cachedDataRef.current.items = seedItems;
+        if (seedItems.length > 0) {
+          instance.setItems(seedItems);
+          shouldRender = true;
+        }
+      }
+
+      if (selectedLines !== undefined) {
+        instance.setSelectedLines(selectedLines, { notify: false });
+      }
+
+      const slotPublish = instance.setSlotCoordinator(slotCoordinator);
+      let forceInlinePublish = false;
+      if (slotCoordinator !== prevSlotCoordinator) {
+        if (slotCoordinator == null || prevSlotCoordinator == null) {
+          forceInlinePublish = true;
+        }
+        cachedDataRef.current.slotCoordinator = slotCoordinator;
+      }
+
+      if (shouldRender || slotPublish) {
+        instance.render(true);
+      }
+
+      // FIXME(amadeus): This feels kinda bad and flakey with regards to how
+      // other things are working... it makes me think that we should
+      // re-architect the slotCoordinator a bit, and maybe DON'T make it an
+      // undefineable thing...
+      if (slotPublish && slotCoordinator == null) {
+        slotContentStore.publish(undefined);
+      }
+
+      if (forceInlinePublish) {
+        forceUpdate({});
+      }
+    } finally {
+      cachedDataRef.current.disableFlushSync = false;
+    }
+  });
 }
 
 // React was a mistake
