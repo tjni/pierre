@@ -1281,9 +1281,23 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
       case 'documentStart':
       case 'documentEnd':
-        this.setSelections([
-          this.#getDocumentBoundarySelection(command === 'documentEnd'),
-        ]);
+        {
+          const atEnd = command === 'documentEnd';
+          const anchor = createElement('span');
+          const root = this.#contentEl?.getRootNode() as Element | undefined;
+          this.setSelections([this.#getDocumentBoundarySelection(atEnd)]);
+          if (root !== undefined) {
+            if (atEnd) {
+              root.appendChild(anchor);
+            } else {
+              root.prepend(anchor);
+            }
+            anchor.scrollIntoView({ block: atEnd ? 'end' : 'start' });
+            requestAnimationFrame(() => {
+              anchor.remove();
+            });
+          }
+        }
         break;
 
       case 'undo':

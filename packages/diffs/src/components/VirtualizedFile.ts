@@ -236,15 +236,15 @@ export class VirtualizedFile<
     }
   }
 
+  override emitLineCountChange(lineCount: number): void {
+    super.emitLineCountChange(lineCount);
+    this.computeApproximateSize();
+  }
+
   override emitLineAnnotationsChange(
     lineAnnotations: LineAnnotation<LAnnotation>[]
   ): void {
     super.emitLineAnnotationsChange(lineAnnotations);
-    this.computeApproximateSize();
-  }
-
-  override emitLineCountChange(lineCount: number): void {
-    super.emitLineCountChange(lineCount);
     this.computeApproximateSize();
   }
 
