@@ -9,6 +9,7 @@ import type {
 /** Largest number of undo or redo entries kept; oldest entries drop first once exceeded. */
 const DEFAULT_EDIT_STACK_MAX_ENTRIES = 100;
 
+/** An entry in the edit stack. */
 export interface EditStackEntry<LAnnotation> {
   /** Forward offset edits from the entry's base text to its final text. */
   forwardEdits: ResolvedTextEdit[];
@@ -28,10 +29,13 @@ export interface EditStackEntry<LAnnotation> {
   lineAnnotationsAfter?: LineAnnotation<LAnnotation>[];
 }
 
+/** Options for the edit stack. */
 export interface EditStackOptions {
+  /** The maximum number of entries to keep in the undo stack. */
   maxEntries?: number;
 }
 
+/** A stack of edit entries. */
 export class EditStack<LAnnotation> {
   #undoStack: EditStackEntry<LAnnotation>[] = [];
   #redoStack: EditStackEntry<LAnnotation>[] = [];
@@ -52,15 +56,18 @@ export class EditStack<LAnnotation> {
     return this.#redoStack.length > 0;
   }
 
+  /** Clears both the undo and redo stacks. */
   clear(): void {
     this.#undoStack.length = 0;
     this.#redoStack.length = 0;
   }
 
+  /** Clears the redo stack. */
   clearRedo(): void {
     this.#redoStack.length = 0;
   }
 
+  /** Pushes a new entry onto the undo stack. */
   push(entry: EditStackEntry<LAnnotation>): void {
     this.#undoStack.push(entry);
     this.clearRedo();
@@ -69,6 +76,7 @@ export class EditStack<LAnnotation> {
     }
   }
 
+  /** Sets the selections after the last undo entry. */
   setLastUndoSelectionsAfter(selections: EditorSelection[]): void {
     const lastEntry = this.#undoStack[this.#undoStack.length - 1];
     if (lastEntry !== undefined) {
@@ -78,6 +86,7 @@ export class EditStack<LAnnotation> {
     }
   }
 
+  /** Sets the line annotations after the last undo entry. */
   setLastUndoLineAnnotationsAfter(
     lineAnnotations: LineAnnotation<LAnnotation>[]
   ): void {
@@ -87,10 +96,12 @@ export class EditStack<LAnnotation> {
     }
   }
 
+  /** Returns the last undo entry, or `undefined` if empty. */
   peekUndo(): EditStackEntry<LAnnotation> | undefined {
     return this.#undoStack[this.#undoStack.length - 1];
   }
 
+  /** Replaces the last undo entry with the given entry. */
   replaceLastUndo(entry: EditStackEntry<LAnnotation>): void {
     if (this.#undoStack.length === 0) {
       this.push(entry);
@@ -245,7 +256,7 @@ export function shouldCoalesceEditStackEntry<LAnnotation>(
   return mode !== undefined;
 }
 
-// Coalesce edit stack entries for simple typing and single-character deletes.
+/** Coalesce edit stack entries for simple typing and single-character deletes. */
 export function coalesceEditStackEntries<LAnnotation>(
   previousEntry: EditStackEntry<LAnnotation>,
   nextEntry: EditStackEntry<LAnnotation>
