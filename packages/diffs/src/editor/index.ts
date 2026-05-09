@@ -392,11 +392,12 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
         // when the user is using the 'Shift' key to create a selection
         // hide the textarea element or the selection will be created in the textarea
-        if (e.shiftKey) {
+        if (e.shiftKey && this.#textareaEl !== undefined) {
           this.#shouldIgnoreSelectionChange = true;
-          if (this.#textareaEl !== undefined) {
-            this.#textareaEl.style.visibility = 'hidden';
-          }
+          this.#textareaEl.style.visibility = 'hidden';
+          requestAnimationFrame(() => {
+            this.#onSelectionChange(true);
+          });
         }
 
         mouseEventDisposes.push(
@@ -431,12 +432,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         mouseEventDisposes.forEach((dispose) => dispose());
         mouseEventDisposes.length = 0;
         this.#reservedSelections = undefined;
-        if (e.shiftKey) {
-          this.#onSelectionChange(true);
+        if (e.shiftKey && this.#textareaEl !== undefined) {
           this.#shouldIgnoreSelectionChange = false;
-          if (this.#textareaEl !== undefined) {
-            this.#textareaEl.style.visibility = 'visible';
-          }
+          this.#textareaEl.style.visibility = 'visible';
         }
         this.#focusTextarea();
       }),
