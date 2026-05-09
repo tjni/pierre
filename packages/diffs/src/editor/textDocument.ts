@@ -216,7 +216,10 @@ export class TextDocument<LAnnotation> {
       const previousEntry = this.#editStack.peekUndo();
       const change = this.#applyResolvedEdits(resolvedEdits);
       this.#version++;
-      if (shouldCoalesceEditStackEntry(previousEntry, entry, change)) {
+      if (
+        change.lineDelta === 0 &&
+        shouldCoalesceEditStackEntry(previousEntry, entry)
+      ) {
         this.#editStack.replaceLastUndo(
           coalesceEditStackEntries(previousEntry!, entry)
         );

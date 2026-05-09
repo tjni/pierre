@@ -1,10 +1,6 @@
 import type { LineAnnotation } from '../types';
 import type { EditorSelection } from './editorSelection';
-import type {
-  ResolvedTextEdit,
-  TextDocument,
-  TextDocumentChange,
-} from './textDocument';
+import type { ResolvedTextEdit, TextDocument } from './textDocument';
 
 /** Largest number of undo or redo entries kept; oldest entries drop first once exceeded. */
 const DEFAULT_EDIT_STACK_MAX_ENTRIES = 100;
@@ -174,13 +170,10 @@ export function createEditStackEntry<LAnnotation>(
  */
 export function shouldCoalesceEditStackEntry<LAnnotation>(
   previousEntry: EditStackEntry<LAnnotation> | undefined,
-  nextEntry: EditStackEntry<LAnnotation>,
-  change: TextDocumentChange
+  nextEntry: EditStackEntry<LAnnotation>
 ): boolean {
-  if (previousEntry === undefined || change.lineDelta !== 0) {
-    return false;
-  }
   if (
+    previousEntry === undefined ||
     previousEntry.forwardEdits.length === 0 ||
     previousEntry.forwardEdits.length !== previousEntry.inverseEdits.length ||
     previousEntry.forwardEdits.length !== nextEntry.forwardEdits.length ||
@@ -199,22 +192,19 @@ export function shouldCoalesceEditStackEntry<LAnnotation>(
       previousEntry.forwardEdits
     );
     const previousWasInsert =
-      previousForward.start === previousForward.end &&
+      previousForward.start <= previousForward.end &&
       previousForward.text.length > 0 &&
-      previousInverse.text.length === 0;
+      !previousForward.text.includes('\n') &&
+      !previousInverse.text.includes('\n');
     const nextIsInsert =
       nextForward.start === nextForward.end &&
       nextForward.text.length > 0 &&
       nextInverse.text.length === 0;
     if (previousWasInsert && nextIsInsert) {
-      const mappedNextEnd = mapOffsetAfterForwardBatchToBefore(
-        nextForward.end,
-        previousEntry.forwardEdits
-      );
-      if (
-        mappedNextStart !== previousForward.start ||
-        mappedNextEnd !== previousForward.end
-      ) {
+      const expectedMappedNextStart = previousForward.end;
+      // Allow continuing typing after replacing a selection (e.g. "hello" -> "w")
+      // while still requiring that the cursor extension maps inside the same base range.
+      if (mappedNextStart !== expectedMappedNextStart) {
         return false;
       }
       mode ??= 'insert';

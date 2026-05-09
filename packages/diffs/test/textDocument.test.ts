@@ -463,6 +463,41 @@ describe('TextDocument', () => {
     expect(d.getText()).toBe('ab');
   });
 
+  test('typing after replacing a selection coalesces into one undo step', () => {
+    const d = doc('hello');
+    d.applyEdits(
+      [
+        {
+          range: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 5 },
+          },
+          newText: 'w',
+        },
+      ],
+      true,
+      [caret(0, 5)]
+    );
+    d.applyEdits(
+      [
+        {
+          range: {
+            start: { line: 0, character: 1 },
+            end: { line: 0, character: 1 },
+          },
+          newText: 'orld',
+        },
+      ],
+      true,
+      [caret(0, 1)]
+    );
+
+    expect(d.getText()).toBe('world');
+
+    d.undo();
+    expect(d.getText()).toBe('hello');
+  });
+
   test('contiguous forward deletes coalesce into one undo step', () => {
     const d = doc('abc');
     d.applyEdits(
