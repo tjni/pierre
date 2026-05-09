@@ -288,6 +288,7 @@ export function applyTextChangeToSelections<LAnnotation>(
     };
   }
   finalizeMergedGroup();
+
   const change = textDocument.applyEdits(
     edits,
     true,
@@ -365,6 +366,7 @@ export function applyTextReplaceToSelections<LAnnotation>(
       entry.start + offsetDelta + newText.length;
     offsetDelta += newText.length - (entry.end - entry.start);
   }
+
   const change = textDocument.applyEdits(
     edits,
     true,

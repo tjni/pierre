@@ -768,18 +768,16 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
     // Text in the textarea has been changed.
     if (value !== textareaSnapshot.text) {
-      const edit = resolveTextareaChange(
-        textareaSnapshot,
-        value,
-        selectionStart,
-        selectionEnd
-      );
-      const lineAnnotations = this.#lineAnnotations;
       const { nextSelections, change } = applyTextChangeToSelections(
         textDocument,
         selections,
-        edit,
-        lineAnnotations,
+        resolveTextareaChange(
+          textareaSnapshot,
+          value,
+          selectionStart,
+          selectionEnd
+        ),
+        this.#lineAnnotations,
         this.#tabSize
       );
       if (change !== undefined) {
@@ -1195,7 +1193,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       case 'cut':
         if (this.#selections !== undefined) {
           try {
-            // todo: use navigator.clipboard.write() for multiple selections copy
+            // TODO(@ije): use navigator.clipboard.write() for multiple selections copy
             await navigator.clipboard.writeText(
               this.#getSelectionText(this.#selections)
             );
@@ -1211,7 +1209,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       case 'paste': {
         let text: string | string[];
         try {
-          // todo: use navigator.clipboard.read() for multiple segments paste
+          // TODO(@ije): use navigator.clipboard.read() for multiple segments paste
           text = await navigator.clipboard.readText();
         } catch {
           return;
@@ -1371,23 +1369,24 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
     // TODO(@ije): normalize text with textDocument.EOF
     const lineAnnotations = this.#lineAnnotations;
-    const { nextSelections, change } = Array.isArray(text)
-      ? applyTextReplaceToSelections<LAnnotation>(
-          textDocument,
-          selections,
-          text,
-          lineAnnotations
-        )
-      : applyTextChangeToSelections<LAnnotation>(
-          textDocument,
-          selections,
-          {
-            start: textDocument.offsetAt(primarySelection.start),
-            end: textDocument.offsetAt(primarySelection.end),
-            text: text,
-          },
-          lineAnnotations
-        );
+    const { nextSelections, change } =
+      Array.isArray(text) && text.length === selections.length
+        ? applyTextReplaceToSelections<LAnnotation>(
+            textDocument,
+            selections,
+            text,
+            lineAnnotations
+          )
+        : applyTextChangeToSelections<LAnnotation>(
+            textDocument,
+            selections,
+            {
+              start: textDocument.offsetAt(primarySelection.start),
+              end: textDocument.offsetAt(primarySelection.end),
+              text: Array.isArray(text) ? text.join('\n') : text,
+            },
+            lineAnnotations
+          );
 
     if (change !== undefined) {
       this.#applyChange(
@@ -1444,8 +1443,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         this.#textDocument?.setLastUndoLineAnnotationsAfter(
           nextLineAnnotations
         );
+        return nextLineAnnotations;
       }
-      return nextLineAnnotations;
     }
     return undefined;
   }

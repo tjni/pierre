@@ -1,6 +1,10 @@
 import type { LineAnnotation } from '../types';
 import { type EditorSelection } from './editorSelection';
-import { EditStack } from './editStack';
+import {
+  createEditStackEntry,
+  EditStack,
+  type EditStackEntry,
+} from './editStack';
 import { PieceTable } from './pieceTable';
 
 /**
@@ -93,7 +97,7 @@ export interface TextDocumentChange {
   /** First line whose rendered content or tokenizer state may have changed. */
   readonly startLine: number;
   /** Character on the first changed line where the edit began. */
-  readonly startCharacter?: number;
+  readonly startCharacter: number;
   /** Last line whose rendered content may have changed after the edit. */
   readonly endLine: number;
   /** Line count before the edit was applied. */
@@ -197,8 +201,8 @@ export class TextDocument<LAnnotation> {
     const resolvedEdits = this.#sortAndValidateResolvedEdits(
       edits.map((edit) => this.#resolveEdit(edit))
     );
-    if (updateHistory && selectionsBefore !== undefined) {
-      this.#editStack.push(
+    if (updateHistory) {
+      const entry = createEditStackEntry(
         this,
         resolvedEdits,
         this.#version,
@@ -208,9 +212,21 @@ export class TextDocument<LAnnotation> {
         lineAnnotationsBefore,
         lineAnnotationsAfter
       );
+      const previousEntry = this.#editStack.peekUndo();
+      const change = this.#applyResolvedEdits(resolvedEdits);
+      this.#version++;
+      if (this.#shouldCoalesceEditStackEntry(previousEntry, entry, change)) {
+        this.#editStack.replaceLastUndo(
+          this.#coalesceEditStackEntries(previousEntry!, entry)
+        );
+      } else {
+        this.#editStack.push(entry);
+      }
+      return change;
     }
+    const change = this.#applyResolvedEdits(resolvedEdits);
     this.#version++;
-    return this.#applyResolvedEdits(resolvedEdits);
+    return change;
   }
 
   setLastUndoSelectionsAfter(selections: EditorSelection[]): void {
@@ -226,7 +242,7 @@ export class TextDocument<LAnnotation> {
   undo():
     | [
         change: TextDocumentChange,
-        selections: EditorSelection[],
+        selections?: EditorSelection[],
         lineAnnotations?: LineAnnotation<LAnnotation>[],
       ]
     | undefined {
@@ -241,7 +257,7 @@ export class TextDocument<LAnnotation> {
     this.#version = entry.versionBefore;
     return [
       change,
-      cloneSelections(entry.selectionsBefore),
+      entry.selectionsBefore?.slice(),
       entry.lineAnnotationsBefore?.slice(),
     ];
   }
@@ -264,9 +280,7 @@ export class TextDocument<LAnnotation> {
     this.#version = entry.versionAfter;
     return [
       change,
-      entry.selectionsAfter !== undefined
-        ? cloneSelections(entry.selectionsAfter)
-        : undefined,
+      entry.selectionsAfter?.slice(),
       entry.lineAnnotationsAfter?.slice(),
     ];
   }
@@ -304,14 +318,12 @@ export class TextDocument<LAnnotation> {
     const lineCount = this.#pieceTable.lineCount;
     const change: TextDocumentChange = {
       startLine: changedLineRange.startLine,
+      startCharacter: startPosition.character,
       endLine: Math.min(changedLineRange.endLine, Math.max(0, lineCount - 1)),
       previousLineCount,
       lineCount,
       lineDelta: lineCount - previousLineCount,
     };
-    Object.defineProperty(change, 'startCharacter', {
-      value: startPosition.character,
-    });
     return change;
   }
 
@@ -338,20 +350,177 @@ export class TextDocument<LAnnotation> {
     }
     return { startLine, endLine };
   }
+
+  #shouldCoalesceEditStackEntry(
+    previousEntry: EditStackEntry<LAnnotation> | undefined,
+    nextEntry: EditStackEntry<LAnnotation>,
+    change: TextDocumentChange
+  ): boolean {
+    if (previousEntry === undefined || change.lineDelta !== 0) {
+      return false;
+    }
+    if (
+      previousEntry.forwardEdits.length === 0 ||
+      previousEntry.forwardEdits.length !== previousEntry.inverseEdits.length ||
+      previousEntry.forwardEdits.length !== nextEntry.forwardEdits.length ||
+      nextEntry.forwardEdits.length !== nextEntry.inverseEdits.length
+    ) {
+      return false;
+    }
+    let mode: 'insert' | 'delete' | undefined;
+    for (let i = 0; i < previousEntry.forwardEdits.length; i++) {
+      const previousForward = previousEntry.forwardEdits[i];
+      const previousInverse = previousEntry.inverseEdits[i];
+      const nextForward = nextEntry.forwardEdits[i];
+      const nextInverse = nextEntry.inverseEdits[i];
+      const mappedNextStart = mapOffsetAfterForwardBatchToBefore(
+        nextForward.start,
+        previousEntry.forwardEdits
+      );
+      const mappedNextEnd = mapOffsetAfterForwardBatchToBefore(
+        nextForward.end,
+        previousEntry.forwardEdits
+      );
+      const previousWasInsert =
+        previousForward.start === previousForward.end &&
+        previousForward.text.length > 0 &&
+        previousInverse.text.length === 0;
+      const nextIsInsert =
+        nextForward.start === nextForward.end &&
+        nextForward.text.length > 0 &&
+        nextInverse.text.length === 0;
+      if (previousWasInsert && nextIsInsert) {
+        if (
+          mappedNextStart !== previousForward.start ||
+          mappedNextEnd !== previousForward.end
+        ) {
+          return false;
+        }
+        mode ??= 'insert';
+        if (mode !== 'insert') {
+          return false;
+        }
+        continue;
+      }
+      const previousWasDelete =
+        previousForward.text.length === 0 &&
+        previousForward.end > previousForward.start &&
+        previousInverse.text.length > 0;
+      const nextIsDelete =
+        nextForward.text.length === 0 &&
+        nextForward.end > nextForward.start &&
+        nextInverse.text.length > 0;
+      if (previousWasDelete && nextIsDelete) {
+        if (
+          mappedNextStart + (nextForward.end - nextForward.start) !==
+          previousForward.start
+        ) {
+          return false;
+        }
+        mode ??= 'delete';
+        if (mode !== 'delete') {
+          return false;
+        }
+        continue;
+      }
+      return false;
+    }
+    return mode !== undefined;
+  }
+
+  // Coalesce edit stack entries for simple typing or backspace operations.
+  #coalesceEditStackEntries(
+    previousEntry: EditStackEntry<LAnnotation>,
+    nextEntry: EditStackEntry<LAnnotation>
+  ): EditStackEntry<LAnnotation> {
+    const forwardEdits: ResolvedTextEdit[] = [];
+    const replacedTexts: string[] = [];
+    for (let i = 0; i < previousEntry.forwardEdits.length; i++) {
+      const previousForward = previousEntry.forwardEdits[i];
+      const previousInverse = previousEntry.inverseEdits[i];
+      const nextForward = nextEntry.forwardEdits[i];
+      const nextInverse = nextEntry.inverseEdits[i];
+      const mappedNextStart = mapOffsetAfterForwardBatchToBefore(
+        nextForward.start,
+        previousEntry.forwardEdits
+      );
+
+      if (previousForward.text.length > 0) {
+        forwardEdits.push({
+          start: previousForward.start,
+          end: previousForward.end,
+          text: previousForward.text + nextForward.text,
+        });
+        replacedTexts.push(previousInverse.text);
+        continue;
+      }
+
+      forwardEdits.push({
+        start: Math.min(previousForward.start, mappedNextStart),
+        end: previousForward.end,
+        text: '',
+      });
+      replacedTexts.push(nextInverse.text + previousInverse.text);
+    }
+
+    return {
+      forwardEdits,
+      inverseEdits: buildInverseEdits(forwardEdits, replacedTexts),
+      versionBefore: previousEntry.versionBefore,
+      versionAfter: nextEntry.versionAfter,
+      selectionsBefore: previousEntry.selectionsBefore?.slice(),
+      selectionsAfter: nextEntry.selectionsAfter?.slice(),
+      lineAnnotationsBefore: previousEntry.lineAnnotationsBefore?.slice(),
+      lineAnnotationsAfter: nextEntry.lineAnnotationsAfter?.slice(),
+    };
+  }
 }
 
 function lineFeedCount(text: string): number {
   let count = 0;
   for (let i = 0; i < text.length; i++) {
-    if (text.charCodeAt(i) === 10) {
+    if (text.charCodeAt(i) === /* \n */ 10) {
       count++;
     }
   }
   return count;
 }
 
-function cloneSelections(
-  selections: readonly EditorSelection[]
-): EditorSelection[] {
-  return selections.map((selection) => ({ ...selection }));
+function buildInverseEdits(
+  forwardEdits: readonly ResolvedTextEdit[],
+  replacedTexts: readonly string[]
+): ResolvedTextEdit[] {
+  const inverseEdits: ResolvedTextEdit[] = [];
+  for (let i = 0, offsetDelta = 0; i < forwardEdits.length; i++) {
+    const edit = forwardEdits[i];
+    const startAfterEdit = edit.start + offsetDelta;
+    inverseEdits.push({
+      start: startAfterEdit,
+      end: startAfterEdit + edit.text.length,
+      text: replacedTexts[i],
+    });
+    offsetDelta += edit.text.length - (edit.end - edit.start);
+  }
+  return inverseEdits;
+}
+
+function mapOffsetAfterForwardBatchToBefore(
+  offsetAfter: number,
+  forwardEdits: readonly ResolvedTextEdit[]
+): number {
+  let offset = offsetAfter;
+  for (const edit of forwardEdits) {
+    const oldLength = edit.end - edit.start;
+    const newLength = edit.text.length;
+    const delta = newLength - oldLength;
+    if (offset < edit.start) {
+      continue;
+    }
+    if (offset >= edit.start + newLength) {
+      offset -= delta;
+      continue;
+    }
+    offset = edit.start + Math.min(offset - edit.start, oldLength);
+  }
+  return offset;
 }

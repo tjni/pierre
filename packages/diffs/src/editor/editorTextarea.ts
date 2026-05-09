@@ -66,13 +66,13 @@ export function createTextareaSnapshot(
 
 export function resolveTextareaChange(
   textareaSnapshot: TextareaSnapshot,
-  newView: string,
+  value: string,
   selectionStart: number,
   selectionEnd: number
 ): ResolvedTextEdit {
   const original = textareaSnapshot.text;
   const originalLength = original.length;
-  const nextLength = newView.length;
+  const nextLength = value.length;
 
   // When the snapshot still has the pre-edit range, prefer it over prefix/suffix inference.
   // Otherwise the diff can shift by one when the same character appears on both sides of
@@ -88,10 +88,10 @@ export function resolveTextareaChange(
       trustEnd <= originalLength &&
       trustStart + insLen <= nextLength
     ) {
-      const inserted = newView.slice(trustStart, trustStart + insLen);
+      const inserted = value.slice(trustStart, trustStart + insLen);
       if (
         original.slice(0, trustStart) + inserted + original.slice(trustEnd) ===
-        newView
+        value
       ) {
         return {
           start: textareaSnapshot.offset + trustStart,
@@ -109,12 +109,12 @@ export function resolveTextareaChange(
     const lengthDelta = nextLength - originalLength;
     const start = selectionStart - Math.max(lengthDelta, 0);
     const end = start + Math.max(-lengthDelta, 0);
-    const text = newView.slice(start, selectionStart);
+    const text = value.slice(start, selectionStart);
     if (
       lengthDelta !== 0 &&
       start >= 0 &&
       end <= originalLength &&
-      original.slice(0, start) + text + original.slice(end) === newView
+      original.slice(0, start) + text + original.slice(end) === value
     ) {
       return {
         start: textareaSnapshot.offset + start,
@@ -128,7 +128,7 @@ export function resolveTextareaChange(
   while (
     prefix < originalLength &&
     prefix < nextLength &&
-    original[prefix] === newView[prefix]
+    original[prefix] === value[prefix]
   ) {
     prefix++;
   }
@@ -137,7 +137,7 @@ export function resolveTextareaChange(
   while (
     suffix < originalLength - prefix &&
     suffix < nextLength - prefix &&
-    original[originalLength - 1 - suffix] === newView[nextLength - 1 - suffix]
+    original[originalLength - 1 - suffix] === value[nextLength - 1 - suffix]
   ) {
     suffix++;
   }
@@ -148,7 +148,7 @@ export function resolveTextareaChange(
   return {
     start: textareaSnapshot.offset + originalStart,
     end: textareaSnapshot.offset + originalEnd,
-    text: newView.slice(prefix, nextLength - suffix),
+    text: value.slice(prefix, nextLength - suffix),
   };
 }
 

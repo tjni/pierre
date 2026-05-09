@@ -5,7 +5,8 @@ import {
   DirectionNone,
   type SelectionDirection,
 } from '../src/editor/editorSelection';
-import { EditStack } from '../src/editor/editStack';
+import { createEditStackEntry, EditStack } from '../src/editor/editStack';
+import { TextDocument } from '../src/editor/textDocument';
 
 function createSelection(
   startLine: number,
@@ -25,12 +26,28 @@ function caret(character: number) {
   return createSelection(0, character, 0, character, DirectionNone);
 }
 
-function source(text: string) {
-  return {
-    getTextSlice(start: number, end: number): string {
-      return text.slice(start, end);
-    },
-  };
+function stackEntry(
+  textBeforeEdit: string,
+  resolvedEdits: { start: number; end: number; text: string }[],
+  versionBefore: number,
+  versionAfter: number,
+  selectionsBefore?: EditorSelection[],
+  selectionsAfter?: EditorSelection[]
+) {
+  const doc = new TextDocument(
+    'inmemory://edit-stack-test',
+    textBeforeEdit,
+    'plain',
+    versionBefore
+  );
+  return createEditStackEntry(
+    doc,
+    resolvedEdits,
+    versionBefore,
+    versionAfter,
+    selectionsBefore,
+    selectionsAfter
+  );
 }
 
 describe('EditHistory', () => {
@@ -40,12 +57,14 @@ describe('EditHistory', () => {
     const selectionAfter = [caret(2), caret(3)];
 
     editStack.push(
-      source('ab'),
-      [{ start: 1, end: 1, text: 'X' }],
-      4,
-      5,
-      selectionBefore,
-      selectionAfter
+      stackEntry(
+        'ab',
+        [{ start: 1, end: 1, text: 'X' }],
+        4,
+        5,
+        selectionBefore,
+        selectionAfter
+      )
     );
 
     selectionBefore[0] = caret(99);
@@ -77,12 +96,14 @@ describe('EditHistory', () => {
     let selectionAfter = caret(2);
 
     editStack.push(
-      source('a'),
-      [{ start: 1, end: 1, text: 'b' }],
-      1,
-      2,
-      [caret(1)],
-      [selectionAfter]
+      stackEntry(
+        'a',
+        [{ start: 1, end: 1, text: 'b' }],
+        1,
+        2,
+        [caret(1)],
+        [selectionAfter]
+      )
     );
     selectionAfter = caret(99);
 
@@ -95,20 +116,10 @@ describe('EditHistory', () => {
     const editStack = new EditStack();
 
     editStack.push(
-      source(''),
-      [{ start: 0, end: 0, text: 'a' }],
-      0,
-      1,
-      [caret(0)],
-      undefined
+      stackEntry('', [{ start: 0, end: 0, text: 'a' }], 0, 1, [caret(0)])
     );
     editStack.push(
-      source('a'),
-      [{ start: 1, end: 1, text: 'b' }],
-      1,
-      2,
-      [caret(1)],
-      undefined
+      stackEntry('a', [{ start: 1, end: 1, text: 'b' }], 1, 2, [caret(1)])
     );
 
     expect(editStack.popUndoToRedo()).toMatchObject({
@@ -117,12 +128,7 @@ describe('EditHistory', () => {
     expect(editStack.canRedo).toBe(true);
 
     editStack.push(
-      source('a'),
-      [{ start: 1, end: 1, text: 'c' }],
-      1,
-      2,
-      [caret(1)],
-      undefined
+      stackEntry('a', [{ start: 1, end: 1, text: 'c' }], 1, 2, [caret(1)])
     );
 
     expect(editStack.canRedo).toBe(false);
@@ -139,12 +145,9 @@ describe('EditHistory', () => {
 
     for (let i = 0; i < 4; i++) {
       editStack.push(
-        source(''),
-        [{ start: 0, end: 0, text: `${i}` }],
-        i,
-        i + 1,
-        [caret(0)],
-        undefined
+        stackEntry('', [{ start: 0, end: 0, text: `${i}` }], i, i + 1, [
+          caret(0),
+        ])
       );
     }
 
@@ -159,12 +162,7 @@ describe('EditHistory', () => {
     const editStack = new EditStack();
 
     editStack.push(
-      source(''),
-      [{ start: 0, end: 0, text: 'a' }],
-      0,
-      1,
-      [caret(0)],
-      undefined
+      stackEntry('', [{ start: 0, end: 0, text: 'a' }], 0, 1, [caret(0)])
     );
     editStack.popUndoToRedo();
     editStack.clear();

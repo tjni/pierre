@@ -117,6 +117,7 @@ describe('TextDocument', () => {
     expect(d.getText()).toBe('hello you');
     expect(change).toEqual({
       startLine: 0,
+      startCharacter: 6,
       endLine: 0,
       previousLineCount: 1,
       lineCount: 1,
@@ -175,6 +176,7 @@ describe('TextDocument', () => {
     expect(d.lineCount).toBe(3);
     expect(change).toEqual({
       startLine: 1,
+      startCharacter: 0,
       endLine: 1,
       previousLineCount: 3,
       lineCount: 3,
@@ -196,6 +198,7 @@ describe('TextDocument', () => {
     expect(d.getText()).toBe('a\nb');
     expect(change).toEqual({
       startLine: 0,
+      startCharacter: 1,
       endLine: 1,
       previousLineCount: 1,
       lineCount: 2,
@@ -217,6 +220,7 @@ describe('TextDocument', () => {
     expect(d.getText()).toBe('ac');
     expect(change).toEqual({
       startLine: 0,
+      startCharacter: 1,
       endLine: 0,
       previousLineCount: 3,
       lineCount: 1,
@@ -305,50 +309,299 @@ describe('TextDocument', () => {
 
   test('undo stack depth for sequential edits', () => {
     const d = doc('x');
-    const originalNow = Date.now;
-    let now = 1000;
-    Object.defineProperty(Date, 'now', {
-      configurable: true,
-      value: () => now,
-    });
-    try {
-      d.applyEdits(
-        [
-          {
-            range: {
-              start: { line: 0, character: 0 },
-              end: { line: 0, character: 0 },
-            },
-            newText: 'a',
+    d.applyEdits(
+      [
+        {
+          range: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 0 },
           },
-        ],
-        true,
-        [caret(0, 0)]
-      );
-      now += 600;
-      d.applyEdits(
-        [
-          {
-            range: {
-              start: { line: 0, character: 1 },
-              end: { line: 0, character: 1 },
-            },
-            newText: 'b',
+          newText: 'a',
+        },
+      ],
+      true,
+      [caret(0, 0)]
+    );
+    d.applyEdits(
+      [
+        {
+          range: {
+            start: { line: 0, character: 1 },
+            end: { line: 0, character: 1 },
           },
-        ],
-        true,
-        [caret(0, 1)]
-      );
-      d.undo();
-      expect(d.getText()).toBe('ax');
-      d.undo();
-      expect(d.getText()).toBe('x');
-    } finally {
-      Object.defineProperty(Date, 'now', {
-        configurable: true,
-        value: originalNow,
-      });
-    }
+          newText: 'b',
+        },
+      ],
+      true,
+      [caret(0, 1)]
+    );
+    d.undo();
+    expect(d.getText()).toBe('x');
+  });
+
+  test('undo keeps later multiline edit separate from typing group', () => {
+    const d = doc('x');
+    d.applyEdits(
+      [
+        {
+          range: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 0 },
+          },
+          newText: 'a',
+        },
+      ],
+      true,
+      [caret(0, 0)]
+    );
+    d.applyEdits(
+      [
+        {
+          range: {
+            start: { line: 0, character: 1 },
+            end: { line: 0, character: 1 },
+          },
+          newText: 'b',
+        },
+      ],
+      true,
+      [caret(0, 1)]
+    );
+    d.applyEdits(
+      [
+        {
+          range: {
+            start: { line: 0, character: 2 },
+            end: { line: 0, character: 2 },
+          },
+          newText: '\n',
+        },
+      ],
+      true,
+      [caret(0, 2)]
+    );
+
+    expect(d.getText()).toBe('ab\nx');
+
+    d.undo();
+    expect(d.getText()).toBe('abx');
+
+    d.undo();
+    expect(d.getText()).toBe('x');
+  });
+
+  test('contiguous backspaces coalesce into one undo step', () => {
+    const d = doc('abc');
+    d.applyEdits(
+      [
+        {
+          range: {
+            start: { line: 0, character: 2 },
+            end: { line: 0, character: 3 },
+          },
+          newText: '',
+        },
+      ],
+      true,
+      [caret(0, 3)]
+    );
+    d.applyEdits(
+      [
+        {
+          range: {
+            start: { line: 0, character: 1 },
+            end: { line: 0, character: 2 },
+          },
+          newText: '',
+        },
+      ],
+      true,
+      [caret(0, 2)]
+    );
+
+    expect(d.getText()).toBe('a');
+
+    d.undo();
+    expect(d.getText()).toBe('abc');
+  });
+
+  test('replacement edits do not coalesce', () => {
+    const d = doc('ab');
+    d.applyEdits(
+      [
+        {
+          range: {
+            start: { line: 0, character: 1 },
+            end: { line: 0, character: 2 },
+          },
+          newText: 'X',
+        },
+      ],
+      true,
+      [caret(0, 2)]
+    );
+    d.applyEdits(
+      [
+        {
+          range: {
+            start: { line: 0, character: 1 },
+            end: { line: 0, character: 2 },
+          },
+          newText: 'Y',
+        },
+      ],
+      true,
+      [caret(0, 2)]
+    );
+
+    expect(d.getText()).toBe('aY');
+
+    d.undo();
+    expect(d.getText()).toBe('aX');
+
+    d.undo();
+    expect(d.getText()).toBe('ab');
+  });
+
+  test('multi-cursor contiguous inserts coalesce into one undo step', () => {
+    const d = doc('ab\ncd');
+    d.applyEdits(
+      [
+        {
+          range: {
+            start: { line: 0, character: 1 },
+            end: { line: 0, character: 1 },
+          },
+          newText: 'X',
+        },
+        {
+          range: {
+            start: { line: 1, character: 1 },
+            end: { line: 1, character: 1 },
+          },
+          newText: 'X',
+        },
+      ],
+      true,
+      [caret(0, 1), caret(1, 1)]
+    );
+    d.applyEdits(
+      [
+        {
+          range: {
+            start: { line: 0, character: 2 },
+            end: { line: 0, character: 2 },
+          },
+          newText: 'Y',
+        },
+        {
+          range: {
+            start: { line: 1, character: 2 },
+            end: { line: 1, character: 2 },
+          },
+          newText: 'Y',
+        },
+      ],
+      true,
+      [caret(0, 2), caret(1, 2)]
+    );
+
+    expect(d.getText()).toBe('aXYb\ncXYd');
+
+    d.undo();
+    expect(d.getText()).toBe('ab\ncd');
+  });
+
+  test('multi-cursor contiguous backspaces coalesce into one undo step', () => {
+    const d = doc('abc\ndef');
+    d.applyEdits(
+      [
+        {
+          range: {
+            start: { line: 0, character: 2 },
+            end: { line: 0, character: 3 },
+          },
+          newText: '',
+        },
+        {
+          range: {
+            start: { line: 1, character: 2 },
+            end: { line: 1, character: 3 },
+          },
+          newText: '',
+        },
+      ],
+      true,
+      [caret(0, 3), caret(1, 3)]
+    );
+    d.applyEdits(
+      [
+        {
+          range: {
+            start: { line: 0, character: 1 },
+            end: { line: 0, character: 2 },
+          },
+          newText: '',
+        },
+        {
+          range: {
+            start: { line: 1, character: 1 },
+            end: { line: 1, character: 2 },
+          },
+          newText: '',
+        },
+      ],
+      true,
+      [caret(0, 2), caret(1, 2)]
+    );
+
+    expect(d.getText()).toBe('a\nd');
+
+    d.undo();
+    expect(d.getText()).toBe('abc\ndef');
+  });
+
+  test('multi-cursor batches with different edit shapes do not coalesce', () => {
+    const d = doc('ab\ncd');
+    d.applyEdits(
+      [
+        {
+          range: {
+            start: { line: 0, character: 1 },
+            end: { line: 0, character: 1 },
+          },
+          newText: 'X',
+        },
+        {
+          range: {
+            start: { line: 1, character: 1 },
+            end: { line: 1, character: 1 },
+          },
+          newText: 'X',
+        },
+      ],
+      true,
+      [caret(0, 1), caret(1, 1)]
+    );
+    d.applyEdits(
+      [
+        {
+          range: {
+            start: { line: 0, character: 2 },
+            end: { line: 0, character: 2 },
+          },
+          newText: 'Y',
+        },
+      ],
+      true,
+      [caret(0, 2)]
+    );
+
+    d.undo();
+    expect(d.getText()).toBe('aXb\ncXd');
+
+    d.undo();
+    expect(d.getText()).toBe('ab\ncd');
   });
 
   test('applyEdits rejects overlapping ranges', () => {
@@ -418,6 +671,7 @@ describe('TextDocument', () => {
     expect(d.getText()).toBe('a');
     expect(undoResult?.[0]).toEqual({
       startLine: 0,
+      startCharacter: 1,
       endLine: 0,
       previousLineCount: 1,
       lineCount: 1,
@@ -430,6 +684,7 @@ describe('TextDocument', () => {
     expect(d.getText()).toBe('ab');
     expect(redoResult?.[0]).toEqual({
       startLine: 0,
+      startCharacter: 1,
       endLine: 0,
       previousLineCount: 1,
       lineCount: 1,
