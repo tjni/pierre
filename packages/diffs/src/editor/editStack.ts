@@ -18,13 +18,13 @@ interface EditStackEntry<LAnnotation> {
   versionBefore: number;
   /** Document version after the entry is applied. */
   versionAfter: number;
-  /** Selection before the transaction (restored on undo). */
+  /** Selection before the transaction. */
   selectionsBefore: EditorSelection[];
-  /** Selection after the transaction (restored on redo). */
+  /** Selection after the transaction. */
   selectionsAfter?: EditorSelection[];
-  /** Line annotations before the transaction (restored on undo). */
+  /** Line annotations before the transaction. */
   lineAnnotationsBefore?: LineAnnotation<LAnnotation>[];
-  /** Line annotations after the transaction (restored on redo). */
+  /** Line annotations after the transaction. */
   lineAnnotationsAfter?: LineAnnotation<LAnnotation>[];
 }
 

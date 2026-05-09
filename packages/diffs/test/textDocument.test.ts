@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import type { EditorSelection } from '../src/editor/editorSelection';
 import { DirectionNone } from '../src/editor/editorSelection';
 import { TextDocument, type TextEdit } from '../src/editor/textDocument';
+import type { LineAnnotation } from '../src/types';
 
 function doc(text: string) {
   return new TextDocument('inmemory://1', text, 'plain');
@@ -415,7 +416,7 @@ describe('TextDocument', () => {
 
     const undoResult = d.undo();
     expect(d.getText()).toBe('a');
-    expect(undoResult?.change).toEqual({
+    expect(undoResult?.[0]).toEqual({
       startLine: 0,
       endLine: 0,
       previousLineCount: 1,
@@ -427,7 +428,7 @@ describe('TextDocument', () => {
 
     const redoResult = d.redo();
     expect(d.getText()).toBe('ab');
-    expect(redoResult?.change).toEqual({
+    expect(redoResult?.[0]).toEqual({
       startLine: 0,
       endLine: 0,
       previousLineCount: 1,
@@ -528,8 +529,8 @@ describe('TextDocument', () => {
       [selectionAfter]
     );
 
-    expect(d.undo()?.selections).toEqual([selectionBefore]);
-    expect(d.redo()?.selections).toEqual([selectionAfter]);
+    expect(d.undo()?.[1]).toEqual([selectionBefore]);
+    expect(d.redo()?.[1]).toEqual([selectionAfter]);
   });
 
   test('undo and redo preserve multiple selections', () => {
@@ -558,7 +559,88 @@ describe('TextDocument', () => {
       selectionsAfter
     );
 
-    expect(d.undo()?.selections).toEqual(selectionsBefore);
-    expect(d.redo()?.selections).toEqual(selectionsAfter);
+    expect(d.undo()?.[1]).toEqual(selectionsBefore);
+    expect(d.redo()?.[1]).toEqual(selectionsAfter);
+  });
+
+  test('undo and redo return stored line annotations', () => {
+    const d = doc('abc');
+    const annotationsBefore: LineAnnotation<string>[] = [
+      { lineNumber: 1, metadata: 'bookmark-a' },
+    ];
+    const annotationsAfter: LineAnnotation<string>[] = [
+      { lineNumber: 1, metadata: 'bookmark-b' },
+    ];
+    d.applyEdits(
+      [
+        {
+          range: {
+            start: { line: 0, character: 1 },
+            end: { line: 0, character: 1 },
+          },
+          newText: 'x',
+        },
+      ],
+      true,
+      [caret(0, 1)],
+      [caret(0, 2)],
+      annotationsBefore,
+      annotationsAfter
+    );
+
+    expect(d.undo()?.[2]).toEqual(annotationsBefore);
+    expect(d.redo()?.[2]).toEqual(annotationsAfter);
+  });
+
+  test('undo omits line annotations tuple entry when none were recorded', () => {
+    const d = doc('abc');
+    d.applyEdits(
+      [
+        {
+          range: {
+            start: { line: 0, character: 1 },
+            end: { line: 0, character: 1 },
+          },
+          newText: 'x',
+        },
+      ],
+      true,
+      [caret(0, 1)],
+      [caret(0, 2)]
+    );
+
+    expect(d.undo()?.[2]).toBeUndefined();
+    expect(d.redo()?.[2]).toBeUndefined();
+  });
+
+  test('setLastUndoLineAnnotationsAfter updates redo line annotations', () => {
+    const d = doc('a');
+    const annotationsBefore: LineAnnotation<string>[] = [
+      { lineNumber: 1, metadata: 'initial' },
+    ];
+    d.applyEdits(
+      [
+        {
+          range: {
+            start: { line: 0, character: 1 },
+            end: { line: 0, character: 1 },
+          },
+          newText: 'b',
+        },
+      ],
+      true,
+      [caret(0, 1)],
+      undefined,
+      annotationsBefore,
+      undefined
+    );
+
+    const patchedAfter: LineAnnotation<string>[] = [
+      { lineNumber: 1, metadata: 'patched-after-edit' },
+    ];
+    d.setLastUndoLineAnnotationsAfter(patchedAfter);
+
+    d.undo();
+    expect(d.redo()?.[2]).toEqual(patchedAfter);
   });
 });

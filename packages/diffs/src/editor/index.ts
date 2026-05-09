@@ -785,9 +785,11 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         this.#tabSize
       );
       if (change !== undefined) {
-        this.#rerender(change, this.#applyChangeToLineAnnotations(change));
-        this.#emitChange();
-        this.setSelections(nextSelections, false);
+        this.#applyChange(
+          change,
+          nextSelections,
+          this.#applyChangeToLineAnnotations(change)
+        );
       }
       return;
     }
@@ -909,28 +911,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
   }
 
-  #emitChange() {
-    const fileContents = this.#fileContents;
-    const textDocument = this.#textDocument;
-    const onChange = this.#onChange;
-    if (
-      fileContents !== undefined &&
-      textDocument !== undefined &&
-      onChange !== undefined
-    ) {
-      // TODO(@ije): use debounce
-      requestAnimationFrame(() => {
-        const { contents: _, ...file } = fileContents;
-        Object.defineProperty(file, 'contents', {
-          get() {
-            return textDocument.getText();
-          },
-        });
-        onChange(file as FileContents, this.#lineAnnotations);
-      });
-    }
-  }
-
   #updateTextarea(primarySelection: EditorSelection) {
     const textDocument = this.#textDocument;
     const textareaEl = this.#textareaEl;
@@ -1033,64 +1013,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
   }
 
-  // Render one selection range div for a single visual line. `applyEolSpacing`
-  // controls whether the trailing one-character "line continuation" marker is
-  // appended at the end. For wrapped logical lines this must be false on every
-  // visual segment except the last one, since an intra-line wrap is not a real
-  // newline and shouldn't visually extend past the wrapped content.
-  #renderSelectionRange(
-    selection: EditorSelection,
-    ln: number,
-    wrapLine: number,
-    startChar: number,
-    endChar: number,
-    width: number,
-    left: number,
-    fragment: DocumentFragment,
-    cacheMap: Map<string, HTMLElement>,
-    applyEolSpacing = true
-  ) {
-    const spacing =
-      !applyEolSpacing ||
-      selection.end.line === ln ||
-      (startChar === endChar && ln !== selection.start.line)
-        ? 0
-        : this.#charWidth;
-    const css = `width:${width + spacing}px;transform:translateY(${this.#getLineY(ln) + wrapLine * this.#lineHeight}px) translateX(${left}px);`;
-    const cacheKey = 'selection-range-' + css;
-    const selectionEls = this.#selectionEls;
-
-    let rangeEl: HTMLElement | undefined;
-    if (selectionEls?.has(cacheKey) === true) {
-      rangeEl = selectionEls.get(cacheKey)!;
-      selectionEls.delete(cacheKey);
-    } else {
-      for (const [key, el] of selectionEls?.entries() ?? []) {
-        if (key.startsWith(`selection-${ln}-`)) {
-          rangeEl = el;
-          selectionEls?.delete(key);
-          el.style.cssText = css;
-          break;
-        }
-      }
-    }
-
-    if (rangeEl === undefined) {
-      rangeEl = createElement(
-        'div',
-        {
-          dataset: 'selectionRange',
-          style: { cssText: css },
-        },
-        fragment
-      );
-    } else if (rangeEl.parentElement !== this.#contentEl) {
-      fragment.appendChild(rangeEl);
-    }
-
-    cacheMap.set(cacheKey, rangeEl);
-  }
-
   // Render the selection on a wrapped logical line by splitting it into one
   // selection-range div per visual sub-line. For each wrap segment, we compute
   // the intersection with the line's selection range and render the slice in
@@ -1180,6 +1102,64 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
   }
 
+  // Render one selection range div for a single visual line. `applyEolSpacing`
+  // controls whether the trailing one-character "line continuation" marker is
+  // appended at the end. For wrapped logical lines this must be false on every
+  // visual segment except the last one, since an intra-line wrap is not a real
+  // newline and shouldn't visually extend past the wrapped content.
+  #renderSelectionRange(
+    selection: EditorSelection,
+    ln: number,
+    wrapLine: number,
+    startChar: number,
+    endChar: number,
+    width: number,
+    left: number,
+    fragment: DocumentFragment,
+    cacheMap: Map<string, HTMLElement>,
+    applyEolSpacing = true
+  ) {
+    const spacing =
+      !applyEolSpacing ||
+      selection.end.line === ln ||
+      (startChar === endChar && ln !== selection.start.line)
+        ? 0
+        : this.#charWidth;
+    const css = `width:${width + spacing}px;transform:translateY(${this.#getLineY(ln) + wrapLine * this.#lineHeight}px) translateX(${left}px);`;
+    const cacheKey = 'selection-range-' + css;
+    const selectionEls = this.#selectionEls;
+
+    let rangeEl: HTMLElement | undefined;
+    if (selectionEls?.has(cacheKey) === true) {
+      rangeEl = selectionEls.get(cacheKey)!;
+      selectionEls.delete(cacheKey);
+    } else {
+      for (const [key, el] of selectionEls?.entries() ?? []) {
+        if (key.startsWith(`selection-${ln}-`)) {
+          rangeEl = el;
+          selectionEls?.delete(key);
+          el.style.cssText = css;
+          break;
+        }
+      }
+    }
+
+    if (rangeEl === undefined) {
+      rangeEl = createElement(
+        'div',
+        {
+          dataset: 'selectionRange',
+          style: { cssText: css },
+        },
+        fragment
+      );
+    } else if (rangeEl.parentElement !== this.#contentEl) {
+      fragment.appendChild(rangeEl);
+    }
+
+    cacheMap.set(cacheKey, rangeEl);
+  }
+
   #renderCaret(
     selection: EditorSelection,
     fragment: DocumentFragment,
@@ -1207,21 +1187,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     cacheMap.set('caret-' + line + '-' + character, caretEl);
   }
 
-  // Check whether a line is visible in the currently rendered line window.
-  #isLineVisible(line: number): boolean {
-    if (this.#renderRange === undefined) {
-      return true;
-    }
-    const { startingLine, totalLines } = this.#renderRange;
-    if (line < startingLine) {
-      return false;
-    }
-    if (totalLines === Infinity) {
-      return true;
-    }
-    return line < startingLine + totalLines;
-  }
-
   async #runCommand(command: EditorCommand) {
     switch (command) {
       case 'selectAll':
@@ -1230,10 +1195,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
       case 'copy':
       case 'cut':
-        if (
-          this.#selections !== undefined &&
-          this.#textDocument !== undefined
-        ) {
+        if (this.#selections !== undefined) {
           try {
             // todo: use navigator.clipboard.write() for multiple selections copy
             await navigator.clipboard.writeText(
@@ -1312,9 +1274,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
               nextSelections
             );
             if (change !== undefined) {
-              this.#rerender(change);
-              this.#emitChange();
-              this.setSelections(nextSelections, false);
+              this.#applyChange(change, nextSelections);
             }
           }
         }
@@ -1330,11 +1290,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       case 'undo':
         if (this.#textDocument?.canUndo === true) {
           const undoResult = this.#textDocument.undo();
-          if (undoResult?.change !== undefined) {
-            this.#rerender(undoResult.change, undoResult.lineAnnotations);
-            this.#emitChange();
-            this.setSelections(undoResult.selections, false);
-            this.#focusTextarea();
+          if (undoResult !== undefined) {
+            this.#applyChange(...undoResult);
           }
         }
         break;
@@ -1342,13 +1299,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       case 'redo':
         if (this.#textDocument?.canRedo === true) {
           const redoResult = this.#textDocument.redo();
-          if (redoResult?.change !== undefined) {
-            this.#rerender(redoResult.change, redoResult.lineAnnotations);
-            this.#emitChange();
-            if (redoResult.selections !== undefined) {
-              this.setSelections(redoResult.selections, false);
-              this.#focusTextarea();
-            }
+          if (redoResult !== undefined) {
+            this.#applyChange(...redoResult);
           }
         }
         break;
@@ -1387,7 +1339,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   }
 
   #getSelectionText(selections: readonly EditorSelection[]): string {
-    if (this.#textDocument === undefined) {
+    const textDocument = this.#textDocument;
+    if (textDocument === undefined) {
       return '';
     }
     return [...selections]
@@ -1398,7 +1351,12 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         }
         return comparePosition(a.end, b.end);
       })
-      .map((selection) => this.#textDocument!.getText(selection))
+      .map((selection) => {
+        if (isCollapsedSelection(selection)) {
+          return textDocument.getLineText(selection.start.line, false);
+        }
+        return textDocument.getText(selection);
+      })
       .join('\n');
   }
 
@@ -1434,22 +1392,57 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         );
 
     if (change !== undefined) {
-      this.#rerender(change, this.#applyChangeToLineAnnotations(change));
-      this.#emitChange();
-      this.setSelections(nextSelections, false);
+      this.#applyChange(
+        change,
+        nextSelections,
+        this.#applyChangeToLineAnnotations(change)
+      );
+    }
+  }
+
+  #applyChange(
+    change: TextDocumentChange,
+    selections?: EditorSelection[],
+    lineAnnotations?: LineAnnotation<LAnnotation>[]
+  ) {
+    const fileContents = this.#fileContents;
+    const textDocument = this.#textDocument;
+    const onChange = this.#onChange;
+    if (
+      fileContents !== undefined &&
+      textDocument !== undefined &&
+      onChange !== undefined
+    ) {
+      // TODO(@ije): use debounce
+      setTimeout(() => {
+        const { contents: _, ...file } = fileContents;
+        Object.defineProperty(file, 'contents', {
+          get() {
+            return textDocument.getText();
+          },
+        });
+        onChange(
+          file as FileContents,
+          lineAnnotations ?? this.#lineAnnotations
+        );
+      }, 0);
+    }
+    this.#rerender(change, lineAnnotations);
+    if (selections !== undefined) {
+      this.setSelections(selections, false);
     }
   }
 
   #applyChangeToLineAnnotations(
     change: TextDocumentChange
   ): LineAnnotation<LAnnotation>[] | undefined {
-    if (this.#lineAnnotations !== undefined && change !== undefined) {
+    if (this.#lineAnnotations !== undefined) {
       const nextLineAnnotations =
         applyDocumentChangeToLineAnnotations<LAnnotation>(
           change,
           this.#lineAnnotations
         );
-      if (nextLineAnnotations !== undefined) {
+      if (nextLineAnnotations !== this.#lineAnnotations) {
         this.#textDocument?.setLastUndoLineAnnotationsAfter(
           nextLineAnnotations
         );
@@ -1457,6 +1450,20 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       return nextLineAnnotations;
     }
     return undefined;
+  }
+
+  #getContentWidth() {
+    const diffsColumnContentWidth =
+      this.#contentEl?.parentElement?.style.getPropertyValue(
+        '--diffs-column-content-width'
+      ) ?? '';
+    if (
+      diffsColumnContentWidth.length > 2 &&
+      diffsColumnContentWidth.endsWith('px')
+    ) {
+      return Number(diffsColumnContentWidth.slice(0, -2));
+    }
+    return this.#contentEl?.offsetWidth ?? 0;
   }
 
   #getLineElement(line: number): HTMLElement | undefined {
@@ -1581,20 +1588,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     return this.#measureCtx.measureText(textWithExpandedTabs).width;
   }
 
-  #getContentWidth() {
-    const diffsColumnContentWidth =
-      this.#contentEl?.parentElement?.style.getPropertyValue(
-        '--diffs-column-content-width'
-      ) ?? '';
-    if (
-      diffsColumnContentWidth.length > 2 &&
-      diffsColumnContentWidth.endsWith('px')
-    ) {
-      return Number(diffsColumnContentWidth.slice(0, -2));
-    }
-    return this.#contentEl?.offsetWidth ?? 0;
-  }
-
   // Compute how a logical line of text is broken into visual lines when line
   // wrapping is enabled.
   #wrapLineText(line: number): Uint32Array {
@@ -1705,15 +1698,29 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   }
 
   // check if the web selection belongs to editor
-  #rangeBelongsToEditor(range: StaticRange) {
+  #rangeBelongsToEditor({ startContainer, endContainer }: StaticRange) {
     const contentEl = this.#contentEl;
     if (contentEl === undefined) {
       return false;
     }
     return (
-      contentEl.contains(range.startContainer) &&
-      contentEl.contains(range.endContainer)
+      contentEl.contains(startContainer) && contentEl.contains(endContainer)
     );
+  }
+
+  // Check whether a line is visible in the currently rendered line window.
+  #isLineVisible(line: number): boolean {
+    if (this.#renderRange === undefined) {
+      return true;
+    }
+    const { startingLine, totalLines } = this.#renderRange;
+    if (line < startingLine) {
+      return false;
+    }
+    if (totalLines === Infinity) {
+      return true;
+    }
+    return line < startingLine + totalLines;
   }
 }
 

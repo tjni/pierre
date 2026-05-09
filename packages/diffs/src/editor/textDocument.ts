@@ -166,8 +166,8 @@ export class TextDocument<LAnnotation> {
     return this.#pieceTable.getText(range);
   }
 
-  getLineText(line: number): string {
-    return this.#pieceTable.getLineText(line);
+  getLineText(line: number, trimEOF = true): string {
+    return this.#pieceTable.getLineText(line, trimEOF);
   }
 
   charAt(offset: number): string;
@@ -224,46 +224,51 @@ export class TextDocument<LAnnotation> {
   }
 
   undo():
-    | {
-        change?: TextDocumentChange;
-        selections: EditorSelection[];
-        lineAnnotations?: LineAnnotation<LAnnotation>[];
-      }
+    | [
+        change: TextDocumentChange,
+        selections: EditorSelection[],
+        lineAnnotations?: LineAnnotation<LAnnotation>[],
+      ]
     | undefined {
     const entry = this.#editStack.popUndoToRedo();
     if (entry === undefined) {
       return undefined;
     }
     const change = this.#applyResolvedEdits(entry.inverseEdits);
+    if (change === undefined) {
+      return undefined;
+    }
     this.#version = entry.versionBefore;
-    return {
+    return [
       change,
-      selections: cloneSelections(entry.selectionsBefore),
-      lineAnnotations: entry.lineAnnotationsBefore?.slice(),
-    };
+      cloneSelections(entry.selectionsBefore),
+      entry.lineAnnotationsBefore?.slice(),
+    ];
   }
 
   redo():
-    | {
-        change?: TextDocumentChange;
-        selections?: EditorSelection[];
-        lineAnnotations?: LineAnnotation<LAnnotation>[];
-      }
+    | [
+        change: TextDocumentChange,
+        selections?: EditorSelection[],
+        lineAnnotations?: LineAnnotation<LAnnotation>[],
+      ]
     | undefined {
     const entry = this.#editStack.popRedoToUndo();
     if (entry === undefined) {
       return undefined;
     }
     const change = this.#applyResolvedEdits(entry.forwardEdits);
+    if (change === undefined) {
+      return undefined;
+    }
     this.#version = entry.versionAfter;
-    return {
+    return [
       change,
-      selections:
-        entry.selectionsAfter !== undefined
-          ? cloneSelections(entry.selectionsAfter)
-          : undefined,
-      lineAnnotations: entry.lineAnnotationsAfter?.slice(),
-    };
+      entry.selectionsAfter !== undefined
+        ? cloneSelections(entry.selectionsAfter)
+        : undefined,
+      entry.lineAnnotationsAfter?.slice(),
+    ];
   }
 
   #resolveEdit(edit: TextEdit): ResolvedTextEdit {

@@ -5,10 +5,10 @@ import type { TextDocumentChange } from './textDocument';
 // returning undefined when no annotation moved or was deleted.
 export function applyDocumentChangeToLineAnnotations<T>(
   change: TextDocumentChange,
-  lineAnnotations: readonly LineAnnotation<T>[]
-): LineAnnotation<T>[] | undefined {
+  lineAnnotations: LineAnnotation<T>[]
+): LineAnnotation<T>[] {
   if (change.lineDelta === 0) {
-    return undefined;
+    return lineAnnotations;
   }
 
   const startCharacter = change.startCharacter ?? 0;
@@ -52,5 +52,5 @@ export function applyDocumentChangeToLineAnnotations<T>(
     nextLineAnnotations.push(annotation);
   }
 
-  return changed ? nextLineAnnotations : undefined;
+  return changed ? nextLineAnnotations : lineAnnotations;
 }

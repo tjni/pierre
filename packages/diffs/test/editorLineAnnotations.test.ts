@@ -70,8 +70,8 @@ describe('applyDocumentChangeToLineAnnotations', () => {
       },
     ]);
 
-    expect(applyDocumentChangeToLineAnnotations(change!, annotations)).toBe(
-      undefined
+    expect(applyDocumentChangeToLineAnnotations(change!, annotations)).toEqual(
+      annotations
     );
   });
 });
