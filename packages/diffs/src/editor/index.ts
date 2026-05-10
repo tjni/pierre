@@ -1760,7 +1760,13 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   }
 }
 
-export function edit<T>(file: File<T>): void {
-  const editor = new Editor<T>();
-  editor.edit(file);
+export function edit<LAnnotation>(
+  file: File<LAnnotation>,
+  onChange?: (
+    file: FileContents,
+    lineAnnotations?: LineAnnotation<LAnnotation>[]
+  ) => void
+): void {
+  const editor = new Editor<LAnnotation>();
+  editor.edit(file, onChange);
 }
