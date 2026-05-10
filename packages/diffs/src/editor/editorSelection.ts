@@ -87,13 +87,13 @@ export function resolveIndentEdits(
       },
       newText,
     });
-    const delte = newText.length - deleteLength;
+    const delta = newText.length - deleteLength;
     if (line === start.line) {
       newSelection = {
         ...newSelection,
         start: {
           ...start,
-          character: Math.max(0, start.character + delte),
+          character: Math.max(0, start.character + delta),
         },
       };
     }
@@ -102,7 +102,7 @@ export function resolveIndentEdits(
         ...newSelection,
         end: {
           ...end,
-          character: Math.max(0, end.character + delte),
+          character: Math.max(0, end.character + delta),
         },
       };
     }
