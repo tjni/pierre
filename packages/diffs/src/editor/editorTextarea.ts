@@ -25,19 +25,16 @@ export function createTextareaSnapshot(
     textDocument.lineCount - 1,
     primarySelection.end.line + 1
   );
+  const startCharacter = normalizeCharacter(
+    primarySelection.start,
+    textDocument
+  );
+  const endCharacter = normalizeCharacter(primarySelection.end, textDocument);
   const lines: string[] = [];
+
   let offset = 0;
   let selectionStart = 0;
   let selectionEnd = 0;
-
-  const startCharacter = normalizeCharacterForDocument(
-    textDocument,
-    primarySelection.start
-  );
-  const endCharacter = normalizeCharacterForDocument(
-    textDocument,
-    primarySelection.end
-  );
 
   for (let line = startLine; line <= endLine; line++) {
     const lineText = textDocument.getLineText(line);
@@ -180,9 +177,9 @@ export function toTextareaSelectionDirection(
 
 // Aligns a column with `TextDocument.offsetAt` / `positionAt` so textarea indices match backing text
 // (DOM may report past end for empty lines that render a placeholder space).
-function normalizeCharacterForDocument(
-  textDocument: TextDocument<unknown>,
-  position: Position
+function normalizeCharacter(
+  position: Position,
+  textDocument: TextDocument<unknown>
 ): number {
   return textDocument.positionAt(textDocument.offsetAt(position)).character;
 }

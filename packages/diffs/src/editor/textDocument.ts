@@ -289,6 +289,17 @@ export class TextDocument<LAnnotation> {
     ];
   }
 
+  normalizePosition(position: Position): Position {
+    const line = Math.max(0, Math.min(position.line, this.lineCount - 1));
+    return {
+      line,
+      character: Math.max(
+        0,
+        Math.min(position.character, this.getLineText(line).length)
+      ),
+    };
+  }
+
   #resolveEdit(edit: TextEdit): ResolvedTextEdit {
     let start = this.offsetAt(edit.range.start);
     let end = this.offsetAt(edit.range.end);
