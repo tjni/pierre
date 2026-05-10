@@ -58,13 +58,18 @@ export const EDITOR_CSS = /* CSS */ `
     animation-delay: 0.6s;
     visibility: hidden;
   }
-  [data-file]:focus [data-caret],
-  [data-textarea]:focus ~ [data-caret] {
-    visibility: visible;
-  }
   [data-selection-range] {
     height: 1lh;
     z-index: -10;
     background-color: var(--diffs-bg-selection);
+    opacity: 0.75;
+  }
+  [data-file]:focus [data-caret],
+  [data-textarea]:focus ~ [data-caret] {
+    visibility: visible;
+  }
+  [data-file]:focus [data-selection-range],
+  [data-textarea]:focus ~ [data-selection-range] {
+    opacity: 1;
   }
 `;
