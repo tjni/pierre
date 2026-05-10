@@ -10,21 +10,21 @@ describe('computeLineOffsets', () => {
     expect(result.length).toBe(1);
   });
 
-  test('computes offsets for single line without trailing newline', () => {
+  test('computes offsets for single line', () => {
     const result = computeLineOffsets('hello');
 
-    expect([...result]).toEqual([0, 5]);
-    expect(result.length).toBe(2);
+    expect([...result]).toEqual([0]);
+    expect(result.length).toBe(1);
   });
 
-  test('computes offsets for LF files with and without terminal newline', () => {
+  test('computes offsets for LF files', () => {
     const withTerminalNewline = computeLineOffsets('a\nb\n');
     const withoutTerminalNewline = computeLineOffsets('a\nb');
 
     expect([...withTerminalNewline]).toEqual([0, 2, 4]);
     expect(withTerminalNewline.length).toBe(3);
-    expect([...withoutTerminalNewline]).toEqual([0, 2, 3]);
-    expect(withoutTerminalNewline.length).toBe(3);
+    expect([...withoutTerminalNewline]).toEqual([0, 2]);
+    expect(withoutTerminalNewline.length).toBe(2);
   });
 
   test('computes offsets for CRLF and lone CR line endings', () => {
@@ -36,25 +36,11 @@ describe('computeLineOffsets', () => {
     expect([...mixed]).toEqual([0, 2, 5, 7]);
     expect(mixed.length).toBe(4);
   });
-});
-
-describe('renderable line count', () => {
-  test('counts row slots including end offset for two lines without terminal newline', () => {
-    const lines = computeLineOffsets('first\nsecond');
-
-    expect(lines.length).toBe(3);
-  });
-
-  test('includes trailing blank line segment in offset array length', () => {
-    const lines = computeLineOffsets('first\nsecond\n\n');
-
-    expect([...lines]).toEqual([0, 6, 13, 14]);
-    expect(lines.length).toBe(4);
-  });
 
   test('treats newline-only contents as two offset boundaries', () => {
     const lines = computeLineOffsets('\n');
 
+    expect([...lines]).toEqual([0, 1]);
     expect(lines.length).toBe(2);
   });
 });

@@ -21,8 +21,5 @@ export function computeLineOffsets(contents: string): number[] {
       offsets.push(i + 1);
     }
   }
-  if (offsets.length > 0 && offsets[offsets.length - 1] !== contents.length) {
-    offsets.push(contents.length);
-  }
   return offsets;
 }

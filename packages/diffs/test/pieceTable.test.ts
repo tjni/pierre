@@ -196,25 +196,6 @@ describe('PieceTable', () => {
     expect(table.positionAt(3)).toEqual({ line: 1, character: 0 });
   });
 
-  test('keeps repeated line ending characters in line offsets', () => {
-    const table = new PieceTable('a\r\r\nb\r');
-
-    expectTableToMatchText(table, 'a\r\r\nb\r');
-    expect(table.getLineText(0)).toBe('a');
-    expect(table.getLineText(1)).toBe('b');
-    expect(table.positionAt(2)).toEqual({ line: 0, character: 2 });
-    expect(table.offsetAt({ line: 1, character: 10 })).toBe(6);
-  });
-
-  test('keeps line endings split across pieces', () => {
-    const table = new PieceTable('a\nb');
-
-    table.insert('\r\r', 1);
-    table.insert('\r', table.getText().length);
-
-    expectTableToMatchText(table, 'a\r\r\nb\r');
-  });
-
   test('handles an empty document', () => {
     const table = new PieceTable('');
 

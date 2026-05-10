@@ -1,3 +1,4 @@
+import { computeLineOffsets } from '../utils/computeFileOffsets';
 import type { Position, Range } from './textDocument';
 
 // A piece is a segment of text that is either original or added.
@@ -17,14 +18,14 @@ class TextBuffer {
   lineOffsets: number[];
 
   constructor(public text: string) {
-    this.lineOffsets = createLineOffsets(text);
+    this.lineOffsets = computeLineOffsets(text);
   }
 
   // the append operation is efficient because it only appends
   // elements to the lineOffsets array in the end
   append(text: string): number {
     const offset = this.text.length;
-    const appendedLineOffsets = createLineOffsets(text);
+    const appendedLineOffsets = computeLineOffsets(text);
     for (let i = 1; i < appendedLineOffsets.length; i++) {
       this.lineOffsets.push(offset + appendedLineOffsets[i]);
     }
@@ -618,16 +619,6 @@ function isEOL(charCode: number): boolean {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
-}
-
-function createLineOffsets(text: string): number[] {
-  const offsets = [0];
-  for (let i = 0; i < text.length; i++) {
-    if (text.charCodeAt(i) === 10) {
-      offsets.push(i + 1);
-    }
-  }
-  return offsets;
 }
 
 function createPrefixTable(text: string): number[] {
