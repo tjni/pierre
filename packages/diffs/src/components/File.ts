@@ -406,41 +406,12 @@ export class File<LAnnotation = undefined> {
     lineCount: number,
     newLineAnnotations?: LineAnnotation<LAnnotation>[]
   ): void {
-    const result = this.fileRenderer.emitLineCountChange(
-      lineCount,
-      newLineAnnotations,
-      this.renderRange
-    );
-    if (result != null && this.code != null) {
-      const { gutterAST, contentAST, rowCount } = result;
-      const columns = this.getColumns(this.code);
-      if (columns != null) {
-        const { gutter, content } = columns;
-        gutter.innerHTML = toHtml(gutterAST);
-        content.innerHTML = toHtml(contentAST);
-        gutter.style.gridRow = `span ${rowCount}`;
-        content.style.gridRow = `span ${rowCount}`;
-        if (newLineAnnotations != null) {
-          for (const { element } of this.annotationCache.values()) {
-            element.remove();
-          }
-          this.annotationCache.clear();
-          this.lineAnnotations = newLineAnnotations;
-          this.renderAnnotations();
-        }
-        if (
-          this.fileContainer != null &&
-          this.file != null &&
-          this.editor != null
-        ) {
-          this.editor.syncFile(
-            this.fileContainer,
-            this.file,
-            this.lineAnnotations,
-            this.renderRange
-          );
-        }
-      }
+    this.fileRenderer.emitLineCountChange(lineCount, newLineAnnotations);
+    if (newLineAnnotations != null) {
+      this.annotationCache.forEach(({ element }) => element.remove());
+      this.annotationCache.clear();
+      this.lineAnnotations = newLineAnnotations;
+      this.rerender();
     }
   }
 

@@ -565,6 +565,56 @@ export function extendSelections(
   return [...selections, added];
 }
 
+/** Clamp saved selections to the current document before rendering or editing.
+ * Virtualized renders can reuse a selection after offscreen lines were deleted.
+ * @param selections - The selections to normalize.
+ * @param textDocument - The text document to normalize the selections to.
+ * @returns The normalized selections.
+ */
+export function normalizeSelectionsForDocument<LAnnotation>(
+  selections: readonly EditorSelection[],
+  textDocument: TextDocument<LAnnotation>
+): EditorSelection[] {
+  return selections.map((selection) => {
+    const start = normalizePositionForDocument(selection.start, textDocument);
+    const end = normalizePositionForDocument(selection.end, textDocument);
+    if (comparePosition(start, end) <= 0) {
+      return { ...selection, start, end };
+    }
+    return {
+      ...selection,
+      start: end,
+      end: start,
+      direction: reverseSelectionDirection(selection.direction),
+    };
+  });
+}
+
+function normalizePositionForDocument<LAnnotation>(
+  position: Position,
+  textDocument: TextDocument<LAnnotation>
+): Position {
+  const lastLine = Math.max(0, textDocument.lineCount - 1);
+  const line = Math.max(0, Math.min(position.line, lastLine));
+  const character = Math.max(
+    0,
+    Math.min(position.character, textDocument.getLineText(line).length)
+  );
+  return { line, character };
+}
+
+function reverseSelectionDirection(
+  direction: EditorSelection['direction']
+): EditorSelection['direction'] {
+  if (direction === DirectionForward) {
+    return DirectionBackward;
+  }
+  if (direction === DirectionBackward) {
+    return DirectionForward;
+  }
+  return direction;
+}
+
 // Expands a zero-width selection to the word-like segment that contains the caret.
 function expandCollapsedSelectionToWord(
   textDocument: TextDocument<unknown>,

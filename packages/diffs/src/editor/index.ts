@@ -22,6 +22,7 @@ import {
   mapSelectionMove,
   mapSelectionRangeMove,
   mergeSelections,
+  normalizeSelectionsForDocument,
   resolveIndentEdits,
   selectionIntersects,
 } from '../editor/editorSelection';
@@ -408,7 +409,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   }
 
   #rerender(
-    lastChange: TextDocumentChange,
+    change: TextDocumentChange,
     nextLineAnnotations?: LineAnnotation<LAnnotation>[] | undefined
   ) {
     // cancel existing background tokenzier task
@@ -419,12 +420,16 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     const fileContents = this.#fileContents;
     const textDocument = this.#textDocument;
     const contentEl = this.#contentEl;
+    const gutterEl = this.#contentEl?.previousElementSibling ?? undefined;
     if (
       highlighter === undefined ||
       file === undefined ||
       fileContents === undefined ||
       textDocument === undefined ||
-      contentEl === undefined
+      contentEl === undefined ||
+      gutterEl === undefined ||
+      !(gutterEl instanceof HTMLElement) ||
+      gutterEl.dataset.gutter === undefined
     ) {
       return;
     }
@@ -438,7 +443,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     const stateStackCache = this.#buildStateStackCache(
       textDocument,
       grammar,
-      lastChange.startLine
+      change.startLine
     );
 
     const { lineCount } = textDocument;
@@ -448,7 +453,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         ? lineCount
         : Math.min(startingLine + totalLines, lineCount);
 
-    let line = lastChange.startLine;
+    let line = change.startLine;
     let state = stateStackCache[line];
     let settled = false;
     let dirtyLines: Map<number, Array<HighlightedToken>> = new Map();
@@ -477,8 +482,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       }
 
       settled =
-        line >= lastChange.endLine &&
-        lastChange.lineDelta === 0 &&
+        line >= change.endLine &&
+        change.lineDelta === 0 &&
         stateStackCache[line + 1] !== undefined &&
         state.equals(stateStackCache[line + 1]);
       if (settled) {
@@ -494,31 +499,27 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     // Invalidate layout caches touched by the edit.
     // - line inserts/deletes shift line numbers, so clear from startLine onward
     // - wrapped edits can change visual height, which shifts downstream line Y
-    if (lastChange.lineDelta !== 0) {
+    if (change.lineDelta !== 0) {
       for (const line of this.#lineYCache.keys()) {
-        if (line >= lastChange.startLine) {
+        if (line >= change.startLine) {
           this.#lineYCache.delete(line);
         }
       }
     }
     if (this.#wrap) {
       for (const line of this.#wrapLineOffsetsCache.keys()) {
-        if (line >= lastChange.startLine) {
+        if (line >= change.startLine) {
           this.#wrapLineOffsetsCache.delete(line);
         }
       }
     }
 
-    // update line elements that have been changed in the document
-    // create new line elements for new lines
     if (dirtyLines.size > 0) {
       const children = contentEl.children;
       const dirtyLineIndexes = new Set<number>(dirtyLines.keys());
-      for (
-        let i = lastChange.startLine - startingLine;
-        i < children.length;
-        i++
-      ) {
+
+      // update line elements that have been changed in the document
+      for (let i = change.startLine - startingLine; i < children.length; i++) {
         if (dirtyLineIndexes.size === 0) {
           break;
         }
@@ -530,7 +531,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
             child.replaceChildren(
               ...tokens.map(([char, style, textContent]) => {
                 if (char === 0 && style === '') {
-                  return textContent;
+                  return document.createTextNode(textContent);
                 }
                 return createElement('span', {
                   dataset: {
@@ -545,20 +546,23 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           }
         }
       }
+
+      // create new line elements for new lines
       if (dirtyLineIndexes.size > 0) {
         for (const lineIndex of dirtyLineIndexes) {
           const tokens = dirtyLines.get(lineIndex)!;
-          createElement(
+          const lineNumber = String(lineIndex + 1);
+          const contentLineEl = createElement(
             'div',
             {
               dataset: {
-                line: (lineIndex + 1).toString(),
+                line: lineNumber,
                 lineType: 'context',
                 lineIndex: lineIndex.toString(),
               },
               children: tokens.map(([char, style, textContent]) => {
                 if (char === 0 && style === '') {
-                  return textContent;
+                  return document.createTextNode(textContent);
                 }
                 return createElement('span', {
                   dataset: {
@@ -571,33 +575,57 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
             },
             contentEl
           );
+          contentEl.insertBefore(contentLineEl, this.#textareaEl ?? null);
+          createElement(
+            'div',
+            {
+              dataset: {
+                lineType: 'context',
+                columnNumber: lineNumber,
+                lineIndex: lineIndex.toString(),
+              },
+              children: [
+                createElement('span', {
+                  dataset: {
+                    lineNumberContent: '',
+                  },
+                  textContent: lineNumber,
+                }),
+              ],
+            },
+            gutterEl
+          );
         }
       }
     }
 
     // remove line elements that have been deleted in the document
-    if (lastChange.lineDelta < 0) {
-      const children = contentEl.children;
-      for (let i = children.length - 1; i >= 0; i--) {
-        const child = children[i] as HTMLElement;
-        const { lineIndex, lineAnnotation } = child.dataset;
-        if (lineIndex !== undefined || lineAnnotation !== undefined) {
-          const lineIndexNum = Number(
-            lineAnnotation !== undefined
-              ? lineAnnotation.split(',')[1]
-              : lineIndex
-          );
-          if (lineIndexNum < lastChange.lineCount) {
-            break;
+    if (change.lineDelta < 0) {
+      for (const element of [contentEl, gutterEl]) {
+        const children = element.children;
+        for (let i = children.length - 1; i >= 0; i--) {
+          const child = children[i] as HTMLElement;
+          const { lineIndex, lineAnnotation } = child.dataset;
+          if (lineIndex !== undefined || lineAnnotation !== undefined) {
+            const lineIndexNum = Number(
+              lineAnnotation !== undefined
+                ? lineAnnotation.split(',')[1]
+                : lineIndex
+            );
+            if (lineIndexNum < change.lineCount) {
+              break;
+            }
+            child.remove();
           }
-          child.remove();
         }
       }
     }
 
     file.emitDirtyLines(dirtyLines);
-    if (lastChange.lineDelta !== 0) {
-      file.emitLineCountChange(lastChange.lineCount, nextLineAnnotations);
+    if (change.lineDelta !== 0) {
+      gutterEl.style.gridRow = 'span ' + gutterEl.children.length;
+      contentEl.style.gridRow = 'span ' + gutterEl.children.length;
+      file.emitLineCountChange(change.lineCount, nextLineAnnotations);
     }
 
     if (!settled && line < lineCount) {
@@ -617,7 +645,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     console.log(
       `[diffs] re-render time: ${Math.round((performance.now() - t) * 1000) / 1000}ms`,
       'lastChange:',
-      lastChange,
+      change,
       'dirtyLines:',
       dirtyLines.size,
       settled ? '(settled)' : ''
@@ -865,6 +893,12 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   }
 
   #setSelections(selections: EditorSelection[], resetTextarea = true): void {
+    if (this.#textDocument !== undefined) {
+      selections = normalizeSelectionsForDocument(
+        selections,
+        this.#textDocument
+      );
+    }
     const primarySelection = selections.at(-1);
     if (primarySelection === undefined) {
       return;
@@ -1139,14 +1173,13 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     fragment: DocumentFragment,
     cacheMap: Map<string, HTMLElement>
   ) {
-    if (!this.#isLineVisible(selection.start.line)) {
-      return;
-    }
-
     const { start, end, direction } = selection;
     const isBackward = direction === DirectionBackward;
     const line = isBackward ? start.line : end.line;
     const character = isBackward ? start.character : end.character;
+    if (!this.#isLineVisible(line)) {
+      return;
+    }
     const [left, wrapLine] = this.#getCharX(line, character);
     const caretEl = createElement(
       'div',
@@ -1331,7 +1364,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     if (textDocument === undefined) {
       return '';
     }
-    return [...selections]
+    return normalizeSelectionsForDocument([...selections], textDocument)
       .sort((a, b) => {
         const startOrder = comparePosition(a.start, b.start);
         if (startOrder !== 0) {
@@ -1359,22 +1392,30 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     if (textDocument == null || primarySelection == null) {
       return;
     }
+    const normalizedSelections = normalizeSelectionsForDocument(
+      selections,
+      textDocument
+    );
+    const normalizedPrimarySelection = normalizedSelections.at(-1);
+    if (normalizedPrimarySelection == null) {
+      return;
+    }
     // TODO(@ije): normalize text with textDocument.EOF
     const lineAnnotations = this.#lineAnnotations;
     const { nextSelections, change } =
-      Array.isArray(text) && text.length === selections.length
+      Array.isArray(text) && text.length === normalizedSelections.length
         ? applyTextReplaceToSelections<LAnnotation>(
             textDocument,
-            selections,
+            normalizedSelections,
             text,
             lineAnnotations
           )
         : applyTextChangeToSelections<LAnnotation>(
             textDocument,
-            selections,
+            normalizedSelections,
             {
-              start: textDocument.offsetAt(primarySelection.start),
-              end: textDocument.offsetAt(primarySelection.end),
+              start: textDocument.offsetAt(normalizedPrimarySelection.start),
+              end: textDocument.offsetAt(normalizedPrimarySelection.end),
               text: Array.isArray(text) ? text.join('\n') : text,
             },
             lineAnnotations
@@ -1699,6 +1740,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
   // Check whether a line is visible in the currently rendered line window.
   #isLineVisible(line: number): boolean {
+    const lineCount = this.#textDocument?.lineCount;
+    if (line < 0 || (lineCount !== undefined && line >= lineCount)) {
+      return false;
+    }
     if (this.#renderRange === undefined) {
       return true;
     }

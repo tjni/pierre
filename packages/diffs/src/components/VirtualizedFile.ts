@@ -1,6 +1,7 @@
 import { DEFAULT_VIRTUAL_FILE_METRICS } from '../constants';
 import type {
   FileContents,
+  LineAnnotation,
   RenderRange,
   RenderWindow,
   VirtualFileMetrics,
@@ -235,8 +236,11 @@ export class VirtualizedFile<
     }
   }
 
-  override emitLineCountChange(lineCount: number): void {
-    super.emitLineCountChange(lineCount);
+  override emitLineCountChange(
+    lineCount: number,
+    newLineAnnotations?: LineAnnotation<LAnnotation>[]
+  ): void {
+    super.emitLineCountChange(lineCount, newLineAnnotations);
     this.computeApproximateSize();
   }
 
