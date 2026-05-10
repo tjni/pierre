@@ -1208,12 +1208,17 @@ export class InteractionManager<TMode extends InteractionManagerMode> {
     const last = Math.max(rowRange.start, rowRange.end);
     for (const code of codeElements) {
       const [gutter, content] = code.children;
-      const len = content.children.length;
-      // if (len !== gutter.children.length) {
-      //   throw new Error(
-      //     'InteractionManager.renderSelection: gutter and content children dont match, something is wrong'
-      //   );
-      // }
+      const len = [...content.children].filter((child) => {
+        const dataset = (child as HTMLElement).dataset;
+        return (
+          dataset.line !== undefined || dataset.lineAnnotation !== undefined
+        );
+      }).length;
+      if (len !== gutter.children.length) {
+        throw new Error(
+          'InteractionManager.renderSelection: gutter and content children dont match, something is wrong'
+        );
+      }
       for (let i = 0; i < len; i++) {
         const contentElement = content.children[i];
         const gutterElement = gutter.children[i];

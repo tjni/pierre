@@ -236,6 +236,7 @@ export class FileRenderer<LAnnotation = undefined> {
 
   public emitLineCountChange(
     lineCount: number,
+    newLineAnnotations?: LineAnnotation<LAnnotation>[],
     renderRange: RenderRange = DEFAULT_RENDER_RANGE
   ): FileRenderResult | undefined {
     const renderCache = this.renderCache;
@@ -257,22 +258,9 @@ export class FileRenderer<LAnnotation = undefined> {
       };
     }
     this.alternateLineCount.set(renderCache.file, lineCount);
-    return this.processFileResult(
-      renderCache.file,
-      renderRange,
-      renderCache.result
-    );
-  }
-
-  public emitLineAnnotationsChange(
-    newLineAnnotations: LineAnnotation<LAnnotation>[],
-    renderRange: RenderRange = DEFAULT_RENDER_RANGE
-  ): FileRenderResult | undefined {
-    const renderCache = this.renderCache;
-    if (renderCache == null || renderCache.result == null) {
-      return undefined;
+    if (newLineAnnotations != null) {
+      this.setLineAnnotations(newLineAnnotations);
     }
-    this.setLineAnnotations(newLineAnnotations);
     return this.processFileResult(
       renderCache.file,
       renderRange,

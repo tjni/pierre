@@ -43,7 +43,6 @@ import { createUnsafeCSSStyleNode } from '../utils/createUnsafeCSSStyleNode';
 import { wrapThemeCSS, wrapUnsafeCSS } from '../utils/cssWrappers';
 import { getLineAnnotationName } from '../utils/getLineAnnotationName';
 import { getOrCreateCodeNode } from '../utils/getOrCreateCodeNode';
-import { hasVisibleLineAnnotation } from '../utils/hasVisibleLineAnnotation';
 import { upsertHostThemeStyle } from '../utils/hostTheme';
 import { prerenderHTMLIfNecessary } from '../utils/prerenderHTMLIfNecessary';
 import { setPreNodeProperties } from '../utils/setWrapperNodeProps';
@@ -403,53 +402,38 @@ export class File<LAnnotation = undefined> {
     this.fileRenderer.emitDirtyLines(lines);
   }
 
-  public emitLineCountChange(lineCount: number): void {
+  public emitLineCountChange(
+    lineCount: number,
+    newLineAnnotations?: LineAnnotation<LAnnotation>[]
+  ): void {
     const result = this.fileRenderer.emitLineCountChange(
       lineCount,
-      this.renderRange
-    );
-    if (result != null && this.code != null) {
-      const { gutterAST, rowCount } = result;
-      const columns = this.getColumns(this.code);
-      if (columns != null) {
-        columns.gutter.innerHTML =
-          this.fileRenderer.renderPartialHTML(gutterAST);
-        columns.content.style.gridRow = `span ${rowCount}`;
-        columns.gutter.style.gridRow = `span ${rowCount}`;
-      }
-    }
-  }
-
-  public emitLineAnnotationsChange(
-    newLineAnnotations: LineAnnotation<LAnnotation>[]
-  ): void {
-    const previousLineAnnotations = this.lineAnnotations;
-    const renderRange = this.renderRange;
-    const result = this.fileRenderer.emitLineAnnotationsChange(
       newLineAnnotations,
       this.renderRange
     );
-    for (const { element } of this.annotationCache.values()) {
-      element.remove();
-    }
-    this.annotationCache.clear();
-    this.lineAnnotations = newLineAnnotations;
-    const hasVisibleAnnotationChange =
-      hasVisibleLineAnnotation(previousLineAnnotations, renderRange) ||
-      hasVisibleLineAnnotation(newLineAnnotations, renderRange);
-    if (result != null && this.code != null && hasVisibleAnnotationChange) {
+    if (result != null && this.code != null) {
       const { gutterAST, contentAST, rowCount } = result;
       const columns = this.getColumns(this.code);
       if (columns != null) {
-        columns.content.innerHTML =
-          this.fileRenderer.renderPartialHTML(contentAST);
-        columns.gutter.innerHTML =
-          this.fileRenderer.renderPartialHTML(gutterAST);
-        columns.content.style.gridRow = `span ${rowCount}`;
-        columns.gutter.style.gridRow = `span ${rowCount}`;
-        this.renderAnnotations();
-        if (this.fileContainer != null && this.file != null) {
-          this.editor?.syncFile(
+        const { gutter, content } = columns;
+        gutter.innerHTML = toHtml(gutterAST);
+        content.innerHTML = toHtml(contentAST);
+        gutter.style.gridRow = `span ${rowCount}`;
+        content.style.gridRow = `span ${rowCount}`;
+        if (newLineAnnotations != null) {
+          for (const { element } of this.annotationCache.values()) {
+            element.remove();
+          }
+          this.annotationCache.clear();
+          this.lineAnnotations = newLineAnnotations;
+          this.renderAnnotations();
+        }
+        if (
+          this.fileContainer != null &&
+          this.file != null &&
+          this.editor != null
+        ) {
+          this.editor.syncFile(
             this.fileContainer,
             this.file,
             this.lineAnnotations,

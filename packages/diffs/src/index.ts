@@ -87,7 +87,6 @@ export * from './utils/getSingularPatch';
 export * from './utils/getThemes';
 export * from './utils/getTotalLineCountFromHunks';
 export * from './utils/hast_utils';
-export * from './utils/hasVisibleLineAnnotation';
 export * from './utils/isDefaultRenderRange';
 export * from './utils/isWorkerContext';
 export * from './utils/parseDiffDecorations';

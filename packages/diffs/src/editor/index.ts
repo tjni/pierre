@@ -597,13 +597,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
     file.emitDirtyLines(dirtyLines);
     if (lastChange.lineDelta !== 0) {
-      file.emitLineCountChange(lastChange.lineCount);
-    }
-    if (
-      nextLineAnnotations !== undefined &&
-      nextLineAnnotations !== this.#lineAnnotations
-    ) {
-      file.emitLineAnnotationsChange(nextLineAnnotations);
+      file.emitLineCountChange(lastChange.lineCount, nextLineAnnotations);
     }
 
     if (!settled && line < lineCount) {
