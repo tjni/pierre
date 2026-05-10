@@ -389,7 +389,10 @@ export class File<LAnnotation = undefined> {
   public getOrCreateLineOffSets(
     file: FileContents | undefined = this.file
   ): number[] {
-    return file != null ? this.fileRenderer.getOrCreateLineOffsets(file) : [];
+    return file != null
+      ? this.fileRenderer.getOrCreateLineOffsets(file)
+      : // empty string
+        [0];
   }
 
   public getLineCount(file: FileContents | undefined = this.file): number {
