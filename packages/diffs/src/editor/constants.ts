@@ -11,7 +11,8 @@ export const EDITOR_CSS = /* CSS */ `
     50% { opacity: 0; }
     100% { opacity: 1; }
   }
-  [data-code] {
+  [data-code],
+  [data-content] {
     position: relative;
   }
   [data-content] {
