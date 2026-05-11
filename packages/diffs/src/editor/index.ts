@@ -508,6 +508,17 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         this.#selectionStart = undefined;
         this.#reservedSelections = undefined;
       }),
+
+      addEventListener(document, 'resize', () => {
+        if (this.#wrap) {
+          this.#wrapLineOffsetsCache.clear();
+          this.#lineYCache.clear();
+          this.#lastCharX = undefined;
+          if (this.#selections !== undefined) {
+            this.#updateSelections(this.#selections);
+          }
+        }
+      }),
     ];
   }
 
@@ -982,6 +993,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     const wrapOffsets = this.#wrapLineText(line);
     const segmentCount = wrapOffsets.length - 1;
     const lastSegmentIndex = segmentCount - 1;
+    const offsetLeft = this.#getGutterLeft() + paddingInline;
 
     for (let w = 0; w < segmentCount; w++) {
       const segmentStart = wrapOffsets[w];
@@ -1012,14 +1024,14 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       if (wrapStartChar === 0 && wrapEndChar === 0) {
         // Empty range pinned to line start (e.g. multi-line selection ending
         // with end.character === 0). Mirrors the non-wrap path.
-        segmentLeft = paddingInline;
+        segmentLeft = offsetLeft;
         segmentWidth = line === selection.end.line ? 0 : paddingInline;
       } else {
         const prefixInSegment = lineText.slice(segmentStart, wrapStartChar);
         const prefixAsciiWidth =
           this.#getExpandedAsciiTextWidth(prefixInSegment);
         segmentLeft =
-          paddingInline +
+          offsetLeft +
           (prefixAsciiWidth !== -1
             ? prefixAsciiWidth
             : this.#measureTextWidth(prefixInSegment));
@@ -1612,8 +1624,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           pointerEvents: 'none',
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
-          paddingInline: '1ch',
           font: 'inherit',
+          paddingInline: '1ch',
+          tabSize: this.#tabSize.toString(),
         },
         textContent: lineText,
       },
@@ -1622,11 +1635,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     const textNode = div.firstChild as Text;
     const range = document.createRange();
     const starts: number[] = [];
-    const ends: number[] = [];
-    const hasNonWhitespace: boolean[] = [];
 
     try {
-      let currentHasNonWhitespace = false;
       let lastTop = Number.NEGATIVE_INFINITY;
 
       for (let i = 0; i < lineText.length; i++) {
@@ -1637,56 +1647,16 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         // below the previous character's top edge.
         const { top } = range.getBoundingClientRect();
         if (top > lastTop) {
-          if (starts.length > 0) {
-            ends.push(i);
-            hasNonWhitespace.push(currentHasNonWhitespace);
-          }
           starts.push(i);
-          currentHasNonWhitespace = false;
           lastTop = top;
         }
-
-        const ch = lineText.charAt(i);
-        if (ch !== ' ' && ch !== '\t') {
-          currentHasNonWhitespace = true;
-        }
       }
 
-      ends.push(lineText.length);
-      hasNonWhitespace.push(currentHasNonWhitespace);
-
-      // The browser treats leading indentation before an unbreakable token as
-      // its own visual line (the indentation sits on line N, the broken word
-      // begins on line N+1). For wrap-line accounting we want the indentation
-      // to stay attached to the content it precedes, so merge any
-      // whitespace-only line into the line that follows it.
-      const mergedStarts: number[] = [];
-      const mergedEnds: number[] = [];
-      const mergedWhitespaceOnly: boolean[] = [];
+      const offsets = new Uint32Array(starts.length + 1);
       for (let i = 0; i < starts.length; i++) {
-        const start = starts[i];
-        const end = ends[i];
-        const isWhitespaceOnly = !hasNonWhitespace[i] && end > start;
-
-        const prevIndex = mergedStarts.length - 1;
-        if (prevIndex >= 0) {
-          if (mergedWhitespaceOnly[prevIndex] === true) {
-            mergedEnds[prevIndex] = end;
-            mergedWhitespaceOnly[prevIndex] = isWhitespaceOnly;
-            continue;
-          }
-        }
-
-        mergedStarts.push(start);
-        mergedEnds.push(end);
-        mergedWhitespaceOnly.push(isWhitespaceOnly);
+        offsets[i] = starts[i]!;
       }
-
-      const offsets = new Uint32Array(mergedStarts.length + 1);
-      for (let i = 0; i < mergedStarts.length; i++) {
-        offsets[i] = mergedStarts[i]!;
-      }
-      offsets[mergedStarts.length] = lineText.length;
+      offsets[starts.length] = lineText.length;
       this.#wrapLineOffsetsCache.set(line, offsets);
       return offsets;
     } finally {
