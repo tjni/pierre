@@ -95,6 +95,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #styleElement?: HTMLStyleElement;
   #selectionElements?: Map<string, HTMLElement>;
   #measureCtx?: CanvasRenderingContext2D;
+  #contentResizeObserver?: ResizeObserver;
+  #lastContentWidth = -1;
 
   // state
   #shouldIgnoreSelectionChange = false;
@@ -221,6 +223,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#selectionElements?.clear();
     this.#selectionElements = undefined;
     this.#measureCtx = undefined;
+    this.#contentResizeObserver?.disconnect();
+    this.#contentResizeObserver = undefined;
+    this.#lastContentWidth = -1;
 
     this.#shouldIgnoreSelectionChange = false;
     this.#selectionStart = undefined;
@@ -301,6 +306,15 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           this.#handleInput('insertText', e.data);
         }),
       ];
+
+      this.#contentResizeObserver?.disconnect();
+      this.#contentResizeObserver = new ResizeObserver(() => {
+        this.#handleLayoutResize();
+      });
+      this.#contentResizeObserver.observe(contentEl);
+      if (contentEl.parentElement !== null) {
+        this.#contentResizeObserver.observe(contentEl.parentElement);
+      }
     }
 
     // measure the font width, line height, and tab size
@@ -319,6 +333,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#lineHeight = lineHeighPx;
     this.#tabSize = Number(tabSize);
     this.#wrap = this.#file?.options.overflow === 'wrap';
+    this.#lastContentWidth = this.#getContentWidth();
     this.#measureCtx ??=
       document.createElement('canvas').getContext('2d') ?? undefined;
     const font = fontSize + ' ' + fontFamily;
@@ -509,17 +524,26 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         this.#reservedSelections = undefined;
       }),
 
-      addEventListener(document, 'resize', () => {
-        if (this.#wrap) {
-          this.#wrapLineOffsetsCache.clear();
-          this.#lineYCache.clear();
-          this.#lastCharX = undefined;
-          if (this.#selections !== undefined) {
-            this.#updateSelections(this.#selections);
-          }
-        }
+      addEventListener(window, 'resize', () => {
+        this.#handleLayoutResize();
       }),
     ];
+  }
+
+  #handleLayoutResize() {
+    const contentWidth = this.#getContentWidth();
+    const widthChanged = contentWidth !== this.#lastContentWidth;
+    this.#lastContentWidth = contentWidth;
+
+    this.#lineYCache.clear();
+    this.#lastCharX = undefined;
+    if (this.#wrap && widthChanged) {
+      this.#wrapLineOffsetsCache.clear();
+    }
+
+    if (this.#selections !== undefined) {
+      this.#updateSelections(this.#selections);
+    }
   }
 
   #rerender(
