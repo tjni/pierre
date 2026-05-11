@@ -426,10 +426,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           return;
         }
 
-        if (this.#selectionStart === undefined) {
-          this.#selectionStart = selection;
-        } else {
+        if (this.#selectionStart !== undefined) {
           selection = createSelectionFrom(this.#selectionStart, selection);
+        } else if (this.#isMouseDown) {
+          this.#selectionStart = selection;
         }
         if (this.#reservedSelections !== undefined) {
           this.#updateSelections([
