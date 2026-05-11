@@ -14,22 +14,20 @@ import type { TextDocument } from './textDocument';
 
 export interface BackgroundTokenizerOptions {
   grammar: IGrammar;
-  colorMap: { dark: string[]; light: string[] };
+  colorMap: string[];
   textDocument: TextDocument<unknown>;
-  onTokenize: (result: { lines: Map<number, Array<HighlightedToken>> }) => void;
+  onTokenize: (lines: Map<number, Array<HighlightedToken>>) => void;
   linesPreTokenize?: number; // default to 50
 }
 
 /** Stoppable background tokenizer */
 export class BackgroundTokenizer {
   #grammar: IGrammar;
-  #colorMap: { dark: string[]; light: string[] };
+  #colorMap: string[];
   #textDocument: TextDocument<unknown>;
   #messageKey: string;
   #onMessage: (event: MessageEvent) => void;
-  #onTokenize: (result: {
-    lines: Map<number, Array<HighlightedToken>>;
-  }) => void;
+  #onTokenize: (lines: Map<number, Array<HighlightedToken>>) => void;
 
   // state
   #isStopped: boolean = true;
@@ -108,7 +106,7 @@ export class BackgroundTokenizer {
       state = ret.ruleStack;
     }
 
-    this.#onTokenize({ lines });
+    this.#onTokenize(lines);
     if (line >= totalLines) {
       this.stop();
       return;
@@ -122,7 +120,7 @@ export class BackgroundTokenizer {
 
 export function tokenizeLine(
   grammar: IGrammar,
-  colorMap: { dark: string[]; light: string[] },
+  colorMap: string[],
   lineText: string,
   stateStack: StateStack,
   timeLimit?: number
@@ -149,11 +147,9 @@ export function tokenizeLine(
     }
     const metadata = rawTokens[2 * j + 1];
     const bg = EncodedTokenMetadata.getForeground(metadata);
-    const darkFG = colorMap.dark[bg];
-    const lightFG = colorMap.light[bg];
-    const cssText = `--diffs-token-dark:${darkFG};--diffs-token-light:${lightFG}`;
+    const fg = colorMap[bg];
     const tokenText = lineText.slice(offset, nextOffset);
-    resolvedTokens.push([offset, cssText, tokenText]);
+    resolvedTokens.push([offset, fg, tokenText]);
   }
   return {
     ruleStack: result.ruleStack,

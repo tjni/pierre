@@ -11,44 +11,25 @@ export const EDITOR_CSS = /* CSS */ `
     50% { opacity: 0; }
     100% { opacity: 1; }
   }
+  [data-code] {
+    position: relative;
+  }
+  [data-content] {
+    caret-color: transparent;
+    outline: none;
+  }
   [data-line] {
     cursor: text;
   }
   [data-line]:not([data-selected-line]) {
     background-color: transparent;
   }
-  [data-content] {
-    position: relative;
-  }
-  [data-textarea], [data-caret], [data-selection-range] {
+  [data-caret], [data-selection-range] {
     position: absolute;
     top: 0;
     left: 0;
     line-height: var(--diffs-line-height);
     pointer-events: none;
-  }
-  [data-textarea] {
-    top: -1lh;
-    padding: 0;
-    padding-inline: 1ch;
-    tab-size: var(--diffs-tab-size, 2);
-    font: inherit;
-    color: transparent;
-    background-color: transparent;
-    border: none;
-    outline: none;
-    resize: none;
-    overflow: hidden;
-    field-sizing: content;
-  }
-  [data-overflow='scroll'] [data-textarea] {
-    white-space: pre;
-    min-height: 1lh;
-  }
-  [data-overflow='wrap'] [data-textarea] {
-    width: 100%;
-    white-space: pre-wrap;
-    word-break: break-word;
   }
   [data-caret] {
     width: 2px;
@@ -62,14 +43,12 @@ export const EDITOR_CSS = /* CSS */ `
     height: 1lh;
     z-index: -10;
     background-color: var(--diffs-bg-selection);
-    opacity: 0.75;
+    opacity: 0.5;
   }
-  [data-file]:focus [data-caret],
-  [data-textarea]:focus ~ [data-caret] {
+  [data-content]:focus ~ [data-caret] {
     visibility: visible;
   }
-  [data-file]:focus [data-selection-range],
-  [data-textarea]:focus ~ [data-selection-range] {
+  [data-content]:focus ~ [data-selection-range] {
     opacity: 1;
   }
 `;

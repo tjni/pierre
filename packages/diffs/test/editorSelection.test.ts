@@ -8,10 +8,10 @@ import {
   DirectionForward,
   DirectionNone,
   type EditorSelection,
-  extendSelections,
+  extendSelection,
+  findNexMatch,
   mapSelectionMove,
   mapSelectionRangeMove,
-  mergeSelections,
   selectionIntersects,
 } from '../src/editor/editorSelection';
 import {
@@ -367,44 +367,86 @@ describe('selectionIntersects', () => {
   });
 });
 
-describe('concatSelections', () => {
-  test('covers both ranges and uses forward direction when a anchor precedes b focus', () => {
-    const a = createSelection(0, 2, 0, 4, DirectionForward);
-    const b = createSelection(0, 6, 0, 8, DirectionForward);
-    expect(mergeSelections(a, b)).toEqual({
-      start: { line: 0, character: 2 },
-      end: { line: 0, character: 8 },
-      direction: DirectionForward,
-    });
+describe('extendSelection', () => {
+  test('extends a collapsed selection forward', () => {
+    expect(
+      extendSelection(
+        createSelection(2, 3, 2, 3, DirectionNone),
+        createSelection(2, 10, 2, 10, DirectionNone)
+      )
+    ).toEqual(createSelection(2, 3, 2, 10, DirectionForward));
   });
 
-  test('uses backward direction when a anchor lies after b focus in the document', () => {
-    const a = createSelection(0, 0, 0, 10, DirectionBackward);
-    const b = createSelection(0, 4, 0, 6, DirectionForward);
-    expect(mergeSelections(a, b)).toEqual({
-      start: { line: 0, character: 0 },
-      end: { line: 0, character: 10 },
-      direction: DirectionBackward,
-    });
+  test('extends a collapsed selection backward', () => {
+    expect(
+      extendSelection(
+        createSelection(2, 3, 2, 3, DirectionNone),
+        createSelection(2, 1, 2, 1, DirectionNone)
+      )
+    ).toEqual(createSelection(2, 1, 2, 3, DirectionBackward));
   });
 
-  test('unions ranges when b lies before a in the file and picks backward when a anchor follows b focus', () => {
-    const a = createSelection(1, 0, 1, 5, DirectionForward);
-    const b = createSelection(0, 2, 0, 4, DirectionForward);
-    expect(mergeSelections(a, b)).toEqual({
-      start: { line: 0, character: 2 },
-      end: { line: 1, character: 5 },
-      direction: DirectionBackward,
-    });
+  test('extends forward when shift-click lands after the original anchor', () => {
+    expect(
+      extendSelection(
+        createSelection(2, 3, 2, 8, DirectionForward),
+        createSelection(2, 10, 2, 10, DirectionNone)
+      )
+    ).toEqual(createSelection(2, 3, 2, 10, DirectionForward));
   });
 
-  test('returns a collapsed selection with no direction when both inputs are the same caret', () => {
-    const caret = createSelection(0, 3, 0, 3, DirectionNone);
-    expect(mergeSelections(caret, caret)).toEqual({
-      start: { line: 0, character: 3 },
-      end: { line: 0, character: 3 },
-      direction: DirectionNone,
-    });
+  test('left extend spans from target through original end (forward original)', () => {
+    expect(
+      extendSelection(
+        createSelection(2, 3, 2, 8, DirectionForward),
+        createSelection(2, 1, 2, 1, DirectionNone)
+      )
+    ).toEqual(createSelection(2, 1, 2, 8, DirectionBackward));
+  });
+
+  test('right extend spans from original start through target (backward original)', () => {
+    expect(
+      extendSelection(
+        createSelection(2, 3, 2, 8, DirectionBackward),
+        createSelection(2, 10, 2, 10, DirectionNone)
+      )
+    ).toEqual(createSelection(2, 3, 2, 10, DirectionForward));
+  });
+
+  test('keeps the original anchored edge when shift-click lands inside the range', () => {
+    expect(
+      extendSelection(
+        createSelection(2, 3, 2, 8, DirectionForward),
+        createSelection(2, 5, 2, 5, DirectionNone)
+      )
+    ).toEqual(createSelection(2, 3, 2, 5, DirectionForward));
+  });
+
+  test('keeps the backward anchor stable when shift-click lands inside the range', () => {
+    expect(
+      extendSelection(
+        createSelection(2, 3, 2, 8, DirectionBackward),
+        createSelection(2, 5, 2, 5, DirectionNone)
+      )
+    ).toEqual(createSelection(2, 5, 2, 8, DirectionBackward));
+  });
+
+  test('collapses a forward selection when shift-click lands on its anchor', () => {
+    expect(
+      extendSelection(
+        createSelection(2, 3, 2, 8, DirectionForward),
+        createSelection(2, 3, 2, 3, DirectionNone)
+      )
+    ).toEqual(createSelection(2, 3, 2, 3, DirectionNone));
+  });
+
+  test('collapses a backward selection when shift-click lands on its anchor', () => {
+    expect(
+      extendSelection(
+        createSelection(2, 3, 2, 8, DirectionBackward),
+        createSelection(2, 8, 2, 8, DirectionNone)
+      )
+    ).toEqual(createSelection(2, 8, 2, 8, DirectionNone));
   });
 });
 
@@ -507,6 +549,56 @@ describe('applyTextChangeToSelections', () => {
       createSelection(0, 0, 0, 0),
       createSelection(1, 0, 1, 0),
       createSelection(2, 0, 2, 0),
+    ]);
+  });
+
+  test('mirrors delete for multiple carets', () => {
+    const textDocument = new TextDocument('inmemory://1', 'xa\nxb\nxc');
+    const selections = [
+      createSelection(0, 1, 0, 1),
+      createSelection(1, 1, 1, 1),
+      createSelection(2, 1, 2, 1),
+    ];
+    const { nextSelections } = applyTextChangeToSelections(
+      textDocument,
+      selections,
+      {
+        start: 7,
+        end: 8,
+        text: '',
+      }
+    );
+
+    expect(textDocument.getText()).toBe('x\nx\nx');
+    expect(nextSelections).toEqual([
+      createSelection(0, 1, 0, 1),
+      createSelection(1, 1, 1, 1),
+      createSelection(2, 1, 2, 1),
+    ]);
+  });
+
+  test('deletes explicit ranges across multiple selections', () => {
+    const textDocument = new TextDocument('inmemory://1', 'abc def ghi');
+    const selections = [
+      createSelection(0, 1, 0, 3),
+      createSelection(0, 5, 0, 7),
+      createSelection(0, 9, 0, 11),
+    ];
+    const { nextSelections } = applyTextChangeToSelections(
+      textDocument,
+      selections,
+      {
+        start: 9,
+        end: 11,
+        text: '',
+      }
+    );
+
+    expect(textDocument.getText()).toBe('a d g');
+    expect(nextSelections).toEqual([
+      createSelection(0, 1, 0, 1),
+      createSelection(0, 3, 0, 3),
+      createSelection(0, 5, 0, 5),
     ]);
   });
 
@@ -711,8 +803,7 @@ describe('mapSelectionRangeMove', () => {
       mapSelectionRangeMove(
         textDocument,
         selections,
-        { line: 1, character: 1 },
-        { line: 1, character: 3 }
+        createSelection(1, 1, 1, 3)
       )
     ).toEqual([
       createSelection(0, 1, 0, 3, DirectionForward),
@@ -731,8 +822,7 @@ describe('mapSelectionRangeMove', () => {
       mapSelectionRangeMove(
         textDocument,
         selections,
-        { line: 1, character: 2 },
-        { line: 1, character: 0 }
+        createSelection(1, 2, 1, 0)
       )
     ).toEqual([
       createSelection(0, 0, 0, 2, DirectionBackward),
@@ -764,10 +854,10 @@ describe('applyTextReplaceToSelections', () => {
   });
 });
 
-describe('computeExtendSelection', () => {
+describe('findNextMatch', () => {
   test('returns undefined for empty selections', () => {
     const doc = new TextDocument('inmemory://x', 'hello');
-    expect(extendSelections(doc, [])).toBeUndefined();
+    expect(findNexMatch(doc, [])).toBeUndefined();
   });
 
   test('ignores non-collapsed selections with different text', () => {
@@ -776,13 +866,13 @@ describe('computeExtendSelection', () => {
       createSelection(0, 0, 0, 2),
       createSelection(0, 3, 0, 5),
     ];
-    expect(extendSelections(doc, selections)).toBeUndefined();
+    expect(findNexMatch(doc, selections)).toBeUndefined();
   });
 
   test('expands a collapsed caret to the surrounding word', () => {
     const doc = new TextDocument('inmemory://x', "'foobar'");
     const caret = createSelection(0, 4, 0, 4);
-    const next = extendSelections(doc, [caret]);
+    const next = findNexMatch(doc, [caret]);
     expect(next).toEqual([
       {
         start: { line: 0, character: 1 },
@@ -795,7 +885,7 @@ describe('computeExtendSelection', () => {
   test('adds the next matching range when one occurrence is selected', () => {
     const doc = new TextDocument('inmemory://x', 'foo x foo');
     const first = createSelection(0, 0, 0, 3);
-    const afterFirst = extendSelections(doc, [first]);
+    const afterFirst = findNexMatch(doc, [first]);
     expect(afterFirst).toEqual([
       first,
       {
@@ -804,13 +894,13 @@ describe('computeExtendSelection', () => {
         direction: DirectionForward,
       },
     ]);
-    expect(extendSelections(doc, afterFirst!)).toBeUndefined();
+    expect(findNexMatch(doc, afterFirst!)).toBeUndefined();
   });
 
   test('wraps to an earlier occurrence after the last match in the file', () => {
     const doc = new TextDocument('inmemory://x', 'foo bar foo');
     const secondFoo = createSelection(0, 8, 0, 11);
-    const wrapped = extendSelections(doc, [secondFoo]);
+    const wrapped = findNexMatch(doc, [secondFoo]);
     expect(wrapped).toEqual([
       secondFoo,
       {
@@ -826,7 +916,7 @@ describe('computeExtendSelection', () => {
     const a = createSelection(0, 0, 0, 2);
     const b = createSelection(0, 3, 0, 5);
     const two = [a, b];
-    const third = extendSelections(doc, two);
+    const third = findNexMatch(doc, two);
     expect(third?.length).toBe(3);
     expect(third?.[2]).toEqual({
       start: { line: 0, character: 6 },

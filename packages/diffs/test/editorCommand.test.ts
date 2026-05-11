@@ -60,9 +60,6 @@ function expectShortcuts(platform: string, cases: ShortcutCase[]): void {
 describe('resolveEditorShortcutCommand', () => {
   test('uses command shortcuts on macOS', () => {
     expectShortcuts('MacIntel', [
-      { event: { key: 'c', metaKey: true }, expected: 'copy' },
-      { event: { key: 'x', metaKey: true }, expected: 'cut' },
-      { event: { key: 'v', metaKey: true }, expected: 'paste' },
       { event: { key: 'z', metaKey: true }, expected: 'undo' },
       { event: { key: 'z', metaKey: true, shiftKey: true }, expected: 'redo' },
       { event: { key: 'a', metaKey: true }, expected: 'selectAll' },
@@ -73,9 +70,6 @@ describe('resolveEditorShortcutCommand', () => {
 
   test('uses control shortcuts on windows and linux', () => {
     expectShortcuts('Linux x86_64', [
-      { event: { key: 'c', ctrlKey: true }, expected: 'copy' },
-      { event: { key: 'x', ctrlKey: true }, expected: 'cut' },
-      { event: { key: 'v', ctrlKey: true }, expected: 'paste' },
       { event: { key: 'z', ctrlKey: true }, expected: 'undo' },
       { event: { key: 'z', ctrlKey: true, shiftKey: true }, expected: 'redo' },
       { event: { key: 'y', ctrlKey: true }, expected: 'redo' },

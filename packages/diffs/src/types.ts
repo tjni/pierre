@@ -37,7 +37,7 @@ export interface FileContents {
 
 export type HighlighterTypes = 'shiki-js' | 'shiki-wasm';
 
-export type HighlightedToken = [char: number, style: string, text: string];
+export type HighlightedToken = [char: number, fg: string, text: string];
 
 export type {
   BundledLanguage,
@@ -751,4 +751,16 @@ export interface DiffsEditor<LAnnotation> {
     renderRange: RenderRange | undefined
   ): void;
   cleanUp(): void;
+}
+
+export interface DiffsEditorSelection {
+  start: {
+    line: number;
+    character: number;
+  };
+  end: {
+    line: number;
+    character: number;
+  };
+  direction: 'none' | 'backward' | 'forward';
 }

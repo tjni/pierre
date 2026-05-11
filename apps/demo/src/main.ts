@@ -709,13 +709,13 @@ if (renderFileButton != null) {
               {
                 start: {
                   line: 0,
-                  character: 0,
+                  character: 1000, // will be normalized to the end of the line(< 1000 chars)
                 },
                 end: {
                   line: 0,
-                  character: 0,
+                  character: 1000, // will be normalized to the end of the line(< 1000 chars)
                 },
-                direction: 0,
+                direction: 'none',
               },
             ]);
           } else {

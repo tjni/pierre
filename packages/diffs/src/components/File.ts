@@ -398,8 +398,11 @@ export class File<LAnnotation = undefined> {
     return file != null ? this.fileRenderer.getLineCount(file) : 0;
   }
 
-  public emitDirtyLines(lines: Map<number, Array<HighlightedToken>>): void {
-    this.fileRenderer.emitDirtyLines(lines);
+  public emitDirtyLines(
+    themeType: 'dark' | 'light',
+    lines: Map<number, Array<HighlightedToken>>
+  ): void {
+    this.fileRenderer.emitDirtyLines(themeType, lines);
   }
 
   public emitLineCountChange(

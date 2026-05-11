@@ -1,7 +1,4 @@
 export type EditorCommand =
-  | 'copy'
-  | 'cut'
-  | 'paste'
   | 'indent'
   | 'outdent'
   | 'documentStart'
@@ -13,9 +10,6 @@ export type EditorCommand =
 
 const SHORTCUTS: Partial<Record<string, EditorCommand>> = {
   a: 'selectAll',
-  c: 'copy',
-  v: 'paste',
-  x: 'cut',
   d: 'extendSelection',
 };
 

@@ -160,17 +160,17 @@ export function mapSelectionMove(
 export function mapSelectionRangeMove(
   textDocument: TextDocument<unknown>,
   selections: readonly EditorSelection[],
-  nextAnchor: Position,
-  nextFocus: Position
+  selection: EditorSelection
 ): EditorSelection[] {
+  const { start, end } = selection;
   const primarySelection = selections[selections.length - 1];
   if (primarySelection === undefined) {
     return [];
   }
   const [primaryAnchorOffset, primaryFocusOffset] =
     getSelectionAnchorAndFocusOffsets(textDocument, primarySelection);
-  const anchorDelta = textDocument.offsetAt(nextAnchor) - primaryAnchorOffset;
-  const focusDelta = textDocument.offsetAt(nextFocus) - primaryFocusOffset;
+  const anchorDelta = textDocument.offsetAt(start) - primaryAnchorOffset;
+  const focusDelta = textDocument.offsetAt(end) - primaryFocusOffset;
   return selections.map((selection) => {
     const [anchorOffset, focusOffset] = getSelectionAnchorAndFocusOffsets(
       textDocument,
@@ -454,26 +454,28 @@ export function createSelectionFromAnchorAndFocusOffsets(
 }
 
 /**
- * Creates a selection from a start and current selection.
+ * Creates a selection from a anchor and focus selection.
  */
 export function createSelectionFrom(
-  start: EditorSelection,
-  current: EditorSelection
+  anchorSelection: EditorSelection,
+  focusSelection: EditorSelection
 ): EditorSelection {
   const anchor =
-    start.direction === DirectionBackward ? start.end : start.start;
-  const currentStartOrder = comparePosition(anchor, current.start);
-  const currentEndOrder = comparePosition(anchor, current.end);
-  let focus = current.end;
+    anchorSelection.direction === DirectionBackward
+      ? anchorSelection.end
+      : anchorSelection.start;
+  const currentStartOrder = comparePosition(anchor, focusSelection.start);
+  const currentEndOrder = comparePosition(anchor, focusSelection.end);
+  let focus = focusSelection.end;
   if (currentStartOrder <= 0) {
-    focus = current.end;
+    focus = focusSelection.end;
   } else if (currentEndOrder >= 0) {
-    focus = current.start;
+    focus = focusSelection.start;
   } else {
     // When the original anchor sits inside `current`, keep whichever edge
     // stayed at the anchor so drag direction remains stable.
     const anchorAtStart = currentStartOrder === 0;
-    focus = anchorAtStart ? current.end : current.start;
+    focus = anchorAtStart ? focusSelection.end : focusSelection.start;
   }
   const anchorVsFocus = comparePosition(anchor, focus);
   const direction: SelectionDirection =
@@ -492,30 +494,57 @@ export function createSelectionFrom(
 }
 
 /**
- * Merges two selections into one range that covers both.
+ * Extends or shrinks the selection `original` using the endpoints of `target`, \
+ * matching contenteditable shift + click extend behavior.
  */
-export function mergeSelections(
-  a: EditorSelection,
-  b: EditorSelection
+export function extendSelection(
+  original: EditorSelection,
+  target: EditorSelection
 ): EditorSelection {
-  const start = comparePosition(a.start, b.start) <= 0 ? a.start : b.start;
-  const end = comparePosition(a.end, b.end) >= 0 ? a.end : b.end;
-  const anchorA = a.direction === DirectionBackward ? a.end : a.start;
-  const focusB = b.direction === DirectionBackward ? b.start : b.end;
-  const anchorVsFocus = comparePosition(anchorA, focusB);
-  const direction: SelectionDirection =
-    anchorVsFocus === 0
-      ? DirectionNone
-      : anchorVsFocus < 0
-        ? DirectionForward
-        : DirectionBackward;
-  return { start, end, direction };
+  const leftExtended = comparePosition(target.start, original.start) < 0;
+  const rightExtended = comparePosition(target.end, original.end) > 0;
+
+  if (leftExtended && !rightExtended) {
+    return {
+      start: target.start,
+      end: original.end,
+      direction: DirectionBackward,
+    };
+  }
+
+  if (rightExtended && !leftExtended) {
+    return {
+      start: original.start,
+      end: target.end,
+      direction: DirectionForward,
+    };
+  }
+
+  if (original.direction === DirectionBackward) {
+    return {
+      start: target.start,
+      end: original.end,
+      direction:
+        comparePosition(target.start, original.end) === 0
+          ? DirectionNone
+          : DirectionBackward,
+    };
+  }
+
+  return {
+    start: original.start,
+    end: target.end,
+    direction:
+      comparePosition(original.start, target.end) === 0
+        ? DirectionNone
+        : DirectionForward,
+  };
 }
 
 /**
- * Extends a selection.
+ * Finds the next matching word and updates the selections.
  */
-export function extendSelections(
+export function findNexMatch(
   textDocument: TextDocument<unknown>,
   selections: readonly EditorSelection[]
 ): EditorSelection[] | undefined {
@@ -563,6 +592,36 @@ export function extendSelections(
     nextOffset + needle.length
   );
   return [...selections, added];
+}
+
+/**
+ * Gets the text node and offset for a selection.
+ */
+export function getSelectionTextNode(
+  lineElement: HTMLElement,
+  character: number
+): [Node, number] {
+  if (lineElement.childElementCount > 0) {
+    for (const child of lineElement.children) {
+      if (child.hasAttribute('data-char')) {
+        const char = Number(child.getAttribute('data-char'));
+        const textNode = child.firstChild;
+        if (
+          textNode !== null &&
+          textNode.nodeType === /* Node.TEXT_NODE */ 3 &&
+          character >= char &&
+          character <= char + (textNode as Text).textContent.length
+        ) {
+          return [textNode, character - char];
+        }
+      }
+    }
+  }
+  const textNode = lineElement.firstChild;
+  if (textNode !== null && textNode.nodeType === /* Node.TEXT_NODE */ 3) {
+    return [textNode, character];
+  }
+  throw new Error('No text node found');
 }
 
 // Expands a zero-width selection to the word-like segment that contains the caret.

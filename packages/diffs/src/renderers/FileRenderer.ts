@@ -193,13 +193,14 @@ export class FileRenderer<LAnnotation = undefined> {
   }
 
   public emitDirtyLines(
-    dirtyLines: Map<number, Array<HighlightedToken>>
+    themeType: 'dark' | 'light',
+    lines: Map<number, Array<HighlightedToken>>
   ): void {
     const renderCache = this.renderCache;
     if (renderCache == null || renderCache.result == null) {
       return;
     }
-    for (const [line, tokens] of dirtyLines) {
+    for (const [line, tokens] of lines) {
       renderCache.result.code[line] = {
         type: 'element',
         tagName: 'div',
@@ -208,8 +209,8 @@ export class FileRenderer<LAnnotation = undefined> {
           'data-line-type': 'context',
           'data-line-index': line,
         },
-        children: tokens.map(([char, style, text]) => {
-          if (char === 0 && style === '') {
+        children: tokens.map(([char, fg, text]) => {
+          if (char === 0 && fg === '') {
             return {
               type: 'text',
               value: text,
@@ -220,7 +221,7 @@ export class FileRenderer<LAnnotation = undefined> {
             tagName: 'span',
             properties: {
               'data-char': char,
-              style,
+              style: `--diffs-token-${themeType}:${fg};`,
             },
             children: [
               {
