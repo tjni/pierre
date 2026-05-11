@@ -16,8 +16,13 @@ export const EDITOR_CSS = /* CSS */ `
     position: relative;
   }
   [data-content] {
-    caret-color: transparent;
+    caret-color: var(--diffs-bg-caret);
     outline: none;
+  }
+  @media (min-width: 480px) {
+    [data-content] {
+      caret-color: transparent;
+    }
   }
   [data-line] {
     cursor: text;
@@ -46,8 +51,10 @@ export const EDITOR_CSS = /* CSS */ `
     background-color: var(--diffs-bg-selection);
     opacity: 0.5;
   }
-  [data-content]:focus ~ [data-caret] {
-    visibility: visible;
+  @media (min-width: 480px) {
+    [data-content]:focus ~ [data-caret] {
+      visibility: visible;
+    }
   }
   [data-content]:focus ~ [data-selection-range] {
     opacity: 1;
