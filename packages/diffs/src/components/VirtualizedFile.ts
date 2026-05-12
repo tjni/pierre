@@ -6,6 +6,7 @@ import type {
   RenderWindow,
   VirtualFileMetrics,
 } from '../types';
+import { areFilesEqual } from '../utils/areFilesEqual';
 import type { WorkerPoolManager } from '../worker';
 import { File, type FileOptions, type FileRenderProps } from './File';
 import type { Virtualizer } from './Virtualizer';
@@ -252,8 +253,9 @@ export class VirtualizedFile<
     ...props
   }: FileRenderProps<LAnnotation>): boolean {
     const { isSetup } = this;
+    const fileChanged = this.file == null || !areFilesEqual(this.file, file);
 
-    this.file ??= file;
+    this.file = file;
 
     fileContainer = this.getOrCreateFileContainerNode(fileContainer);
 
@@ -275,6 +277,16 @@ export class VirtualizedFile<
       this.isSetup = true;
     } else {
       this.top ??= this.virtualizer.getOffsetInScrollContainer(fileContainer);
+      if (fileChanged) {
+        this.heightCache.clear();
+        this.computeApproximateSize();
+        this.renderRange = undefined;
+        this.virtualizer.instanceChanged(this);
+        this.isVisible = this.virtualizer.isInstanceVisible(
+          this.top,
+          this.height
+        );
+      }
     }
 
     if (!this.isVisible) {

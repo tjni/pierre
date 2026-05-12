@@ -588,8 +588,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     const textDocument = this.#textDocument;
     const contentEl = this.#contentElement;
     const gutterEl = this.#contentElement?.previousElementSibling ?? undefined;
-
-    console.log('rerender', highlighter);
     if (
       highlighter === undefined ||
       file === undefined ||
