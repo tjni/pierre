@@ -240,3 +240,26 @@ diffs-container {
   align-items: center;
   gap: 4px;
 }
+
+#editor {
+  display: grid;
+  grid-template-columns: 1fr 280px ;
+  grid-template-rows: 1fr;
+  gap: 10px;
+  background-color: light-dark(white, black);
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+#editor[data-show-sidebar] {
+  grid-template-columns: 280px 1fr 280px;
+}
+
+#file-tree {
+  background-color: light-dark(#f6f6f6, #1a1a1a);
+}
+
+#editor-container {
+  overflow-y: auto;
+}
