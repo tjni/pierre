@@ -328,7 +328,8 @@
   [data-line-annotation],
   [data-no-newline],
   [data-merge-conflict],
-  [data-merge-conflict-actions] {
+  [data-merge-conflict-actions],
+  [data-selection-range] {
     /* Pre-fill css variables for appropriate up-mixing */
     --diffs-computed-decoration-bg: var(--diffs-bg);
     --diffs-computed-diff-line-bg: var(--diffs-bg);
@@ -678,12 +679,14 @@
   [data-line-annotation],
   [data-merge-conflict],
   [data-merge-conflict-actions],
-  [data-no-newline] {
+  [data-no-newline],
+  [data-selection-range] {
     --diffs-selection-mix-target: var(
       --diffs-bg-selection-override,
       var(--diffs-selection-base)
     );
 
+    &:where([data-selection-range]),
     &:where(
         [data-line],
         [data-line-annotation],
@@ -726,6 +729,7 @@
       }
     }
 
+    &:where([data-selection-range]),
     &[data-selected-line] {
       --diffs-computed-selected-line-bg: light-dark(
         color-mix(

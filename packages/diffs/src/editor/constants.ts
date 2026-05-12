@@ -16,6 +16,7 @@ export const EDITOR_CSS = /* CSS */ `
     position: relative;
   }
   [data-content] {
+    background-color: transparent;
     caret-color: var(--diffs-bg-caret);
     outline: none;
   }
@@ -48,7 +49,7 @@ export const EDITOR_CSS = /* CSS */ `
   [data-selection-range] {
     height: 1lh;
     z-index: -10;
-    background-color: var(--diffs-bg-selection);
+    background-color: var(--diffs-line-bg);
     opacity: 0.5;
   }
   [data-editor-overlay] {
