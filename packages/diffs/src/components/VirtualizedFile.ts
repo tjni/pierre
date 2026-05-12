@@ -285,7 +285,7 @@ export class VirtualizedFile<
       windowSpecs
     );
     return super.render({
-      file: this.file,
+      file,
       fileContainer,
       renderRange,
       ...props,
