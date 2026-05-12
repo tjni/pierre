@@ -79,7 +79,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
   // highlighter
   #highlighter?: DiffsHighlighter;
-  #colorMap?: Map<string, string[]>;
+  #currentTheme?: string;
+  #colorMap?: string[];
   #renderRange?: RenderRange;
   #backgroundTokenizer?: BackgroundTokenizer;
 
@@ -90,9 +91,11 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #lastCharX?: [line: number, character: number, x: number, wrapLine: number];
 
   // dom elements
+  #fileContainer?: HTMLElement;
   #contentElement?: HTMLElement;
   #contentElementDisposes?: (() => void)[];
   #styleElement?: HTMLStyleElement;
+  #overlayElement?: HTMLElement;
   #selectionElements?: Map<string, HTMLElement>;
   #measureCtx?: CanvasRenderingContext2D;
   #contentResizeObserver?: ResizeObserver;
@@ -199,6 +202,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#textDocument = undefined;
 
     this.#highlighter = undefined;
+    this.#currentTheme = undefined;
     this.#colorMap = undefined;
     this.#renderRange = undefined;
     this.#backgroundTokenizer?.stop();
@@ -219,6 +223,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#contentElementDisposes = undefined;
     this.#styleElement?.remove();
     this.#styleElement = undefined;
+    this.#overlayElement?.remove();
+    this.#overlayElement = undefined;
     this.#selectionElements?.forEach((el) => el.remove());
     this.#selectionElements?.clear();
     this.#selectionElements = undefined;
@@ -247,6 +253,13 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       throw new Error('Could not edit the file.');
     }
 
+    if (this.#fileContainer !== fileContainer) {
+      this.#fileContainer = fileContainer;
+      if (this.#styleElement !== undefined) {
+        shadowRoot.appendChild(this.#styleElement);
+      }
+    }
+
     if (this.#contentElement !== contentEl) {
       this.#contentElement = extend(contentEl, {
         contentEditable: 'true',
@@ -258,6 +271,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         spellcheck: false,
         translate: false,
       });
+      if (this.#overlayElement !== undefined) {
+        contentEl.after(this.#overlayElement);
+      }
       this.#contentElementDisposes?.forEach((dispose) => dispose());
       this.#contentElementDisposes = [
         addEventListener(contentEl, 'keydown', (e) => {
@@ -371,9 +387,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#renderRange = renderRange;
     this.#prebuildStateStackCache();
 
-    if (this.#styleElement !== undefined) {
-      shadowRoot.appendChild(this.#styleElement);
-    }
     if (this.#selections !== undefined && this.#selections.length > 0) {
       this.#updateSelections(this.#selections);
     }
@@ -399,6 +412,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#styleElement = createElement('style', {
       dataset: 'editorCss',
       textContent: EDITOR_CSS,
+    });
+
+    this.#overlayElement = createElement('div', {
+      dataset: 'editorOverlay',
     });
 
     this.#disposes = [
@@ -534,15 +551,13 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     const contentWidth = this.#getContentWidth();
     const widthChanged = contentWidth !== this.#lastContentWidth;
     this.#lastContentWidth = contentWidth;
-
-    this.#lineYCache.clear();
-    this.#lastCharX = undefined;
     if (this.#wrap && widthChanged) {
+      this.#lineYCache.clear();
+      this.#lastCharX = undefined;
       this.#wrapLineOffsetsCache.clear();
-    }
-
-    if (this.#selections !== undefined) {
-      this.#updateSelections(this.#selections);
+      if (this.#selections !== undefined) {
+        this.#updateSelections(this.#selections);
+      }
     }
   }
 
@@ -696,6 +711,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
                 lineType: 'context',
                 lineIndex: lineIndex.toString(),
               },
+              // oxlint-disable-next-line react/no-children-prop
               children: tokens.map(([char, fg, textContent]) => {
                 if (char === 0 && fg === '') {
                   return document.createTextNode(textContent);
@@ -719,6 +735,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
                 columnNumber: lineNumber,
                 lineIndex: lineIndex.toString(),
               },
+              // oxlint-disable-next-line react/no-children-prop
               children: [
                 createElement('span', {
                   dataset: {
@@ -809,14 +826,12 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     } else {
       themeName = theme[themeType];
     }
-    this.#colorMap ??= new Map();
-    let colors = this.#colorMap.get(themeName);
-    if (colors === undefined) {
+    if (this.#currentTheme !== themeName || this.#colorMap === undefined) {
       const ret = this.#highlighter.setTheme(themeName);
-      colors = ret.colorMap;
-      this.#colorMap.set(themeName, ret.colorMap ?? []);
+      this.#colorMap = ret.colorMap;
+      this.#currentTheme = themeName;
     }
-    return colors;
+    return this.#colorMap;
   }
 
   #buildStateStackCache(
@@ -923,24 +938,28 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         end: line,
       });
     }
-    const renderCtx = new Map<string, HTMLElement>();
+    const fragment = document.createDocumentFragment();
+    const renderCtx = {
+      fragment,
+      elements: new Map<string, HTMLElement>(),
+    };
     selections.forEach((selection) => {
       if (selections.length > 1 || !isCollapsedSelection(selection)) {
         this.#renderSelection(renderCtx, selection);
       }
       this.#renderCaret(renderCtx, selection);
     });
-
-    const fragment = document.createDocumentFragment();
-    fragment.append(...renderCtx.values());
-    this.#contentElement?.parentElement?.appendChild(fragment);
+    this.#overlayElement?.appendChild(fragment);
     this.#selectionElements?.forEach((el) => el.remove());
     this.#selectionElements?.clear();
-    this.#selectionElements = renderCtx;
+    this.#selectionElements = renderCtx.elements;
   }
 
   #renderSelection(
-    renderCtx: Map<string, HTMLElement>,
+    renderCtx: {
+      fragment: DocumentFragment;
+      elements: Map<string, HTMLElement>;
+    },
     selection: EditorSelection
   ) {
     if (this.#textDocument === undefined) {
@@ -1006,7 +1025,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   // text. Zero-width slices that fall on intermediate segment boundaries are
   // skipped to avoid duplicate markers across consecutive visual lines.
   #renderWrappedSelection(
-    renderCtx: Map<string, HTMLElement>,
+    renderCtx: {
+      fragment: DocumentFragment;
+      elements: Map<string, HTMLElement>;
+    },
     selection: EditorSelection,
     line: number,
     lineText: string,
@@ -1093,7 +1115,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   // visual segment except the last one, since an intra-line wrap is not a real
   // newline and shouldn't visually extend past the wrapped content.
   #renderSelectionRange(
-    renderCtx: Map<string, HTMLElement>,
+    renderCtx: {
+      fragment: DocumentFragment;
+      elements: Map<string, HTMLElement>;
+    },
     selection: EditorSelection,
     ln: number,
     wrapLine: number,
@@ -1128,16 +1153,23 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       }
     }
 
-    rangeEl ??= createElement('div', {
-      dataset: 'selectionRange',
-      style: { cssText: css },
-    });
+    rangeEl ??= createElement(
+      'div',
+      {
+        dataset: 'selectionRange',
+        style: { cssText: css },
+      },
+      renderCtx.fragment
+    );
 
-    renderCtx.set(cacheKey, rangeEl);
+    renderCtx.elements.set(cacheKey, rangeEl);
   }
 
   #renderCaret(
-    renderCtx: Map<string, HTMLElement>,
+    renderCtx: {
+      fragment: DocumentFragment;
+      elements: Map<string, HTMLElement>;
+    },
     selection: EditorSelection
   ) {
     const { start, end, direction } = selection;
@@ -1148,13 +1180,17 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       return;
     }
     const [left, wrapLine] = this.#getCharX(line, character);
-    const caretEl = createElement('div', {
-      dataset: 'caret',
-      style: {
-        transform: `translateY(${this.#getLineY(line) + wrapLine * this.#lineHeight}px) translateX(${left - 1}px)`,
+    const caretEl = createElement(
+      'div',
+      {
+        dataset: 'caret',
+        style: {
+          transform: `translateY(${this.#getLineY(line) + wrapLine * this.#lineHeight}px) translateX(${left - 1}px)`,
+        },
       },
-    });
-    renderCtx.set('caret-' + line + '-' + character, caretEl);
+      renderCtx.fragment
+    );
+    renderCtx.elements.set('caret-' + line + '-' + character, caretEl);
   }
 
   #runCommand(command: EditorCommand) {

@@ -51,12 +51,15 @@ export const EDITOR_CSS = /* CSS */ `
     background-color: var(--diffs-bg-selection);
     opacity: 0.5;
   }
+  [data-editor-overlay] {
+    display: contents;
+  }
   @media (min-width: 480px) {
-    [data-content]:focus ~ [data-caret] {
+    [data-content]:focus ~ [data-editor-overlay] [data-caret] {
       visibility: visible;
     }
   }
-  [data-content]:focus ~ [data-selection-range] {
+  [data-content]:focus ~ [data-editor-overlay] [data-selection-range] {
     opacity: 1;
   }
 `;
