@@ -744,12 +744,27 @@ export interface AppliedThemeStyleCache {
 }
 
 export interface DiffsEditor<LAnnotation> {
-  syncFile(
+  emitRender(
     fileContainer: HTMLElement,
     fileContents: FileContents,
     lineAnnotations: LineAnnotation<LAnnotation>[] | undefined,
     renderRange: RenderRange | undefined
   ): void;
+  cleanUp(): void;
+}
+
+export interface DiffsEditableComponent<LAnnotation> {
+  readonly options: BaseCodeOptions;
+  setSelectedLines: (range: { start: number; end: number } | null) => void;
+  emitDirtyLines: (
+    themeType: 'dark' | 'light',
+    lines: Map<number, Array<HighlightedToken>>
+  ) => void;
+  emitLineCountChange: (
+    lineCount: number,
+    newLineAnnotations?: LineAnnotation<LAnnotation>[]
+  ) => void;
+  removeEditor(): void;
   cleanUp(): void;
 }
 

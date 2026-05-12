@@ -41,6 +41,7 @@ import {
 import { getHighlighterIfLoaded } from '../highlighter/shared_highlighter';
 import { areThemesAttached } from '../highlighter/themes/areThemesAttached';
 import type {
+  DiffsEditableComponent,
   DiffsEditor,
   DiffsEditorSelection,
   DiffsHighlighter,
@@ -72,7 +73,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #wrap = false;
 
   // file
-  #file?: File<LAnnotation>;
+  #component?: DiffsEditableComponent<LAnnotation>;
   #fileContents?: FileContents;
   #lineAnnotations?: LineAnnotation<LAnnotation>[];
   #textDocument?: TextDocument<LAnnotation>;
@@ -151,7 +152,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       lineAnnotations?: LineAnnotation<LAnnotation>[]
     ) => void
   ): () => void {
-    this.#file = file;
+    this.#component = file;
     this.#wrap = file.options.overflow === 'wrap';
     this.#highlighter ??= areThemesAttached(
       file.options.theme ?? DEFAULT_THEMES
@@ -194,9 +195,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#disposes = undefined;
     this.#onChange = undefined;
 
-    this.#file?.setSelectedLines(null);
-    this.#file?.removeEditor();
-    this.#file = undefined;
+    this.#component?.setSelectedLines(null);
+    this.#component?.removeEditor();
+    this.#component = undefined;
     this.#fileContents = undefined;
     this.#lineAnnotations = undefined;
     this.#textDocument = undefined;
@@ -239,7 +240,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#reservedSelections = undefined;
   }
 
-  syncFile(
+  emitRender(
     fileContainer: HTMLElement,
     fileContents: FileContents,
     lineAnnotations: LineAnnotation<LAnnotation>[] | undefined,
@@ -348,7 +349,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#lastCharX = undefined;
     this.#lineHeight = lineHeighPx;
     this.#tabSize = Number(tabSize);
-    this.#wrap = this.#file?.options.overflow === 'wrap';
+    this.#wrap = this.#component?.options.overflow === 'wrap';
     this.#lastContentWidth = this.#getContentWidth();
     this.#measureCtx ??=
       document.createElement('canvas').getContext('2d') ?? undefined;
@@ -569,7 +570,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#backgroundTokenizer?.stop();
 
     const highlighter = this.#highlighter;
-    const file = this.#file;
+    const file = this.#component;
     const fileContents = this.#fileContents;
     const textDocument = this.#textDocument;
     const contentEl = this.#contentElement;
@@ -806,7 +807,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   }
 
   #getThemeType(): 'dark' | 'light' {
-    const { themeType } = this.#file?.options ?? {};
+    const { themeType } = this.#component?.options ?? {};
     if (themeType !== undefined && themeType !== 'system') {
       return themeType;
     }
@@ -816,11 +817,11 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   }
 
   #getThemeColorMap(themeType: 'dark' | 'light'): string[] {
-    if (this.#highlighter === undefined || this.#file === undefined) {
+    if (this.#highlighter === undefined || this.#component === undefined) {
       throw new Error('editor not initialized');
     }
     let themeName: string;
-    const { theme = DEFAULT_THEMES } = this.#file.options;
+    const { theme = DEFAULT_THEMES } = this.#component.options;
     if (typeof theme === 'string') {
       themeName = theme;
     } else {
@@ -930,10 +931,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       return;
     }
     this.#selections = selections;
-    this.#file?.setSelectedLines(null);
+    this.#component?.setSelectedLines(null);
     if (isCollapsedSelection(primarySelection)) {
       const line = primarySelection.end.line + 1;
-      this.#file?.setSelectedLines({
+      this.#component?.setSelectedLines({
         start: line,
         end: line,
       });

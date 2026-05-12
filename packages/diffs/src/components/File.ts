@@ -24,6 +24,7 @@ import { SVGSpriteSheet } from '../sprite';
 import type {
   AppliedThemeStyleCache,
   BaseCodeOptions,
+  DiffsEditableComponent,
   DiffsEditor,
   FileContents,
   HighlightedToken,
@@ -116,7 +117,9 @@ interface HydrationSetup<LAnnotation> {
 
 let instanceId = -1;
 
-export class File<LAnnotation = undefined> {
+export class File<
+  LAnnotation = undefined,
+> implements DiffsEditableComponent<LAnnotation> {
   static LoadedCustomComponent: boolean = DiffsContainerLoaded;
 
   readonly __id: string = `file:${++instanceId}`;
@@ -177,7 +180,7 @@ export class File<LAnnotation = undefined> {
   public setEditor(editor: DiffsEditor<LAnnotation>): void {
     this.editor?.cleanUp();
     if (this.fileContainer != null && this.file != null) {
-      editor.syncFile(
+      editor.emitRender(
         this.fileContainer,
         this.file,
         this.lineAnnotations,
@@ -549,7 +552,7 @@ export class File<LAnnotation = undefined> {
       this.resizeManager.setup(pre, overflow === 'wrap');
       this.renderAnnotations();
       this.renderGutterUtility();
-      this.editor?.syncFile(
+      this.editor?.emitRender(
         fileContainer,
         file,
         this.lineAnnotations,
