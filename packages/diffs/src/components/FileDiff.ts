@@ -52,12 +52,17 @@ import { areRenderRangesEqual } from '../utils/areRenderRangesEqual';
 import { createAnnotationWrapperNode } from '../utils/createAnnotationWrapperNode';
 import { createGutterUtilityContentNode } from '../utils/createGutterUtilityContentNode';
 import { createUnsafeCSSStyleNode } from '../utils/createUnsafeCSSStyleNode';
-import { wrapThemeCSS, wrapUnsafeCSS } from '../utils/cssWrappers';
+import {
+  patchScrollbarGutterSize,
+  wrapThemeCSS,
+  wrapUnsafeCSS,
+} from '../utils/cssWrappers';
 import { getLineAnnotationName } from '../utils/getLineAnnotationName';
 import { getOrCreateCodeNode } from '../utils/getOrCreateCodeNode';
 import { upsertHostThemeStyle } from '../utils/hostTheme';
 import { parseDiffFromFile } from '../utils/parseDiffFromFile';
 import { prerenderHTMLIfNecessary } from '../utils/prerenderHTMLIfNecessary';
+import { getMeasuredScrollbarGutter } from '../utils/scrollbarGutter';
 import { setPreNodeProperties } from '../utils/setWrapperNodeProps';
 import type { WorkerPoolManager } from '../worker';
 import { DiffsContainerLoaded } from './web-components';
@@ -493,9 +498,18 @@ export class FileDiff<LAnnotation = undefined> {
       fileDiff,
     } = props;
     this.hydrateElements(fileContainer, prerenderedHTML);
-    // If we have no pre tag and header tag, then something probably didn't
-    // pre-render and we should kick off a render.
-    if (this.pre == null && this.headerElement == null) {
+    if (
+      shouldRenderCode(
+        this.pre,
+        hasDiffContent({ fileDiff, oldFile, newFile }),
+        this.options.collapsed
+      ) ||
+      shouldRenderHeader(
+        this.headerElement,
+        hasDiffHeaderContent({ fileDiff, oldFile, newFile }),
+        this.options.disableFileHeader
+      )
+    ) {
       this.render({ ...props, preventEmit: true });
     }
     // Otherwise orchestrate our setup
@@ -570,9 +584,8 @@ export class FileDiff<LAnnotation = undefined> {
       this.syncCodeNodesFromPre(this.pre);
       this.pre.removeAttribute('data-dehydrated');
     }
-    if (this.pre != null || this.headerElement != null) {
-      this.fileContainer = fileContainer;
-    }
+    this.fileContainer = fileContainer;
+    this.hydrateMeasuredScrollbar();
   }
 
   protected hydrationSetup({
@@ -1308,17 +1321,19 @@ export class FileDiff<LAnnotation = undefined> {
     const shadowRoot =
       container.shadowRoot ?? container.attachShadow({ mode: 'open' });
     const effectiveThemeType = baseThemeType ?? themeType;
+    const scrollbarGutter = getMeasuredScrollbarGutter(shadowRoot);
     if (
       this.themeCSSStyle?.parentNode === shadowRoot &&
       this.appliedThemeCSS?.themeStyles === themeStyles &&
-      this.appliedThemeCSS.themeType === effectiveThemeType
+      this.appliedThemeCSS.themeType === effectiveThemeType &&
+      this.appliedThemeCSS.scrollbarGutter === scrollbarGutter
     ) {
       return;
     }
     this.themeCSSStyle = upsertHostThemeStyle({
       shadowRoot,
       currentNode: this.themeCSSStyle,
-      themeCSS: wrapThemeCSS(themeStyles, effectiveThemeType),
+      themeCSS: wrapThemeCSS(themeStyles, effectiveThemeType, scrollbarGutter),
     });
     this.appliedThemeCSS =
       this.themeCSSStyle != null
@@ -1326,8 +1341,20 @@ export class FileDiff<LAnnotation = undefined> {
             themeStyles,
             themeType: effectiveThemeType,
             baseThemeType,
+            scrollbarGutter,
           }
         : undefined;
+  }
+
+  private hydrateMeasuredScrollbar(): void {
+    const shadowRoot = this.fileContainer?.shadowRoot;
+    if (shadowRoot == null || this.themeCSSStyle == null) {
+      return;
+    }
+    this.themeCSSStyle.textContent = patchScrollbarGutterSize(
+      this.themeCSSStyle.textContent ?? '',
+      getMeasuredScrollbarGutter(shadowRoot)
+    );
   }
 
   private applyHunksToDOM(
@@ -2099,6 +2126,48 @@ export class FileDiff<LAnnotation = undefined> {
     this.errorWrapper?.remove();
     this.errorWrapper = undefined;
   }
+}
+
+interface HasContentProps {
+  fileDiff: FileDiffMetadata | undefined;
+  oldFile: FileContents | undefined;
+  newFile: FileContents | undefined;
+}
+
+function hasDiffContent({
+  fileDiff,
+  oldFile,
+  newFile,
+}: HasContentProps): boolean {
+  return (
+    (fileDiff != null && fileDiff.hunks.length > 0) ||
+    oldFile != null ||
+    newFile != null
+  );
+}
+
+function hasDiffHeaderContent({
+  fileDiff,
+  oldFile,
+  newFile,
+}: HasContentProps): boolean {
+  return fileDiff != null || oldFile != null || newFile != null;
+}
+
+function shouldRenderCode(
+  pre: HTMLPreElement | undefined,
+  hasContent: boolean,
+  collapsed = false
+): boolean {
+  return !collapsed && pre == null && hasContent;
+}
+
+function shouldRenderHeader(
+  headerElement: HTMLElement | undefined,
+  hasContent: boolean,
+  disableFileHeader = false
+): boolean {
+  return headerElement == null && hasContent && !disableFileHeader;
 }
 
 function getElementChildren(

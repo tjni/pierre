@@ -1,6 +1,6 @@
 {
   "name": "@pierre/diffs",
-  "version": "1.1.17",
+  "version": "1.1.22",
   "license": "apache-2.0",
   "files": [
     "dist",
@@ -79,7 +79,10 @@
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "autoprefixer": "catalog:",
+    "lightningcss": "catalog:",
     "postcss": "catalog:",
+    "postcss-calc": "catalog:",
+    "postcss-nesting": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
     "tsdown": "catalog:",

@@ -2,8 +2,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { dirname, extname, join } from 'path';
 import { pathToFileURL } from 'url';
 
-import { PRODUCTS } from '../app/product-config';
-import type { ProductId } from '../app/product-config';
+import { PRODUCTS } from '../lib/product-config';
+import type { ProductId } from '../lib/product-config';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -132,7 +132,7 @@ const SECTION_DESCRIPTIONS: Record<string, Record<string, string>> = {
 };
 
 const MDX_FILENAME_OVERRIDES: Record<string, string> = {
-  'docs/Theming': 'docs-content.mdx',
+  '(diffs)/docs/Theming': 'docs-content.mdx',
 };
 
 const EXCLUDED_CONSTANTS = new Set([
@@ -148,7 +148,7 @@ const SEE_ALSO: Record<ProductId, Product['seeAlso']> = {
   diffs: [
     {
       label: '@pierre/trees',
-      url: 'https://diffs.com/trees/llms.txt',
+      url: 'https://trees.software/llms.txt',
       description: 'File tree rendering library',
     },
     {
@@ -165,7 +165,7 @@ const SEE_ALSO: Record<ProductId, Product['seeAlso']> = {
     },
     {
       label: 'Full documentation',
-      url: 'https://diffs.com/trees/llms-full.txt',
+      url: 'https://trees.software/llms-full.txt',
       description: 'Complete @pierre/trees docs in a single file',
     },
   ],
@@ -499,58 +499,64 @@ const PRODUCT_SECTIONS: Record<ProductId, readonly string[]> = {
 };
 
 const DOCS_PREFIX: Record<ProductId, string> = {
-  diffs: 'docs',
-  trees: 'trees/docs',
+  diffs: '(diffs)/docs',
+  trees: '(trees)/docs',
 };
 
 const LLMS_DOCS_URL: Record<ProductId, string> = {
   diffs: 'https://diffs.com/docs',
-  trees: 'https://diffs.com/trees/docs',
+  trees: 'https://trees.software/docs',
 };
 
-async function main() {
-  for (const productId of ['diffs', 'trees'] as const) {
-    const config = PRODUCTS[productId];
-    const docsPrefix = DOCS_PREFIX[productId];
-    const sectionDirs = PRODUCT_SECTIONS[productId];
-
-    const sections = await Promise.all(
-      sectionDirs.map((dir) => buildSection(productId, docsPrefix, dir))
+function resolveProductId(): ProductId {
+  const site = process.env.NEXT_PUBLIC_SITE ?? 'diffs';
+  if (site !== 'diffs' && site !== 'trees') {
+    throw new Error(
+      `NEXT_PUBLIC_SITE must be 'diffs' or 'trees', got '${site}'`
     );
-
-    const docsUrl = LLMS_DOCS_URL[productId];
-    const llmsTxtPath =
-      productId === 'diffs'
-        ? join(ROOT, 'public', 'llms.txt')
-        : join(ROOT, 'public', productId, 'llms.txt');
-    const llmsFullTxtPath =
-      productId === 'diffs'
-        ? join(ROOT, 'public', 'llms-full.txt')
-        : join(ROOT, 'public', productId, 'llms-full.txt');
-
-    const product: Product = {
-      packageName: config.packageName,
-      description: config.llmsDescription,
-      docsUrl,
-      githubUrl: config.githubUrl,
-      sections,
-      llmsTxtPath,
-      llmsFullTxtPath,
-      seeAlso: SEE_ALSO[productId],
-    };
-
-    const llmsTxt = generateLlmsTxt(product);
-    const llmsFullTxt = generateLlmsFullTxt(product);
-
-    const dir = dirname(product.llmsTxtPath);
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-
-    writeFileSync(product.llmsTxtPath, llmsTxt);
-    writeFileSync(product.llmsFullTxtPath, llmsFullTxt);
-
-    console.log(`wrote ${product.llmsTxtPath}`);
-    console.log(`wrote ${product.llmsFullTxtPath}`);
   }
+  return site;
+}
+
+async function main() {
+  // Each Vercel deployment (diffs.com vs trees.software) builds from the same
+  // codebase with NEXT_PUBLIC_SITE selecting the active product. Both sites
+  // share `public/`, so we generate exactly one product's files per build and
+  // always land them at `public/llms.txt` / `public/llms-full.txt`.
+  const productId = resolveProductId();
+  const config = PRODUCTS[productId];
+  const docsPrefix = DOCS_PREFIX[productId];
+  const sectionDirs = PRODUCT_SECTIONS[productId];
+
+  const sections = await Promise.all(
+    sectionDirs.map((dir) => buildSection(productId, docsPrefix, dir))
+  );
+
+  const llmsTxtPath = join(ROOT, 'public', 'llms.txt');
+  const llmsFullTxtPath = join(ROOT, 'public', 'llms-full.txt');
+
+  const product: Product = {
+    packageName: config.packageName,
+    description: config.llmsDescription,
+    docsUrl: LLMS_DOCS_URL[productId],
+    githubUrl: config.githubUrl,
+    sections,
+    llmsTxtPath,
+    llmsFullTxtPath,
+    seeAlso: SEE_ALSO[productId],
+  };
+
+  const llmsTxt = generateLlmsTxt(product);
+  const llmsFullTxt = generateLlmsFullTxt(product);
+
+  const dir = dirname(product.llmsTxtPath);
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+
+  writeFileSync(product.llmsTxtPath, llmsTxt);
+  writeFileSync(product.llmsFullTxtPath, llmsFullTxt);
+
+  console.log(`wrote ${product.llmsTxtPath} (${productId})`);
+  console.log(`wrote ${product.llmsFullTxtPath} (${productId})`);
 }
 
 void main();

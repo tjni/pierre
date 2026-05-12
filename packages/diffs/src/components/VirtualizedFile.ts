@@ -24,6 +24,7 @@ export class VirtualizedFile<
   // height
   private heightCache: Map<number, number> = new Map();
   private isVisible: boolean = false;
+  private isSetup: boolean = false;
 
   constructor(
     options: FileOptions<LAnnotation> | undefined,
@@ -155,6 +156,7 @@ export class VirtualizedFile<
     if (this.fileContainer != null) {
       this.virtualizer.disconnect(this.fileContainer);
     }
+    this.isSetup = false;
     super.cleanUp();
   }
 
@@ -249,7 +251,7 @@ export class VirtualizedFile<
     file,
     ...props
   }: FileRenderProps<LAnnotation>): boolean {
-    const isFirstRender = this.fileContainer == null;
+    const { isSetup } = this;
 
     this.file ??= file;
 
@@ -262,7 +264,7 @@ export class VirtualizedFile<
       return false;
     }
 
-    if (isFirstRender) {
+    if (!isSetup) {
       this.computeApproximateSize();
       this.virtualizer.connect(fileContainer, this);
       this.top ??= this.virtualizer.getOffsetInScrollContainer(fileContainer);
@@ -270,6 +272,7 @@ export class VirtualizedFile<
         this.top,
         this.height
       );
+      this.isSetup = true;
     } else {
       this.top ??= this.virtualizer.getOffsetInScrollContainer(fileContainer);
     }

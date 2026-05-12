@@ -9,7 +9,9 @@ export type BuiltInFileIconToken =
   | 'bootstrap'
   | 'browserslist'
   | 'bun'
+  | 'c'
   | 'claude'
+  | 'cpp'
   | 'css'
   | 'database'
   | 'default'
@@ -54,60 +56,9 @@ export type BuiltInFileIconToken =
   | 'zig'
   | 'zip';
 
-const BUILT_IN_FILE_ICON_COLOR_FALLBACKS: Partial<Record<string, string>> = {
-  astro: 'light-dark(#a631be, #d568ea)',
-  babel: 'light-dark(#d5a910, #ffd452)',
-  bash: 'light-dark(#199f43, #5ecc71)',
-  biome: 'light-dark(#1a85d4, #69b1ff)',
-  bootstrap: 'light-dark(#693acf, #9d6afb)',
-  browserslist: 'light-dark(#d5a910, #ffd452)',
-  bun: 'light-dark(#d32a61, #ff678d)',
-  claude: 'light-dark(#d47628, #ffa359)',
-  css: 'light-dark(#693acf, #9d6afb)',
-  database: 'light-dark(#a631be, #d568ea)',
-  default: 'light-dark(#84848a, #adadb1)',
-  docker: 'light-dark(#1a85d4, #69b1ff)',
-  eslint: 'light-dark(#693acf, #9d6afb)',
-  git: 'light-dark(#ff8c5b, #d5512f)',
-  go: 'light-dark(#1ca1c7, #68cdf2)',
-  graphql: 'light-dark(#d32a61, #ff678d)',
-  html: 'light-dark(#d47628, #ffa359)',
-  image: 'light-dark(#d32a61, #ff678d)',
-  javascript: 'light-dark(#d5a910, #ffd452)',
-  json: 'light-dark(#d47628, #ffa359)',
-  markdown: 'light-dark(#199f43, #5ecc71)',
-  mcp: 'light-dark(#17a5af, #64d1db)',
-  npm: 'light-dark(#d52c36, #ff6762)',
-  oxc: 'light-dark(#1ca1c7, #68cdf2)',
-  postcss: 'light-dark(#d52c36, #ff6762)',
-  prettier: 'light-dark(#17a5af, #64d1db)',
-  python: 'light-dark(#1a85d4, #69b1ff)',
-  react: 'light-dark(#1ca1c7, #68cdf2)',
-  ruby: 'light-dark(#d52c36, #ff6762)',
-  rust: 'light-dark(#d47628, #ffa359)',
-  sass: 'light-dark(#d32a61, #ff678d)',
-  svg: 'light-dark(#d47628, #ffa359)',
-  svelte: 'light-dark(#d52c36, #ff6762)',
-  svgo: 'light-dark(#199f43, #5ecc71)',
-  swift: 'light-dark(#d47628, #ffa359)',
-  table: 'light-dark(#17a5af, #64d1db)',
-  tailwind: 'light-dark(#1ca1c7, #68cdf2)',
-  terraform: 'light-dark(#693acf, #9d6afb)',
-  text: 'light-dark(#84848a, #adadb1)',
-  typescript: 'light-dark(#1a85d4, #69b1ff)',
-  vite: 'light-dark(#a631be, #d568ea)',
-  vscode: 'light-dark(#1a85d4, #69b1ff)',
-  vue: 'light-dark(#199f43, #5ecc71)',
-  wasm: 'light-dark(#693acf, #9d6afb)',
-  webpack: 'light-dark(#1a85d4, #69b1ff)',
-  yml: 'light-dark(#d52c36, #ff6762)',
-  zig: 'light-dark(#d47628, #ffa359)',
-  zip: 'light-dark(#d47628, #ffa359)',
-};
-
 const MINIMAL_SVG_SPRITE_SHEET = `<svg data-icon-sprite aria-hidden="true" width="0" height="0">
   <symbol id="file-tree-icon-chevron" viewBox="0 0 16 16">
-    <path d="M3.47 5.47a.75.75 0 0 1 1.06 0L8 8.94l3.47-3.47a.75.75 0 1 1 1.06 1.06l-4 4a.75.75 0 0 1-1.06 0l-4-4a.75.75 0 0 1 0-1.06" fill="currentcolor"/>
+    <path d="M12.4697 5.46973C12.7626 5.17684 13.2374 5.17684 13.5303 5.46973C13.8232 5.76262 13.8232 6.23738 13.5303 6.53028L8.53028 11.5303C8.23738 11.8232 7.76262 11.8232 7.46973 11.5303L2.46973 6.53028C2.17684 6.23738 2.17684 5.76262 2.46973 5.46973C2.76262 5.17684 3.23738 5.17684 3.53028 5.46973L8 9.93946L12.4697 5.46973Z" fill="currentcolor"/>
   </symbol>
   <symbol id="file-tree-icon-dot" viewBox="0 0 6 6">
     <circle cx="3" cy="3" r="3" />
@@ -157,8 +108,16 @@ const sym_bun = `<symbol id="file-tree-builtin-bun" viewBox="0 0 16 16">
   <path fill="currentColor" d="M8 14c3.87 0 7-2.46 7-5.49 0-1.88-1.2-3.53-3.04-4.52q-1.1-.61-1.84-1.07C9.2 2.35 8.64 2 8 2s-1.36.45-2.31 1.03A29 29 0 0 1 4.04 4C2.2 4.98 1 6.63 1 8.51 1 11.54 4.13 14 8 14M7.18 3.88q.3-.66.3-1.37c0-.08.11-.1.13-.01.38 1.57-.53 2.35-1.2 2.61-.08.03-.12-.07-.06-.12a3 3 0 0 0 .83-1.12m1.2-.05a3 3 0 0 0-.45-1.3V2.5c-.04-.07.05-.15.1-.1 1.15 1.2.77 2.3.33 2.87-.05.05-.13 0-.11-.08q.21-.67.13-1.37m1.04-.32a3 3 0 0 0-.94-1.02v-.01c-.06-.05-.01-.16.07-.12 1.51.61 1.61 1.8 1.43 2.5l-.03.03a.07.07 0 0 1-.1-.06 3 3 0 0 0-.43-1.32m-2.97.32c-.36.3-.74.43-1.2.56q-.11 0-.1-.1a3.5 3.5 0 0 0 1.76-1.57s.09-.07.1.04c0 .18-.2.76-.56 1.07m2.89 6.36q-.13.52-.55.88a1.3 1.3 0 0 1-.75.35 1.3 1.3 0 0 1-.77-.35 1.7 1.7 0 0 1-.54-.88.13.13 0 0 1 .15-.15h2.31a.14.14 0 0 1 .15.15M6.15 8.95a1.1 1.1 0 0 1-1.39-.14A1.1 1.1 0 0 1 5.12 7a1.1 1.1 0 0 1 1.2.25 1.1 1.1 0 0 1-.17 1.69m4.96 0a1.1 1.1 0 0 1-1.4-.14 1.1 1.1 0 0 1 .37-1.8 1.1 1.1 0 0 1 1.2.25 1.1 1.1 0 0 1 .24 1.2 1 1 0 0 1-.41.5"/>
 </symbol>`;
 
+const sym_c = `<symbol id="file-tree-builtin-c" viewBox="0 0 16 16">
+  <path fill="currentColor" fill-rule="evenodd" d="M8 1q.084 0 .166.021.098.023.186.075c1.055.624 4.22 2.486 5.277 3.11.085.05.15.112.209.192h-.002l.028.037a.5.5 0 0 1 .103.21q.031.102.033.21v6.29a.71.71 0 0 1-.347.616l-5.307 3.144a.68.68 0 0 1-.693 0l-5.307-3.144A.72.72 0 0 1 2 11.145V4.832a.71.71 0 0 1 .346-.612l5.288-3.126A.7.7 0 0 1 7.992 1zm2.901 4.349a3.75 3.75 0 1 0 0 5.302l-1.06-1.06a2.25 2.25 0 1 1 0-3.182z" clip-rule="evenodd"/>
+</symbol>`;
+
 const sym_claude = `<symbol id="file-tree-builtin-claude" viewBox="0 0 16 16">
   <path fill="currentColor" d="M3.75 10.31 6.5 8.77l.04-.14-.04-.07h-.14l-.46-.03-1.57-.04-1.38-.07-1.33-.07-.34-.07L1 7.86l.03-.21.28-.18.4.03.89.07 1.33.08.97.06 1.43.16h.22l.03-.1-.07-.05-.06-.06-1.39-.92-1.48-.98-.79-.57-.42-.28-.2-.28-.1-.6.39-.41.52.04.12.03.52.4 1.12.86L6.2 6.04l.2.17.09-.06.01-.04-.1-.15-.76-1.46-.85-1.46-.37-.6-.1-.36a1 1 0 0 1-.06-.42l.42-.59.25-.07.6.08.22.2.36.84.58 1.3.9 1.77.29.53.14.47.04.14h.1v-.07l.07-1 .14-1.22.14-1.57.04-.45.23-.53.42-.28.36.15.28.41-.04.25-.16 1.08-.36 1.7-.21 1.14h.12l.14-.15.58-.76.97-1.2.42-.5.5-.51.32-.25h.6l.44.66-.2.68-.61.79-.52.65-.74 1-.45.8.04.05h.1l1.68-.36.9-.16 1.06-.18.5.23.05.22-.2.48-1.15.28-1.34.28-2 .46-.04.01.03.04.9.09.4.03h.94l1.77.14.46.28.27.37-.04.28-.72.37-.95-.23-2.24-.53-.76-.18h-.11v.06l.64.63L12 10.86l1.48 1.35.07.34-.18.28-.2-.03-1.29-.98-.5-.42-1.12-.95h-.07v.1l.25.38 1.37 2.05.07.63-.1.2-.36.14-.38-.08-.8-1.12-.85-1.26-.66-1.15-.07.05-.4 4.23-.19.21-.42.17-.35-.28-.2-.42.2-.87.23-1.12.18-.9.17-1.1.1-.36v-.03h-.1l-.84 1.16-1.27 1.72-1 1.07-.24.1-.42-.22.04-.39.22-.32 1.4-1.8.84-1.1.57-.64-.02-.07h-.04l-3.7 2.4-.66.09-.28-.28.03-.42.14-.14 1.12-.77z"/>
+</symbol>`;
+
+const sym_cpp = `<symbol id="file-tree-builtin-cpp" viewBox="0 0 16 16">
+  <path fill="currentColor" fill-rule="evenodd" d="M8 1q.084 0 .166.021.098.023.186.075c1.055.624 4.22 2.486 5.277 3.11.085.05.15.112.209.192h-.002l.028.037a.5.5 0 0 1 .103.21q.031.102.033.21v6.29a.71.71 0 0 1-.347.616l-5.307 3.144a.68.68 0 0 1-.693 0l-5.307-3.144A.72.72 0 0 1 2 11.145V4.832a.71.71 0 0 1 .346-.612l5.288-3.126A.7.7 0 0 1 7.992 1zm2.901 4.349a3.75 3.75 0 1 0 0 5.302l-1.06-1.06a2.25 2.25 0 1 1 0-3.182z" clip-rule="evenodd"/>
 </symbol>`;
 
 const sym_css = `<symbol id="file-tree-builtin-css" viewBox="0 0 16 16">
@@ -373,6 +332,8 @@ const sym_zip = `<symbol id="file-tree-builtin-zip" viewBox="0 0 16 16">
 
 const standardTierSymbols = [
   sym_bash,
+  sym_c,
+  sym_cpp,
   sym_css,
   sym_database,
   sym_default,
@@ -562,16 +523,20 @@ const BUILT_IN_FILE_EXTENSION_TOKENS: Partial<
   bash: 'bash',
   bmp: 'image',
   bz2: 'zip',
+  c: 'c',
+  cc: 'cpp',
   cfg: 'text',
   CHANGELOG: 'text',
   cjs: 'javascript',
   'code-workspace': 'vscode',
   conf: 'text',
   CONTRIBUTORS: 'text',
+  cpp: 'cpp',
   csh: 'bash',
   css: 'css',
   csv: 'table',
   cts: 'typescript',
+  cxx: 'cpp',
   db: 'database',
   editorconfig: 'text',
   env: 'text',
@@ -587,11 +552,16 @@ const BUILT_IN_FILE_EXTENSION_TOKENS: Partial<
   gql: 'graphql',
   graphql: 'graphql',
   gz: 'zip',
+  h: 'c',
+  hh: 'cpp',
+  hpp: 'cpp',
   htm: 'html',
   html: 'html',
+  hxx: 'cpp',
   icns: 'image',
   ico: 'image',
   ini: 'text',
+  inl: 'cpp',
   jar: 'zip',
   jpeg: 'image',
   jpg: 'image',
@@ -611,6 +581,7 @@ const BUILT_IN_FILE_EXTENSION_TOKENS: Partial<
   mdx: 'markdown',
   'mdx.tsx': 'markdown',
   mjs: 'javascript',
+  mm: 'cpp',
   mts: 'typescript',
   ods: 'table',
   otf: 'font',
@@ -678,6 +649,8 @@ const COMPLETE_EXTENSION_OVERRIDES: Partial<
 
 const STANDARD_TIER_TOKENS = new Set<BuiltInFileIconToken>([
   'bash',
+  'c',
+  'cpp',
   'css',
   'database',
   'default',
@@ -711,15 +684,6 @@ export function getBuiltInSpriteSheet(
 
 export function getBuiltInFileIconName(token: BuiltInFileIconToken): string {
   return `file-tree-builtin-${token}`;
-}
-
-export function getBuiltInFileIconColor(token: string): string | undefined {
-  const fallback = BUILT_IN_FILE_ICON_COLOR_FALLBACKS[token];
-  if (fallback == null) {
-    return undefined;
-  }
-
-  return `var(--trees-file-icon-color-${token}, var(--trees-file-icon-color, ${fallback}))`;
 }
 
 export function isColoredBuiltInIconSet(

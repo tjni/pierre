@@ -41,11 +41,16 @@ import { areRenderRangesEqual } from '../utils/areRenderRangesEqual';
 import { createAnnotationWrapperNode } from '../utils/createAnnotationWrapperNode';
 import { createGutterUtilityContentNode } from '../utils/createGutterUtilityContentNode';
 import { createUnsafeCSSStyleNode } from '../utils/createUnsafeCSSStyleNode';
-import { wrapThemeCSS, wrapUnsafeCSS } from '../utils/cssWrappers';
+import {
+  patchScrollbarGutterSize,
+  wrapThemeCSS,
+  wrapUnsafeCSS,
+} from '../utils/cssWrappers';
 import { getLineAnnotationName } from '../utils/getLineAnnotationName';
 import { getOrCreateCodeNode } from '../utils/getOrCreateCodeNode';
 import { upsertHostThemeStyle } from '../utils/hostTheme';
 import { prerenderHTMLIfNecessary } from '../utils/prerenderHTMLIfNecessary';
+import { getMeasuredScrollbarGutter } from '../utils/scrollbarGutter';
 import { setPreNodeProperties } from '../utils/setWrapperNodeProps';
 import type { WorkerPoolManager } from '../worker';
 import { DiffsContainerLoaded } from './web-components';
@@ -301,9 +306,14 @@ export class File<
       lineAnnotations,
     } = props;
     this.hydrateElements(fileContainer, prerenderedHTML);
-    // If we have no pre tag and header tag, then something probably didn't
-    // pre-render and we should kick off a render.
-    if (this.pre == null && this.headerElement == null) {
+    if (
+      shouldRenderCode(this.pre, file, this.options.collapsed) ||
+      shouldRenderHeader(
+        this.headerElement,
+        file,
+        this.options.disableFileHeader
+      )
+    ) {
       this.render({ ...props, preventEmit: true });
     }
     // Otherwise orchestrate our setup.
@@ -360,9 +370,8 @@ export class File<
       this.syncCodeNodeFromPre(this.pre);
       this.pre.removeAttribute('data-dehydrated');
     }
-    if (this.pre != null || this.headerElement != null) {
-      this.fileContainer = fileContainer;
-    }
+    this.fileContainer = fileContainer;
+    this.hydrateMeasuredScrollbar();
   }
 
   protected hydrationSetup({
@@ -783,17 +792,19 @@ export class File<
     const shadowRoot =
       container.shadowRoot ?? container.attachShadow({ mode: 'open' });
     const effectiveThemeType = baseThemeType ?? themeType;
+    const scrollbarGutter = getMeasuredScrollbarGutter(shadowRoot);
     if (
       this.themeCSSStyle?.parentNode === shadowRoot &&
       this.appliedThemeCSS?.themeStyles === themeStyles &&
-      this.appliedThemeCSS.themeType === effectiveThemeType
+      this.appliedThemeCSS.themeType === effectiveThemeType &&
+      this.appliedThemeCSS.scrollbarGutter === scrollbarGutter
     ) {
       return;
     }
     this.themeCSSStyle = upsertHostThemeStyle({
       shadowRoot,
       currentNode: this.themeCSSStyle,
-      themeCSS: wrapThemeCSS(themeStyles, effectiveThemeType),
+      themeCSS: wrapThemeCSS(themeStyles, effectiveThemeType, scrollbarGutter),
     });
     this.appliedThemeCSS =
       this.themeCSSStyle != null
@@ -801,8 +812,20 @@ export class File<
             themeStyles,
             themeType: effectiveThemeType,
             baseThemeType,
+            scrollbarGutter,
           }
         : undefined;
+  }
+
+  private hydrateMeasuredScrollbar(): void {
+    const shadowRoot = this.fileContainer?.shadowRoot;
+    if (shadowRoot == null || this.themeCSSStyle == null) {
+      return;
+    }
+    this.themeCSSStyle.textContent = patchScrollbarGutterSize(
+      this.themeCSSStyle.textContent ?? '',
+      getMeasuredScrollbarGutter(shadowRoot)
+    );
   }
 
   private applyFullRender(result: FileRenderResult, pre: HTMLPreElement): void {
@@ -1285,4 +1308,20 @@ export class File<
     this.errorWrapper?.remove();
     this.errorWrapper = undefined;
   }
+}
+
+function shouldRenderCode(
+  pre: HTMLPreElement | undefined,
+  file: FileContents | undefined,
+  collapsed = false
+): boolean {
+  return !collapsed && pre == null && file != null;
+}
+
+function shouldRenderHeader(
+  headerElement: HTMLElement | undefined,
+  file: FileContents | undefined,
+  disableFileHeader: boolean = false
+): boolean {
+  return headerElement == null && file != null && !disableFileHeader;
 }
