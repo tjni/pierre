@@ -146,22 +146,23 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   );
 
   edit(
-    file: File<LAnnotation>,
+    component: DiffsEditableComponent<LAnnotation>,
     onChange?: (
       file: FileContents,
       lineAnnotations?: LineAnnotation<LAnnotation>[]
     ) => void
   ): () => void {
-    this.#component = file;
-    this.#wrap = file.options.overflow === 'wrap';
-    this.#highlighter ??= areThemesAttached(
-      file.options.theme ?? DEFAULT_THEMES
-    )
-      ? getHighlighterIfLoaded()
-      : undefined;
+    this.#component = component;
     this.#onChange = onChange;
     this.#initialize();
-    file.setEditor(this);
+    if (component.options.useTokenTransformer !== true) {
+      // Tell the component to use token transformer that adds
+      // `data-char` attribute to the tokens
+      component.options.useTokenTransformer = true;
+      component.setOptions(component.options);
+      component.rerender();
+    }
+    component.setEditor(this);
     return () => this.cleanUp();
   }
 
@@ -253,6 +254,13 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     if (contentEl === undefined) {
       throw new Error('Could not edit the file.');
     }
+
+    this.#wrap = this.#component?.options.overflow === 'wrap';
+    this.#highlighter ??= areThemesAttached(
+      this.#component?.options.theme ?? DEFAULT_THEMES
+    )
+      ? getHighlighterIfLoaded()
+      : undefined;
 
     if (this.#fileContainer !== fileContainer) {
       this.#fileContainer = fileContainer;
@@ -365,8 +373,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     if (
       this.#textDocument === undefined ||
       this.#fileContents === undefined ||
-      this.#fileContents.contents !== fileContents.contents ||
-      this.#fileContents.lang !== fileContents.lang
+      this.#fileContents.name !== fileContents.name ||
+      this.#fileContents.lang !== fileContents.lang ||
+      this.#fileContents.contents !== fileContents.contents
     ) {
       this.#fileContents = fileContents;
       this.#textDocument = new TextDocument(
@@ -376,6 +385,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       );
       this.#stateStackCache = undefined;
       this.#shouldIgnoreSelectionChange = false;
+      this.#selectionElements?.forEach((el) => el.remove());
+      this.#selectionElements?.clear();
+      this.#selectionElements = undefined;
       this.#selections = undefined;
       this.#reservedSelections = undefined;
     }
@@ -394,7 +406,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
     if (renderRange !== undefined) {
       console.log(
-        '[diffs]',
+        '[diffs] render file:',
+        fileContents.name,
         'RenderRange:',
         renderRange.startingLine +
           '-' +
@@ -575,6 +588,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     const textDocument = this.#textDocument;
     const contentEl = this.#contentElement;
     const gutterEl = this.#contentElement?.previousElementSibling ?? undefined;
+
+    console.log('rerender', highlighter);
     if (
       highlighter === undefined ||
       file === undefined ||
