@@ -37,12 +37,12 @@ const virtualizer = new Virtualizer();
 const fileInstance = new VirtualizedFile<undefined>(
   {
     unsafeCSS: /* CSS */ `
-    [data-diffs-header] {
-      position: sticky;
-      top: 0;
-      z-index: 100;
-    }
-  `,
+      [data-diffs-header] {
+        position: sticky;
+        top: 0;
+        z-index: 100;
+      }
+    `,
   },
   virtualizer
 );
@@ -76,8 +76,11 @@ async function openDocument(filename: string) {
   editorContainer.scrollTo({ left: 0, top: 0 });
 }
 
+async function onFileChange(file: FileContents) {
+  await API.writeFile(file.name, file.contents);
+  fileTree.setGitStatus(await API.getGitStatus());
+}
+
 virtualizer.setup(editorContainer);
-editor.edit(fileInstance, (file) => {
-  console.log('edit', file);
-});
 fileTree.render({ fileTreeContainer });
+editor.edit(fileInstance, () => void onFileChange);
