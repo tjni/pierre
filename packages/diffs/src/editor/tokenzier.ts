@@ -6,7 +6,7 @@ import {
 
 import type { HighlightedToken } from '../types';
 import {
-  TOKENIZE_LINES_PRE_TOKENIZE,
+  BGTOKENIZER_LINES_PRE_TOKENIZE,
   TOKENIZE_MAX_LINE_LENGTH,
   TOKENIZE_TIME_LIMIT,
 } from './constants';
@@ -16,8 +16,8 @@ export interface BackgroundTokenizerOptions {
   grammar: IGrammar;
   colorMap: string[];
   textDocument: TextDocument<unknown>;
+  linesPreTokenize?: number;
   onTokenize: (lines: Map<number, Array<HighlightedToken>>) => void;
-  linesPreTokenize?: number; // default to 50
 }
 
 /** Stoppable background tokenizer */
@@ -69,7 +69,7 @@ export class BackgroundTokenizer {
     this.#lastState = null;
   }
 
-  #doTokenize(linesPreTokenize: number = TOKENIZE_LINES_PRE_TOKENIZE): void {
+  #doTokenize(linesPreTokenize: number = BGTOKENIZER_LINES_PRE_TOKENIZE): void {
     if (this.#isStopped || this.#lastState === null) {
       return;
     }
