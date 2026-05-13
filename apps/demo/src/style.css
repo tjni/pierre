@@ -241,6 +241,10 @@ diffs-container {
   gap: 4px;
 }
 
+[data-icon-sprite] {
+  display: none;
+}
+
 #editor {
   display: grid;
   grid-template-columns: 280px 1fr;
@@ -265,7 +269,7 @@ diffs-container {
   align-items: center;
   gap: 8px;
   font-size: 14px;
-  padding: 16px;
+  padding: 4px 16px 12px;
 }
 
 #file-tree h1 svg {
