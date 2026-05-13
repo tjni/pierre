@@ -607,8 +607,7 @@ export function findNexMatch(
         number,
       ]
   );
-  const nextOffset = findNextNonOverlappingSubstring(
-    textDocument.getText(),
+  const nextOffset = textDocument.findNextNonOverlappingSubstring(
     needle,
     occupied
   );
@@ -758,49 +757,6 @@ function expandCollapsedLineWord(
     }
   }
   return best;
-}
-
-function findNextNonOverlappingSubstring(
-  doc: string,
-  needle: string,
-  occupied: readonly [number, number][]
-): number | undefined {
-  if (needle.length === 0) {
-    return undefined;
-  }
-  const pivot = Math.max(...occupied.map(([, end]) => end));
-  const isFree = (start: number): boolean => {
-    const end = start + needle.length;
-    return !occupied.some(([s0, s1]) => start < s1 && s0 < end);
-  };
-
-  let pos = pivot;
-  while (pos <= doc.length - needle.length) {
-    const idx = doc.indexOf(needle, pos);
-    if (idx === -1) {
-      break;
-    }
-    if (isFree(idx)) {
-      return idx;
-    }
-    pos = idx + 1;
-  }
-
-  pos = 0;
-  while (pos < pivot && pos <= doc.length - needle.length) {
-    const idx = doc.indexOf(needle, pos);
-    if (idx === -1) {
-      break;
-    }
-    if (idx >= pivot) {
-      break;
-    }
-    if (isFree(idx)) {
-      return idx;
-    }
-    pos = idx + 1;
-  }
-  return undefined;
 }
 
 function getSelectionAnchorAndFocusOffsets(

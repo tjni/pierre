@@ -178,6 +178,50 @@ export class PieceTable {
     return found;
   }
 
+  findNextNonOverlappingSubstring(
+    needle: string,
+    occupied: readonly [start: number, end: number][]
+  ): number | undefined {
+    if (needle.length === 0 || needle.length > this.#length) {
+      return undefined;
+    }
+
+    const ranges = normalizeRanges(occupied, this.#length);
+    const pivot = ranges.reduce((max, [, end]) => Math.max(max, end), 0);
+    const prefixTable = createPrefixTable(needle);
+    let matched = 0;
+    let documentOffset = 0;
+    let wrappedOffset: number | undefined;
+    let foundOffset: number | undefined;
+
+    this.#forEachPieceSegment((segment) => {
+      for (let offset = segment.start; offset < segment.end; offset++) {
+        const charCode = segment.text.charCodeAt(offset);
+        while (matched > 0 && charCode !== needle.charCodeAt(matched)) {
+          matched = prefixTable[matched - 1];
+        }
+        if (charCode === needle.charCodeAt(matched)) {
+          matched++;
+        }
+        if (matched === needle.length) {
+          const start = documentOffset - needle.length + 1;
+          if (!rangeOverlaps(ranges, start, start + needle.length)) {
+            if (start >= pivot) {
+              foundOffset = start;
+              return false;
+            }
+            wrappedOffset ??= start;
+          }
+          matched = prefixTable[matched - 1];
+        }
+        documentOffset++;
+      }
+      return true;
+    });
+
+    return foundOffset ?? wrappedOffset;
+  }
+
   insert(text: string, offset: number): void {
     if (text.length === 0) {
       return;
@@ -635,6 +679,52 @@ function createPrefixTable(text: string): number[] {
     table[i] = matched;
   }
   return table;
+}
+
+function normalizeRanges(
+  ranges: readonly [start: number, end: number][],
+  length: number
+): [start: number, end: number][] {
+  const normalized: [start: number, end: number][] = [];
+  for (const [rawStart, rawEnd] of ranges) {
+    const start = clamp(rawStart, 0, length);
+    const end = clamp(rawEnd, start, length);
+    if (start < end) {
+      normalized.push([start, end]);
+    }
+  }
+  normalized.sort((a, b) => a[0] - b[0]);
+
+  const merged: [start: number, end: number][] = [];
+  for (const range of normalized) {
+    const previous = merged[merged.length - 1];
+    if (previous !== undefined && range[0] <= previous[1]) {
+      previous[1] = Math.max(previous[1], range[1]);
+      continue;
+    }
+    merged.push(range);
+  }
+  return merged;
+}
+
+function rangeOverlaps(
+  ranges: readonly [start: number, end: number][],
+  start: number,
+  end: number
+): boolean {
+  let low = 0;
+  let high = ranges.length;
+  while (low < high) {
+    const mid = low + Math.floor((high - low) / 2);
+    if (ranges[mid][1] <= start) {
+      low = mid + 1;
+    } else {
+      high = mid;
+    }
+  }
+
+  const range = ranges[low];
+  return range !== undefined && range[0] < end;
 }
 
 // Keeps the table compact after repeated edits by joining neighboring pieces

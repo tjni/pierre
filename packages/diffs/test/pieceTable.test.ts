@@ -253,6 +253,33 @@ describe('PieceTable', () => {
     expect(table.includes('')).toBe(true);
   });
 
+  test('finds the next non-overlapping match across piece boundaries', () => {
+    const table = new PieceTable('foo x fo');
+
+    table.insert('o foo', table.getText().length);
+
+    expect(table.findNextNonOverlappingSubstring('foo', [[0, 3]])).toBe(6);
+    expect(
+      table.findNextNonOverlappingSubstring('foo', [
+        [0, 3],
+        [6, 9],
+      ])
+    ).toBe(10);
+    expect(
+      table.findNextNonOverlappingSubstring('foo', [
+        [6, 9],
+        [10, 13],
+      ])
+    ).toBe(0);
+    expect(
+      table.findNextNonOverlappingSubstring('foo', [
+        [0, 3],
+        [6, 9],
+        [10, 13],
+      ])
+    ).toBeUndefined();
+  });
+
   test('tracks trailing newline as an empty final line', () => {
     const table = new PieceTable('a\n');
 

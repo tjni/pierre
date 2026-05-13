@@ -186,6 +186,13 @@ export class TextDocument<LAnnotation> {
     return this.#pieceTable.getTextSlice(start, end);
   }
 
+  findNextNonOverlappingSubstring(
+    needle: string,
+    occupied: readonly [start: number, end: number][]
+  ): number | undefined {
+    return this.#pieceTable.findNextNonOverlappingSubstring(needle, occupied);
+  }
+
   applyEdits(
     edits: TextEdit[],
     updateHistory = false,
