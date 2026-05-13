@@ -16,6 +16,7 @@ import {
   DirectionBackward,
   DirectionForward,
   DirectionNone,
+  expandCollapsedSelectionToWord,
   extendSelection,
   findNexMatch,
   getDocumentBoundarySelection,
@@ -666,9 +667,20 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         if (selections === undefined || textDocument === undefined) {
           break;
         }
-        const next = findNexMatch(textDocument, selections);
-        if (next !== undefined) {
-          this.#updateSelections(next);
+        const hasCollapsed = selections.some(isCollapsedSelection);
+        if (hasCollapsed) {
+          const expanded: EditorSelection[] = selections.map((sel) => {
+            if (isCollapsedSelection(sel)) {
+              return expandCollapsedSelectionToWord(textDocument, sel);
+            }
+            return sel;
+          });
+          this.#updateSelections(expanded, true);
+        } else {
+          const nextMatch = findNexMatch(textDocument, selections);
+          if (nextMatch !== undefined) {
+            this.#updateSelections(nextMatch, true);
+          }
         }
         break;
       }

@@ -116,7 +116,7 @@ export function resolveIndentEdits(
  */
 export function mapCursorMove(
   textDocument: TextDocument<unknown>,
-  selections: readonly EditorSelection[],
+  selections: EditorSelection[],
   nextPosition: Position
 ): EditorSelection[] {
   const primarySelection = selections[selections.length - 1];
@@ -168,7 +168,7 @@ export function mapCursorMove(
  */
 export function mapSelectionShift(
   textDocument: TextDocument<unknown>,
-  selections: readonly EditorSelection[],
+  selections: EditorSelection[],
   selectionShift: EditorSelection
 ): EditorSelection[] {
   const primarySelection = selections[selections.length - 1];
@@ -339,7 +339,7 @@ export function applyTextChangeToSelections<LAnnotation>(
 export function applyTextReplaceToSelections<LAnnotation>(
   textDocument: TextDocument<LAnnotation>,
   selections: EditorSelection[],
-  texts: readonly string[],
+  texts: string[],
   lineAnnotations?: LineAnnotation<LAnnotation>[]
 ): {
   nextSelections: EditorSelection[];
@@ -575,25 +575,8 @@ export function extendSelection(
  */
 export function findNexMatch(
   textDocument: TextDocument<unknown>,
-  selections: readonly EditorSelection[]
+  selections: EditorSelection[]
 ): EditorSelection[] | undefined {
-  if (selections.length === 0) {
-    return undefined;
-  }
-
-  const allCollapsed = selections.every(isCollapsedSelection);
-  if (allCollapsed) {
-    const expanded: EditorSelection[] = [];
-    for (const sel of selections) {
-      const word = expandCollapsedSelectionToWord(textDocument, sel);
-      if (word === undefined) {
-        return undefined;
-      }
-      expanded.push(word);
-    }
-    return expanded;
-  }
-
   const texts = selections.map((s) => textDocument.getText(s));
   const needle = texts[0];
   if (needle.length === 0 || texts.some((t) => t !== needle)) {
@@ -650,7 +633,7 @@ export function getDocumentBoundarySelection(
 
 export function getSelectionText(
   textDocument: TextDocument<unknown>,
-  selections: readonly EditorSelection[]
+  selections: EditorSelection[]
 ): string {
   return [...selections]
     .sort((a, b) => {
@@ -699,17 +682,19 @@ export function getSelectionTextNode(
   throw new Error('No text node found');
 }
 
-// Expands a zero-width selection to the word-like segment that contains the caret.
-function expandCollapsedSelectionToWord(
+/**
+ * Expands a zero-width selection to the word-like segment that contains the caret.
+ */
+export function expandCollapsedSelectionToWord(
   textDocument: TextDocument<unknown>,
   selection: EditorSelection
-): EditorSelection | undefined {
+): EditorSelection {
   const { line, character } = selection.start;
   const lineText = textDocument.getLineText(line);
   const ch = Math.max(0, Math.min(character, lineText.length));
   const span = expandCollapsedLineWord(lineText, ch);
   if (span === undefined) {
-    return undefined;
+    return selection;
   }
   return {
     start: { line, character: span.start },
