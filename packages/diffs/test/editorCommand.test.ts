@@ -48,11 +48,12 @@ function withPlatform(platform: string, run: () => void): void {
 }
 
 function expectShortcuts(platform: string, cases: ShortcutCase[]): void {
+  const isMac = /macOS|MacIntel|iPhone|iPad|iPod/i.test(platform);
   withPlatform(platform, () => {
     for (const { event: shortcutEvent, expected } of cases) {
-      expect(resolveEditorCommandFromKeyboardEvent(event(shortcutEvent))).toBe(
-        expected
-      );
+      expect(
+        resolveEditorCommandFromKeyboardEvent(event(shortcutEvent), isMac)
+      ).toBe(expected);
     }
   });
 }
@@ -63,8 +64,14 @@ describe('resolveEditorShortcutCommand', () => {
       { event: { key: 'z', metaKey: true }, expected: 'undo' },
       { event: { key: 'z', metaKey: true, shiftKey: true }, expected: 'redo' },
       { event: { key: 'a', metaKey: true }, expected: 'selectAll' },
-      { event: { key: 'ArrowUp', metaKey: true }, expected: 'documentStart' },
-      { event: { key: 'ArrowDown', metaKey: true }, expected: 'documentEnd' },
+      {
+        event: { key: 'ArrowUp', metaKey: true },
+        expected: 'moveCursorToDocStart',
+      },
+      {
+        event: { key: 'ArrowDown', metaKey: true },
+        expected: 'moveCursorToDocEnd',
+      },
     ]);
   });
 
@@ -74,8 +81,11 @@ describe('resolveEditorShortcutCommand', () => {
       { event: { key: 'z', ctrlKey: true, shiftKey: true }, expected: 'redo' },
       { event: { key: 'y', ctrlKey: true }, expected: 'redo' },
       { event: { key: 'a', ctrlKey: true }, expected: 'selectAll' },
-      { event: { key: 'Home', ctrlKey: true }, expected: 'documentStart' },
-      { event: { key: 'End', ctrlKey: true }, expected: 'documentEnd' },
+      {
+        event: { key: 'Home', ctrlKey: true },
+        expected: 'moveCursorToDocStart',
+      },
+      { event: { key: 'End', ctrlKey: true }, expected: 'moveCursorToDocEnd' },
     ]);
   });
 

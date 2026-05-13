@@ -1,28 +1,30 @@
+import { isMacLike, isPrimaryModifier } from './platform';
+
 export type EditorCommand =
   | 'indent'
   | 'outdent'
-  | 'documentStart'
-  | 'documentEnd'
   | 'undo'
   | 'redo'
   | 'selectAll'
-  | 'extendSelection';
+  | 'findNextMatch'
+  | 'moveCursorToDocStart'
+  | 'moveCursorToDocEnd';
 
 const SHORTCUTS: Partial<Record<string, EditorCommand>> = {
   a: 'selectAll',
-  d: 'extendSelection',
+  d: 'findNextMatch',
 };
 
 export function resolveEditorCommandFromKeyboardEvent(
-  event: KeyboardEvent
+  event: KeyboardEvent,
+  isMac: boolean = isMacLike()
 ): EditorCommand | undefined {
-  const hasPrimaryModifier = isPrimaryModifier(event);
+  const hasPrimaryModifier = isPrimaryModifier(event, isMac);
   const { shiftKey, altKey, key } = event;
   if (altKey) {
     return undefined;
   }
 
-  const isMac = isMacLike();
   const normalizedKey = key.length === 1 ? key.toLowerCase() : key;
 
   if (!hasPrimaryModifier && normalizedKey === 'Tab') {
@@ -42,30 +44,12 @@ export function resolveEditorCommandFromKeyboardEvent(
   }
 
   if (normalizedKey === 'Home' || (isMac && normalizedKey === 'ArrowUp')) {
-    return 'documentStart';
+    return 'moveCursorToDocStart';
   }
 
   if (normalizedKey === 'End' || (isMac && normalizedKey === 'ArrowDown')) {
-    return 'documentEnd';
+    return 'moveCursorToDocEnd';
   }
 
   return SHORTCUTS[normalizedKey];
-}
-
-export function isPrimaryModifier({
-  metaKey,
-  ctrlKey,
-}: MouseEvent | KeyboardEvent): boolean {
-  return isMacLike() ? metaKey && !ctrlKey : ctrlKey && !metaKey;
-}
-
-function isMacLike(): boolean {
-  return /macOS|MacIntel|iPhone|iPad|iPod/i.test(getPlatform());
-}
-
-function getPlatform(): string {
-  const navigator = globalThis.navigator as Navigator & {
-    userAgentData?: { platform?: string };
-  };
-  return navigator?.platform ?? navigator?.userAgentData?.platform ?? 'unknown';
 }

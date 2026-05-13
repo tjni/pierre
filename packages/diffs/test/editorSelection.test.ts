@@ -10,8 +10,8 @@ import {
   type EditorSelection,
   extendSelection,
   findNexMatch,
-  mapSelectionMove,
-  mapSelectionRangeMove,
+  mapCursorMove,
+  mapSelectionShift,
   selectionIntersects,
 } from '../src/editor/editorSelection';
 import {
@@ -767,7 +767,7 @@ describe('mapSelectionMove', () => {
     ];
 
     expect(
-      mapSelectionMove(textDocument, selections, { line: 2, character: 0 })
+      mapCursorMove(textDocument, selections, { line: 2, character: 0 })
     ).toEqual([
       createSelection(0, 0, 0, 0),
       createSelection(1, 0, 1, 0),
@@ -783,7 +783,7 @@ describe('mapSelectionMove', () => {
     ];
 
     expect(
-      mapSelectionMove(textDocument, selections, { line: 1, character: 1 })
+      mapCursorMove(textDocument, selections, { line: 1, character: 1 })
     ).toEqual([
       createSelection(0, 1, 0, 1, DirectionNone),
       createSelection(1, 1, 1, 1, DirectionNone),
@@ -800,11 +800,7 @@ describe('mapSelectionRangeMove', () => {
     ];
 
     expect(
-      mapSelectionRangeMove(
-        textDocument,
-        selections,
-        createSelection(1, 1, 1, 3)
-      )
+      mapSelectionShift(textDocument, selections, createSelection(1, 1, 1, 3))
     ).toEqual([
       createSelection(0, 1, 0, 3, DirectionForward),
       createSelection(1, 1, 1, 3, DirectionForward),
@@ -819,12 +815,26 @@ describe('mapSelectionRangeMove', () => {
     ];
 
     expect(
-      mapSelectionRangeMove(
-        textDocument,
-        selections,
-        createSelection(1, 2, 1, 0)
-      )
+      mapSelectionShift(textDocument, selections, createSelection(1, 2, 1, 0))
     ).toEqual([
+      createSelection(0, 0, 0, 2, DirectionBackward),
+      createSelection(1, 0, 1, 2, DirectionBackward),
+    ]);
+  });
+
+  test('maps a normalized backward range using selection direction', () => {
+    const textDocument = new TextDocument('inmemory://1', 'abcd\nefgh');
+    const selections = [
+      createSelection(0, 2, 0, 2),
+      createSelection(1, 2, 1, 2),
+    ];
+    const shift: EditorSelection = {
+      start: { line: 1, character: 0 },
+      end: { line: 1, character: 2 },
+      direction: DirectionBackward,
+    };
+
+    expect(mapSelectionShift(textDocument, selections, shift)).toEqual([
       createSelection(0, 0, 0, 2, DirectionBackward),
       createSelection(1, 0, 1, 2, DirectionBackward),
     ]);

@@ -111,9 +111,10 @@ export function resolveIndentEdits(
 }
 
 /**
- * Maps a selection move to a new selection.
+ * Maps the cursor move to all selections.
+ * TODO(@ije): use move cursor commands
  */
-export function mapSelectionMove(
+export function mapCursorMove(
   textDocument: TextDocument<unknown>,
   selections: readonly EditorSelection[],
   nextPosition: Position
@@ -122,66 +123,94 @@ export function mapSelectionMove(
   if (primarySelection === undefined) {
     return [];
   }
+  const deltaOffset =
+    textDocument.offsetAt(nextPosition) -
+    textDocument.offsetAt(primarySelection.start);
   const deltaLine = nextPosition.line - primarySelection.start.line;
-  const deltaCharacter =
-    nextPosition.character - primarySelection.start.character;
-  const isMoveToLineStart =
-    deltaLine === 0 && nextPosition.character === 0 && deltaCharacter < -1;
-  const isMoveToLineEnd =
-    deltaLine === 0 &&
-    nextPosition.character ===
-      textDocument.getLineText(nextPosition.line)?.length &&
-    deltaCharacter > 1;
-  return selections.map((selection) => {
-    let newLine = selection.start.line + deltaLine;
-    let newCharacter = selection.start.character + deltaCharacter;
+  const movedOneChar = deltaOffset === 1 || deltaOffset === -1;
+  const newSelections: EditorSelection[] = [];
+  for (const selection of selections) {
+    let newPosition = nextPosition;
     if (selection !== primarySelection) {
-      if (isMoveToLineStart) {
-        newCharacter = 0;
-      } else if (isMoveToLineEnd) {
-        newCharacter = textDocument.getLineText(newLine)?.length ?? 0;
+      if (deltaLine === 0 || movedOneChar) {
+        newPosition = textDocument.positionAt(
+          textDocument.offsetAt(selection.start) + deltaOffset
+        );
+      } else {
+        newPosition = {
+          line: clamp(
+            selection.start.line + deltaLine,
+            0,
+            textDocument.lineCount - 1
+          ),
+          character: selection.start.character,
+        };
       }
     }
-    const newPosition: Position = {
-      line: newLine,
-      character: newCharacter,
-    };
-    return {
+    const newSelection: EditorSelection = {
       start: newPosition,
       end: newPosition,
       direction: DirectionNone,
     };
-  });
+    const previousSelection = newSelections.at(-1);
+    if (
+      previousSelection === undefined ||
+      comparePosition(previousSelection.start, newSelection.start) !== 0
+    ) {
+      newSelections.push(newSelection);
+    }
+  }
+  return newSelections;
 }
 
 /**
- * Maps a selection range move to a new selection.
+ * Maps the selection shift to all selections.
  */
-export function mapSelectionRangeMove(
+export function mapSelectionShift(
   textDocument: TextDocument<unknown>,
   selections: readonly EditorSelection[],
-  selection: EditorSelection
+  selectionShift: EditorSelection
 ): EditorSelection[] {
-  const { start, end } = selection;
   const primarySelection = selections[selections.length - 1];
   if (primarySelection === undefined) {
     return [];
   }
   const [primaryAnchorOffset, primaryFocusOffset] =
     getSelectionAnchorAndFocusOffsets(textDocument, primarySelection);
-  const anchorDelta = textDocument.offsetAt(start) - primaryAnchorOffset;
-  const focusDelta = textDocument.offsetAt(end) - primaryFocusOffset;
-  return selections.map((selection) => {
+  const [shiftAnchorOffset, shiftFocusOffset] =
+    getSelectionAnchorAndFocusOffsets(textDocument, selectionShift);
+  const anchorDelta = shiftAnchorOffset - primaryAnchorOffset;
+  const focusDelta = shiftFocusOffset - primaryFocusOffset;
+  const mappedSelections: EditorSelection[] = [];
+  for (const selection of selections) {
     const [anchorOffset, focusOffset] = getSelectionAnchorAndFocusOffsets(
       textDocument,
       selection
     );
-    return createSelectionFromAnchorAndFocusOffsets(
+    const mappedOffsets = createSelectionFromAnchorAndFocusOffsets(
       textDocument,
       anchorOffset + anchorDelta,
       focusOffset + focusDelta
     );
-  });
+    const newSelection =
+      !isCollapsedSelection(mappedOffsets) &&
+      selectionShift.direction !== DirectionNone
+        ? { ...mappedOffsets, direction: selectionShift.direction }
+        : mappedOffsets;
+    const previousSelection = mappedSelections.at(-1);
+    if (
+      previousSelection !== undefined &&
+      selectionIntersects(previousSelection, newSelection)
+    ) {
+      Object.assign(
+        previousSelection,
+        createSelectionFrom(previousSelection, newSelection)
+      );
+    } else {
+      mappedSelections.push(newSelection);
+    }
+  }
+  return mappedSelections;
 }
 
 /**
@@ -222,7 +251,7 @@ export function applyTextChangeToSelections<LAnnotation>(
       }
       return a.index - b.index;
     });
-  const adjustedChange = normalizeLeadingIndentDeleteChange(
+  const adjustedChange = normalizeLeadingIndentForChange(
     textDocument,
     edit,
     primarySelection,
@@ -594,6 +623,53 @@ export function findNexMatch(
   return [...selections, added];
 }
 
+export function getDocumentFullSelection(
+  textDocument: TextDocument<unknown>
+): EditorSelection {
+  const lastLine = textDocument.lineCount - 1;
+  const lastCharacter = textDocument.getLineText(lastLine)?.length ?? 0;
+  return {
+    start: { line: 0, character: 0 },
+    end: { line: lastLine, character: lastCharacter },
+    direction: DirectionForward,
+  };
+}
+
+export function getDocumentBoundarySelection(
+  textDocument: TextDocument<unknown>,
+  atEnd: boolean
+): EditorSelection {
+  const line = atEnd ? textDocument.lineCount - 1 : 0;
+  const character = atEnd ? (textDocument.getLineText(line)?.length ?? 0) : 0;
+  const start = { line, character };
+  return {
+    start: start,
+    end: start,
+    direction: DirectionForward,
+  };
+}
+
+export function getSelectionText(
+  textDocument: TextDocument<unknown>,
+  selections: readonly EditorSelection[]
+): string {
+  return [...selections]
+    .sort((a, b) => {
+      const startOrder = comparePosition(a.start, b.start);
+      if (startOrder !== 0) {
+        return startOrder;
+      }
+      return comparePosition(a.end, b.end);
+    })
+    .map((selection) => {
+      if (isCollapsedSelection(selection)) {
+        return textDocument.getLineText(selection.start.line, false);
+      }
+      return textDocument.getText(selection);
+    })
+    .join('\n');
+}
+
 /**
  * Gets the text node and offset for a selection.
  */
@@ -738,7 +814,7 @@ function getSelectionAnchorAndFocusOffsets(
   ];
 }
 
-/** When the user inserts a lone line break, copy the current line's indentation onto the new line. */
+// When the user inserts a lone line break, copy the current line's indentation onto the new line.
 function expandSingleNewlineInsert(
   textDocument: TextDocument<unknown>,
   insertText: string,
@@ -764,7 +840,7 @@ function expandSingleNewlineInsert(
 
 // Expands a backspace over leading spaces into one soft-tab width so mixed hard/soft indentation
 // behaves like the explicit outdent command.
-function normalizeLeadingIndentDeleteChange(
+function normalizeLeadingIndentForChange(
   textDocument: TextDocument<unknown>,
   change: ResolvedTextEdit,
   primarySelection: EditorSelection,
@@ -945,4 +1021,8 @@ function getTextOffset(
     offset,
     lineBreakIndex === -1 ? value.length : lineBreakIndex
   );
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(value, max));
 }

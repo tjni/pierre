@@ -162,12 +162,10 @@ export class TextDocument<LAnnotation> {
   }
 
   offsetAt(position: Position): number {
-    // todo: clamp
     return this.#pieceTable.offsetAt(position);
   }
 
   getText(range?: Range): string {
-    // todo: clamp
     return this.#pieceTable.getText(range);
   }
 

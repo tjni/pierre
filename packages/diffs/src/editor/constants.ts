@@ -2,9 +2,11 @@ export const TOKENIZE_TIME_LIMIT = 100;
 export const TOKENIZE_MAX_LINE_LENGTH = 10000;
 export const BGTOKENIZER_LINES_PRE_TOKENIZE = 50;
 
-export const EDITOR_CSS = /* CSS */ `
+const DEBUG_SELECTION = true;
+
+export const EDITOR_CSS: string = /* CSS */ `
   ::selection {
-    background-color: transparent;
+    background-color: ${DEBUG_SELECTION ? 'rgba(255, 0, 0, 0.1)' : 'transparent'};
   }
   @keyframes blinking {
     0% { opacity: 1; }
@@ -22,7 +24,7 @@ export const EDITOR_CSS = /* CSS */ `
   }
   @media (min-width: 480px) {
     [data-content] {
-      caret-color: transparent;
+      caret-color: ${DEBUG_SELECTION ? 'red' : 'transparent'};
     }
   }
   [data-line] {

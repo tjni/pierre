@@ -63,24 +63,28 @@ export function createElement<K extends keyof HTMLElementTagNameMap>(
 export function addEventListener<K extends keyof HTMLElementEventMap>(
   el: HTMLElement,
   event: K,
-  listener: (this: HTMLElement, evt: HTMLElementEventMap[K]) => void
+  listener: (this: HTMLElement, evt: HTMLElementEventMap[K]) => void,
+  options?: AddEventListenerOptions
 ): () => void;
 export function addEventListener<K extends keyof DocumentEventMap>(
   el: Document,
   event: K,
-  listener: (this: Document, evt: DocumentEventMap[K]) => void
+  listener: (this: Document, evt: DocumentEventMap[K]) => void,
+  options?: AddEventListenerOptions
 ): () => void;
 export function addEventListener<K extends keyof WindowEventMap>(
   el: Window,
   event: K,
-  listener: (this: Window, evt: WindowEventMap[K]) => void
+  listener: (this: Window, evt: WindowEventMap[K]) => void,
+  options?: AddEventListenerOptions
 ): () => void;
 export function addEventListener(
   el: HTMLElement | Document | ShadowRoot | Window,
   event: string,
-  listener: EventListener
+  listener: EventListener,
+  options?: AddEventListenerOptions
 ) {
-  el.addEventListener(event, listener);
+  el.addEventListener(event, listener, options);
   return () => el.removeEventListener(event, listener);
 }
 

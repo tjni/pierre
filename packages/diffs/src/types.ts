@@ -756,6 +756,7 @@ export interface DiffsEditor<LAnnotation> {
 
 export interface DiffsEditableComponent<LAnnotation> {
   readonly options: BaseCodeOptions;
+  setEditor: (editor: DiffsEditor<LAnnotation>) => void;
   setOptions: (options: Partial<BaseCodeOptions>) => void;
   setSelectedLines: (range: { start: number; end: number } | null) => void;
   emitDirtyLines: (
@@ -766,7 +767,6 @@ export interface DiffsEditableComponent<LAnnotation> {
     lineCount: number,
     newLineAnnotations?: LineAnnotation<LAnnotation>[]
   ) => void;
-  setEditor: (editor: DiffsEditor<LAnnotation>) => void;
   removeEditor(): void;
   rerender(): void;
   cleanUp(): void;

@@ -244,7 +244,9 @@ export class VirtualizedFile<
     newLineAnnotations?: LineAnnotation<LAnnotation>[]
   ): void {
     super.emitLineCountChange(lineCount, newLineAnnotations);
+    this.heightCache.clear();
     this.computeApproximateSize();
+    this.renderRange = undefined;
   }
 
   override render({
