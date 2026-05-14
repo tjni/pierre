@@ -21,8 +21,8 @@ import {
   findNexMatch,
   getDocumentBoundarySelection,
   getDocumentFullSelection,
+  getSelectionAnchor,
   getSelectionText,
-  getSelectionTextNode,
   isCollapsedSelection,
   mapCursorMove,
   mapSelectionShift,
@@ -102,6 +102,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #styleElement?: HTMLStyleElement;
   #overlayElement?: HTMLElement;
   #selectionElements?: Map<string, HTMLElement>;
+  #primaryCaretElement?: HTMLElement;
   #measureCtx?: CanvasRenderingContext2D;
   #contentResizeObserver?: ResizeObserver;
   #lastContentWidth = -1;
@@ -113,6 +114,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #selectionStart: EditorSelection | undefined;
   #reservedSelections?: EditorSelection[];
   #selections?: EditorSelection[];
+  #ensureScrollToLine?: number;
 
   #prebuildStateStackCache = debounce(async () => {
     const textDocument = this.#textDocument;
@@ -366,9 +368,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         this.#handleLayoutResize();
       });
       this.#contentResizeObserver.observe(contentEl);
-      if (contentEl.parentElement !== null) {
-        this.#contentResizeObserver.observe(contentEl.parentElement);
-      }
+      this.#contentResizeObserver.observe(contentEl.parentElement!);
     }
 
     // measure the font width, line height, and tab size
@@ -431,7 +431,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#prebuildStateStackCache();
 
     if (this.#selections !== undefined && this.#selections.length > 0) {
-      this.#updateSelections(this.#selections, true);
+      // when re-rendering triggered by viewport scroll,
+      // re-render the existing selections
+      this.#updateSelections(this.#selections);
     }
 
     if (renderRange !== undefined) {
@@ -449,6 +451,11 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         this.#textDocument.lineCount,
         'lines'
       );
+    }
+
+    if (this.#ensureScrollToLine !== undefined) {
+      console.log('[diffs] ensureScrollToLine:', this.#ensureScrollToLine);
+      this.#scrollToLine(this.#ensureScrollToLine);
     }
   }
 
@@ -480,7 +487,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           const composedRange = selectionRaw?.getComposedRanges({
             shadowRoots: [shadowRoot],
           })?.[0];
-
           if (
             composedRange === undefined ||
             !this.#rangeBelongsToEditor(composedRange)
@@ -680,6 +686,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           const nextMatch = findNexMatch(textDocument, selections);
           if (nextMatch !== undefined) {
             this.#updateSelections(nextMatch, true);
+            this.#scrollToPrimaryCaret();
           }
         }
         break;
@@ -730,25 +737,11 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       case 'moveCursorToDocEnd':
         {
           const atEnd = command === 'moveCursorToDocEnd';
-          const anchor = createElement('span');
-          const root = this.#contentElement?.getRootNode() as
-            | Element
-            | undefined;
           this.#updateSelections(
             [getDocumentBoundarySelection(textDocument, atEnd)],
             true
           );
-          if (root !== undefined) {
-            if (atEnd) {
-              root.appendChild(anchor);
-            } else {
-              root.prepend(anchor);
-            }
-            anchor.scrollIntoView({ block: atEnd ? 'end' : 'start' });
-            requestAnimationFrame(() => {
-              anchor.remove();
-            });
-          }
+          this.#scrollToLine(atEnd ? textDocument.lineCount - 1 : 0);
         }
         break;
 
@@ -907,7 +900,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
             child.replaceChildren(
               ...tokens.map(([char, fg, textContent]) => {
                 if (char === 0 && fg === '') {
-                  return document.createTextNode(textContent);
+                  if (textContent === '') {
+                    return createElement('br');
+                  }
+                  return textContent;
                 }
                 return createElement('span', {
                   dataset: {
@@ -939,7 +935,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
               // oxlint-disable-next-line react/no-children-prop
               children: tokens.map(([char, fg, textContent]) => {
                 if (char === 0 && fg === '') {
-                  return document.createTextNode(textContent);
+                  if (textContent === '') {
+                    return createElement('br');
+                  }
+                  return textContent;
                 }
                 return createElement('span', {
                   dataset: {
@@ -1113,13 +1112,14 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
   #updateSelections(
     selections: EditorSelection[],
-    updateWindowSelection: boolean = false
+    updateWindowSelection = false
   ) {
     const primarySelection = selections.at(-1);
     if (primarySelection === undefined) {
       return;
     }
     this.#selections = selections;
+    this.#primaryCaretElement = undefined;
     this.#component?.setSelectedLines(null);
     if (isCollapsedSelection(primarySelection)) {
       const line = primarySelection.end.line + 1;
@@ -1137,7 +1137,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       if (selections.length > 1 || !isCollapsedSelection(selection)) {
         this.#renderSelection(renderCtx, selection);
       }
-      this.#renderCaret(renderCtx, selection);
+      this.#renderCaret(renderCtx, selection, selection === primarySelection);
     });
     this.#overlayElement?.appendChild(fragment);
     this.#selectionElements?.forEach((el) => el.remove());
@@ -1162,11 +1162,11 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     if (startLineElement === undefined || endLineElement === undefined) {
       return;
     }
-    let [anchorNode, anchorOffset] = getSelectionTextNode(
+    let [anchorNode, anchorOffset] = getSelectionAnchor(
       startLineElement,
       start.character
     );
-    let [focusNode, focusOffset] = getSelectionTextNode(
+    let [focusNode, focusOffset] = getSelectionAnchor(
       endLineElement,
       end.character
     );
@@ -1190,6 +1190,59 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }, 0);
   }
 
+  #scrollToPrimaryCaret() {
+    if (this.#primaryCaretElement !== undefined) {
+      this.#primaryCaretElement.scrollIntoView({
+        block: 'nearest',
+        inline: 'nearest',
+      });
+    } else if (this.#selections !== undefined && this.#selections.length > 0) {
+      const primarySelection = this.#selections.at(-1)!;
+      const { start, end, direction } = primarySelection;
+      const isBackward = direction === DirectionBackward;
+      this.#scrollToLine(isBackward ? start.line : end.line);
+    }
+  }
+
+  #scrollToLine(line: number) {
+    const lineElement = this.#getLineElement(line);
+    if (lineElement !== undefined) {
+      const scrollToLine = () => {
+        lineElement.scrollIntoView({ block: 'center', inline: 'start' });
+      };
+      if (this.#ensureScrollToLine !== undefined) {
+        this.#ensureScrollToLine = undefined;
+        requestAnimationFrame(scrollToLine);
+      } else {
+        scrollToLine();
+      }
+    }
+    // if the line is not rendered yet(virtualized),
+    // scroll to the approximate line position to trigger
+    // the line to be rendered, then recall this function
+    // to ensure the line is scrolled into view
+    else {
+      const lineAnnotations = (this.#lineAnnotations ?? []).filter(
+        (annotation) => annotation.lineNumber < line
+      ).length;
+      const approximateLineY = (lineAnnotations + line) * this.#lineHeight;
+      const anchor = createElement('span', {
+        style: {
+          position: 'absolute',
+          top: approximateLineY + 'px',
+          left: '0',
+          width: '1px',
+          height: '1px',
+          pointerEvents: 'none',
+        },
+      });
+      this.#contentElement?.getRootNode()?.appendChild(anchor);
+      this.#ensureScrollToLine = line;
+      anchor.scrollIntoView({ block: 'center', inline: 'start' });
+      requestAnimationFrame(() => anchor.remove());
+    }
+  }
+
   #renderSelection(
     renderCtx: {
       fragment: DocumentFragment;
@@ -1202,7 +1255,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
 
     const { start, end } = selection;
-
     for (let ln = start.line; ln <= end.line; ln++) {
       if (!this.#isLineVisible(ln)) {
         continue;
@@ -1400,7 +1452,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       fragment: DocumentFragment;
       elements: Map<string, HTMLElement>;
     },
-    selection: EditorSelection
+    selection: EditorSelection,
+    isPrimary: boolean
   ) {
     const { start, end, direction } = selection;
     const isBackward = direction === DirectionBackward;
@@ -1410,7 +1463,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       return;
     }
     const [left, wrapLine] = this.#getCharX(line, character);
-    const cacheKey = 'caret-' + line + '-' + character;
+    const cacheKey = 'caret-' + line + '(' + wrapLine + ')-' + character;
     if (renderCtx.elements.has(cacheKey)) {
       return;
     }
@@ -1425,6 +1478,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       renderCtx.fragment
     );
     renderCtx.elements.set(cacheKey, caretEl);
+    if (isPrimary) {
+      this.#primaryCaretElement = caretEl;
+    }
   }
 
   #getSelectionText() {
@@ -1552,7 +1608,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     if (this.#selections !== undefined) {
       // since we prevent the default input event,
       // we need to update the window selection manually
+      // and scroll to the primary caret
       this.#updateSelections(this.#selections, true);
+      this.#scrollToPrimaryCaret();
     }
   }
 
@@ -1576,22 +1634,41 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   }
 
   #getLineElement(line: number): HTMLElement | undefined {
-    const children = this.#contentElement?.children;
+    const contentElement = this.#contentElement;
+    if (contentElement === undefined) {
+      return undefined;
+    }
+    const { children } = contentElement;
     if (children === undefined) {
       return undefined;
     }
-    const { startingLine = 0 } = this.#renderRange ?? {};
-    for (let i = line - startingLine; i <= children.length; i++) {
-      const child = children[i] as HTMLElement | undefined;
+    // check if the line is within the render range
+    if (this.#renderRange !== undefined) {
+      const { startingLine = 0, totalLines } = this.#renderRange;
       if (
-        child !== undefined &&
-        child.dataset.lineIndex !== undefined &&
-        Number(child.dataset.lineIndex) === line
+        line < 0 ||
+        (totalLines !== Infinity && line >= startingLine + totalLines)
       ) {
-        return child;
+        return undefined;
+      }
+      for (let i = line - startingLine; i <= children.length; i++) {
+        const child = children[i] as HTMLElement | undefined;
+        if (
+          child !== undefined &&
+          child.dataset.line !== undefined &&
+          child.dataset.lineIndex !== undefined &&
+          Number(child.dataset.lineIndex) === line
+        ) {
+          return child;
+        }
       }
     }
-    return undefined;
+    // fallback to query selector
+    return (
+      contentElement.querySelector<HTMLElement>(
+        `[data-line][data-line-index="${line}"]`
+      ) ?? undefined
+    );
   }
 
   #getGutterWidth() {
@@ -1630,15 +1707,20 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     return this.#contentElement?.offsetWidth ?? 0;
   }
 
-  // get line top position
+  // get line top(y-coordinate) position
   #getLineY(line: number) {
     const cachedY = this.#lineYCache.get(line);
     if (cachedY !== undefined) {
       return cachedY;
     }
 
-    // cold(slow) path: measure line top position from DOM causes reflow
-    const y = this.#getLineElement(line)?.offsetTop ?? 0;
+    const lineElement = this.#getLineElement(line);
+    if (lineElement === undefined) {
+      return -1;
+    }
+
+    // cold(slow) path: measure line top position from DOM (will cause reflow)
+    const y = lineElement.offsetTop;
     this.#lineYCache.set(line, y);
     return y;
   }

@@ -83,7 +83,7 @@ export class FileRenderer<LAnnotation = undefined> {
   private computedLang: SupportedLanguages = 'text';
   private lineAnnotations: AnnotationLineMap<LAnnotation> = {};
   private lineOffsets = new WeakMap<FileContents, number[]>();
-  private alternateLineCount = new WeakMap<FileContents, number>();
+  private currentLineCount = new WeakMap<FileContents, number>();
 
   constructor(
     public options: FileRendererOptions = { theme: DEFAULT_THEMES },
@@ -187,7 +187,7 @@ export class FileRenderer<LAnnotation = undefined> {
 
   public getLineCount(file: FileContents): number {
     return (
-      this.alternateLineCount.get(file) ??
+      this.currentLineCount.get(file) ??
       this.getOrCreateLineOffsets(file).length
     );
   }
@@ -211,10 +211,15 @@ export class FileRenderer<LAnnotation = undefined> {
         },
         children: tokens.map(([char, fg, text]) => {
           if (char === 0 && fg === '') {
-            return {
-              type: 'text',
-              value: text,
-            };
+            if (text === '') {
+              return {
+                type: 'element',
+                tagName: 'br',
+                properties: {},
+                children: [],
+              };
+            }
+            return { type: 'text', value: text };
           }
           return {
             type: 'element',
@@ -223,12 +228,7 @@ export class FileRenderer<LAnnotation = undefined> {
               'data-char': char,
               style: `--diffs-token-${themeType}:${fg};`,
             },
-            children: [
-              {
-                type: 'text',
-                value: text,
-              },
-            ],
+            children: [{ type: 'text', value: text }],
           };
         }),
       };
@@ -257,7 +257,7 @@ export class FileRenderer<LAnnotation = undefined> {
         children: [{ type: 'text', value: ' ' }],
       };
     }
-    this.alternateLineCount.set(renderCache.file, lineCount);
+    this.currentLineCount.set(renderCache.file, lineCount);
     if (newLineAnnotations != null) {
       this.setLineAnnotations(newLineAnnotations);
     }

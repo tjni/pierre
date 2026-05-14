@@ -62,6 +62,22 @@ export function renderFileWithHighlighter(
     lineIndex: shikiLineNumber - 1 + startingLine,
     lineNumber: shikiLineNumber + startingLine,
   });
+  // shiki renders empty lines with ' ' that breaks the editor document offset calculation
+  // we replace them with <br> tags
+  if (useTokenTransformer) {
+    transformers.push({
+      line(node) {
+        if (node.children.length === 0) {
+          node.children.push({
+            type: 'element',
+            tagName: 'br',
+            properties: {},
+            children: [],
+          });
+        }
+      },
+    });
+  }
   const hastConfig: CodeToHastOptions<DiffsThemeNames> = (() => {
     if (typeof theme === 'string') {
       return {

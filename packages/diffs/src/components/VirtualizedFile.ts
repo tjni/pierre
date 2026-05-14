@@ -246,7 +246,6 @@ export class VirtualizedFile<
     super.emitLineCountChange(lineCount, newLineAnnotations);
     this.heightCache.clear();
     this.computeApproximateSize();
-    this.renderRange = undefined;
   }
 
   override render({

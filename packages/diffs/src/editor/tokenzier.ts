@@ -91,7 +91,7 @@ export class BackgroundTokenizer {
       }
 
       if (lineText === '' || lineText.trim() === '') {
-        lines.set(line, [[0, '', lineText === '' ? ' ' : lineText]]);
+        lines.set(line, [[0, '', lineText]]);
         continue;
       }
 

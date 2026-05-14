@@ -653,9 +653,9 @@ export function getSelectionText(
 }
 
 /**
- * Gets the text node and offset for a selection.
+ * Get the anchor node and offset for a selection.
  */
-export function getSelectionTextNode(
+export function getSelectionAnchor(
   lineElement: HTMLElement,
   character: number
 ): [Node, number] {
@@ -676,10 +676,10 @@ export function getSelectionTextNode(
     }
   }
   const textNode = lineElement.firstChild;
-  if (textNode !== null && textNode.nodeType === /* Node.TEXT_NODE */ 3) {
+  if (textNode !== null) {
     return [textNode, character];
   }
-  throw new Error('No text node found');
+  throw new Error('No node found');
 }
 
 /**
