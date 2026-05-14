@@ -1,4 +1,4 @@
-import type { LineAnnotation } from '../types';
+import type { DiffsEditorSearchParams, LineAnnotation } from '../types';
 import { type EditorSelection } from './editorSelection';
 import {
   coalesceEditStackEntries,
@@ -193,6 +193,13 @@ export class TextDocument<LAnnotation> {
     occupied: readonly [start: number, end: number][]
   ): number | undefined {
     return this.#pieceTable.findNextNonOverlappingSubstring(needle, occupied);
+  }
+
+  search(
+    searchParams: DiffsEditorSearchParams,
+    selection?: EditorSelection
+  ): [start: number, end: number][] {
+    return this.#pieceTable.search(searchParams, selection);
   }
 
   applyEdits(

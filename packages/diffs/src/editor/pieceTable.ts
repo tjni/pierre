@@ -1,5 +1,13 @@
+import type { DiffsEditorSearchParams } from '../types';
 import { computeLineOffsets } from '../utils/computeFileOffsets';
+import { DirectionBackward, type EditorSelection } from './editorSelection';
 import type { Position, Range } from './textDocument';
+
+/** Monaco-style cap on how many matches are materialized for find-all. */
+const MAX_FIND_MATCHES = 19999;
+
+// Default word separators align with VS Code / Monaco defaults for whole-word search.
+const WORD_SEPARATORS = '`~!@#$%^&*()-=+[{]}\\|;:\'",.<>/?' as const;
 
 // A piece is a segment of text that is either original or added.
 class Piece {
@@ -220,6 +228,109 @@ export class PieceTable {
     });
 
     return foundOffset ?? wrappedOffset;
+  }
+
+  search(
+    searchParams: DiffsEditorSearchParams,
+    selection?: EditorSelection | Range
+  ): [start: number, end: number][] {
+    if (searchParams.text.length === 0 || this.#length === 0) {
+      return [];
+    }
+
+    let pattern: RegExp;
+    try {
+      pattern = compileSearchRegExp(
+        searchParams.text,
+        searchParams.regex,
+        searchParams.caseSensitive
+      );
+    } catch {
+      return [];
+    }
+
+    const matches = this.#collectSearchMatchesLineByLine(
+      pattern,
+      searchParams.wholeWord,
+      MAX_FIND_MATCHES
+    );
+    const action = searchParams.action;
+
+    if (action === 'findAll' || action === 'replaceAll') {
+      return matches;
+    }
+
+    const caretOffset = getSearchCaretOffset(selection, (p) =>
+      this.offsetAt(p)
+    );
+
+    if (action === 'findPrevious') {
+      const refOffset = getSearchFindPreviousReferenceOffset(selection, (p) =>
+        this.offsetAt(p)
+      );
+      let best: [number, number] | undefined;
+      for (const m of matches) {
+        if (m[1] <= refOffset) {
+          best = m;
+        } else {
+          break;
+        }
+      }
+      if (best !== undefined) {
+        return [best];
+      }
+      const last = matches[matches.length - 1];
+      return last !== undefined ? [last] : [];
+    }
+
+    // findNext, replace — forward from caret with wrap
+    for (const m of matches) {
+      if (m[0] >= caretOffset) {
+        return [m];
+      }
+    }
+    const first = matches[0];
+    return first !== undefined ? [first] : [];
+  }
+
+  #collectSearchMatchesLineByLine(
+    pattern: RegExp,
+    wholeWord: boolean,
+    limit: number
+  ): [number, number][] {
+    const out: [number, number][] = [];
+    const docLength = this.#length;
+    const charAt = (offset: number) => this.charAt(offset);
+
+    for (let line = 0; line < this.#lineCount; line++) {
+      const lineText = this.getLineText(line);
+      const lineStart = this.offsetAt({ line, character: 0 });
+      const re = new RegExp(pattern.source, pattern.flags);
+      re.lastIndex = 0;
+      let match: RegExpExecArray | null;
+      while ((match = re.exec(lineText)) !== null) {
+        const rel = match.index;
+        const fragment = match[0];
+        if (fragment.length === 0) {
+          re.lastIndex = advancePastEmptyMatch(lineText, rel);
+          continue;
+        }
+        const docStart = lineStart + rel;
+        if (
+          !wholeWord ||
+          isWholeWordAtDocOffsets(docStart, fragment.length, docLength, charAt)
+        ) {
+          out.push([docStart, docStart + fragment.length]);
+          if (out.length >= limit) {
+            return out;
+          }
+        }
+        if (rel === re.lastIndex) {
+          re.lastIndex = advancePastEmptyMatch(lineText, rel);
+        }
+      }
+    }
+    return out;
   }
 
   insert(text: string, offset: number): void {
@@ -767,4 +878,91 @@ function upperBound(values: number[], target: number): number {
     }
   }
   return lo;
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function isWordSeparatorCharCode(charCode: number): boolean {
+  if (charCode <= 32 || charCode === 127) {
+    return true;
+  }
+  const ch = String.fromCharCode(charCode);
+  return WORD_SEPARATORS.includes(ch);
+}
+
+/** Whole-word check using real document neighbors (Monaco `isValidMatch` style). */
+function isWholeWordAtDocOffsets(
+  docStart: number,
+  length: number,
+  docLength: number,
+  charAt: (offset: number) => string
+): boolean {
+  const beforeOk =
+    docStart <= 0 ||
+    isWordSeparatorCharCode(charCodeUnitAt(charAt, docStart - 1));
+  const afterOk =
+    docStart + length >= docLength ||
+    isWordSeparatorCharCode(charCodeUnitAt(charAt, docStart + length));
+  return beforeOk && afterOk;
+}
+
+function charCodeUnitAt(
+  charAt: (offset: number) => string,
+  offset: number
+): number {
+  const unit = charAt(offset);
+  return unit.length === 0 ? 0 : unit.charCodeAt(0);
+}
+
+function compileSearchRegExp(
+  source: string,
+  isRegex: boolean,
+  caseSensitive: boolean
+): RegExp {
+  const body = isRegex ? source : escapeRegExp(source);
+  const flags = `g${caseSensitive ? '' : 'i'}${isRegex ? 'm' : ''}`;
+  return new RegExp(body, flags);
+}
+
+function advancePastEmptyMatch(text: string, index: number): number {
+  if (index + 1 < text.length) {
+    const first = text.charCodeAt(index);
+    const second = text.charCodeAt(index + 1);
+    if (
+      first >= 0xd800 &&
+      first <= 0xdbff &&
+      second >= 0xdc00 &&
+      second <= 0xdfff
+    ) {
+      return index + 2;
+    }
+  }
+  return index + 1;
+}
+
+function getSearchCaretOffset(
+  selection: EditorSelection | Range | undefined,
+  offsetAt: (p: Position) => number
+): number {
+  if (selection === undefined) {
+    return 0;
+  }
+  const focusAtStart =
+    'direction' in selection && selection.direction === DirectionBackward;
+  return focusAtStart ? offsetAt(selection.start) : offsetAt(selection.end);
+}
+
+/** Leftmost UTF-16 offset of the selection; used for find-previous so we skip the current match. */
+function getSearchFindPreviousReferenceOffset(
+  selection: EditorSelection | Range | undefined,
+  offsetAt: (p: Position) => number
+): number {
+  if (selection === undefined) {
+    return 0;
+  }
+  const a = offsetAt(selection.start);
+  const b = offsetAt(selection.end);
+  return Math.min(a, b);
 }

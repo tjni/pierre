@@ -1,32 +1,22 @@
-export function createElement<K extends keyof HTMLElementTagNameMap>(
+export function h<K extends keyof HTMLElementTagNameMap>(
   tagName: K,
   props: {
-    id?: string;
-    class?: string;
     style?: string | Partial<CSSStyleDeclaration>;
     dataset?: DOMStringMap | string[] | string;
     children?: (Node | string)[];
     textContent?: string;
     html?: string;
-  } = {},
+  } & Partial<
+    Omit<
+      HTMLElementTagNameMap[K],
+      'style' | 'dataset' | 'children' | 'textContent' | 'html'
+    >
+  > = {},
   parent?: Element | ShadowRoot | DocumentFragment
 ): HTMLElementTagNameMap[K] {
   const el = document.createElement(tagName);
-  const {
-    id,
-    class: className,
-    style,
-    dataset,
-    textContent,
-    html,
-    children,
-  } = props;
-  if (id) {
-    el.id = id;
-  }
-  if (className !== undefined) {
-    el.className = className;
-  }
+  const { style, dataset, textContent, html, children, ...attrs } = props;
+  Object.assign(el, attrs);
   if (style !== undefined) {
     if (typeof style === 'string') {
       el.style.cssText = style;

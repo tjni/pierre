@@ -84,6 +84,8 @@ export class EditorTokenizer {
     return this.#themeType;
   }
 
+  // to use `tokenize`, call `prebuildStateStackMap` first to prebuild
+  // the state stack map for the given render range.
   tokenize(
     change: TextDocumentChange,
     renderRange?: RenderRange
@@ -231,7 +233,6 @@ export class EditorTokenizer {
   }
 
   stopBackgroundTokenize(): void {
-    this.#backgroundJobId++;
     removeEventListener('message', this.#onMessage);
     this.#isStopped = true;
     this.#lastLine = -1;
@@ -311,12 +312,12 @@ export class EditorTokenizer {
     let changedRangeIndex = this.#backgroundChangedRangeIndex;
     let currentChangedRangeEnd = changedLineRanges?.[changedRangeIndex]?.[1];
     for (; line < totalLines; ) {
+      this.#stateStackMap[line] = state;
+
       const previousNextState =
         currentChangedRangeEnd !== undefined
           ? this.#stateStackMap[line + 1]
           : undefined;
-      this.#stateStackMap[line] = state;
-
       const lineText = this.#textDocument.getLineText(line);
       if (lineText.length > TOKENIZE_MAX_LINE_LENGTH) {
         console.warn(
@@ -361,8 +362,8 @@ export class EditorTokenizer {
         }
       }
 
-      // limit the time of partial tokenize to 1ms
-      if (performance.now() - t > 1) {
+      // limit the time of partial tokenize to 2ms
+      if (performance.now() - t > 2) {
         break;
       }
     }

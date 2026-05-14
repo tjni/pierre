@@ -783,3 +783,13 @@ export interface DiffsEditorSelection {
   };
   direction: 'none' | 'backward' | 'forward';
 }
+
+export interface DiffsEditorSearchParams {
+  action: 'findNext' | 'findPrevious' | 'findAll' | 'replace' | 'replaceAll';
+  text: string;
+  replaceText: string;
+  caseSensitive: boolean;
+  wholeWord: boolean;
+  regex: boolean;
+  // searchInSelection: false,
+}

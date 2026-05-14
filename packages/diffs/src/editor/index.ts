@@ -11,6 +11,7 @@ import {
   comparePosition,
   convertSelection,
   createSelectionFrom,
+  createSelectionFromAnchorAndFocusOffsets,
   DirectionBackward,
   DirectionForward,
   DirectionNone,
@@ -29,12 +30,13 @@ import {
 } from '../editor/editorSelection';
 import {
   addEventListener,
-  createElement,
   debounce,
   extend,
+  h,
   round,
 } from '../editor/editorUtils';
 import {
+  type Position,
   TextDocument,
   type TextDocumentChange,
   type TextEdit,
@@ -44,13 +46,14 @@ import { areThemesAttached } from '../highlighter/themes/areThemesAttached';
 import type {
   DiffsEditableComponent,
   DiffsEditor,
+  DiffsEditorSearchParams,
   DiffsEditorSelection,
   FileContents,
   LineAnnotation,
   RenderRange,
 } from '../types';
 import { getFiletypeFromFileName } from '../utils/getFiletypeFromFileName';
-import { EDITOR_CSS } from './constants';
+import { EDITOR_CSS, SEARCH_PANEL_GAP } from './constants';
 import { applyDocumentChangeToLineAnnotations } from './editorLineAnnotations';
 import { EditorTokenizer } from './editorTokenzier';
 import { isPrimaryModifier } from './platform';
@@ -90,6 +93,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #contentElement?: HTMLElement;
   #styleElement?: HTMLStyleElement;
   #overlayElement?: HTMLElement;
+  #searchPanelElement?: HTMLElement;
   #selectionElements?: Map<string, HTMLElement>;
   #primaryCaretElement?: HTMLElement;
   #measureCtx?: CanvasRenderingContext2D;
@@ -186,6 +190,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#styleElement = undefined;
     this.#overlayElement?.remove();
     this.#overlayElement = undefined;
+    this.#searchPanelElement = undefined;
     this.#selectionElements?.forEach((el) => el.remove());
     this.#selectionElements?.clear();
     this.#selectionElements = undefined;
@@ -248,6 +253,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           contentEl,
           'keydown',
           (e) => {
+            this.#searchPanelElement?.remove();
+
             const command = resolveEditorCommandFromKeyboardEvent(e);
             if (command !== undefined) {
               e.preventDefault();
@@ -406,16 +413,12 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
 
     if (renderRange !== undefined) {
+      const { startingLine, totalLines } = renderRange;
       console.log(
         '[diffs/editor] render file:',
         fileContents.name,
         'RenderRange:',
-        renderRange.startingLine +
-          '-' +
-          Math.min(
-            renderRange.startingLine + renderRange.totalLines,
-            this.#textDocument.lineCount
-          ),
+        startingLine + '-' + totalLines,
         'of',
         this.#textDocument.lineCount,
         'lines'
@@ -424,6 +427,17 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
     if (this.#scrollingToLine !== undefined) {
       this.#scrollToLine(this.#scrollingToLine);
+    }
+
+    if (
+      this.#searchPanelElement !== undefined &&
+      this.#searchPanelElement.isConnected &&
+      this.#selections !== undefined &&
+      this.#selections.length > 0
+    ) {
+      const primary = this.#selections.at(-1)!;
+      this.#positionSearchPanelRightOf(primary.end);
+      this.#focusSearchPanelInput();
     }
   }
 
@@ -445,12 +459,12 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   }
 
   #initialize(): void {
-    this.#styleElement = createElement('style', {
+    this.#styleElement = h('style', {
       dataset: 'editorCss',
       textContent: EDITOR_CSS,
     });
 
-    this.#overlayElement = createElement('div', {
+    this.#overlayElement = h('div', {
       dataset: 'editorOverlay',
     });
 
@@ -581,6 +595,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
           this.#isMouseDown = true;
           this.#selectionStart = undefined;
+          this.#searchPanelElement?.remove();
           if (e.button === 0 && isPrimaryModifier(e)) {
             this.#reservedSelections = this.#selections?.map((selection) => ({
               ...selection,
@@ -641,6 +656,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     ];
   }
 
+  // TODO(@ije): use command registry
   #runCommand(command: EditorCommand) {
     const textDocument = this.#textDocument;
     if (textDocument === undefined) {
@@ -648,8 +664,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
 
     switch (command) {
-      case 'selectAll':
-        this.#updateSelections([getDocumentFullSelection(textDocument)]);
+      case 'showSearchPanel':
+        this.#renderSearchPanel();
         break;
 
       case 'findNextMatch': {
@@ -716,6 +732,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
             }
           }
         }
+        break;
+
+      case 'selectAll':
+        this.#updateSelections([getDocumentFullSelection(textDocument)]);
         break;
 
       case 'moveCursorToDocStart':
@@ -831,11 +851,11 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
               ...tokens.map(([char, fg, textContent]) => {
                 if (char === 0 && fg === '') {
                   if (textContent === '') {
-                    return createElement('br');
+                    return h('br');
                   }
                   return textContent;
                 }
-                return createElement('span', {
+                return h('span', {
                   dataset: {
                     char: char.toString(),
                   },
@@ -854,7 +874,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         for (const lineIndex of dirtyLineIndexes) {
           const tokens = dirtyLines.get(lineIndex)!;
           const lineNumber = String(lineIndex + 1);
-          createElement(
+          h(
             'div',
             {
               dataset: {
@@ -866,11 +886,11 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
               children: tokens.map(([char, fg, textContent]) => {
                 if (char === 0 && fg === '') {
                   if (textContent === '') {
-                    return createElement('br');
+                    return h('br');
                   }
                   return textContent;
                 }
-                return createElement('span', {
+                return h('span', {
                   dataset: {
                     char: char.toString(),
                   },
@@ -881,7 +901,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
             },
             contentEl
           );
-          createElement(
+          h(
             'div',
             {
               dataset: {
@@ -891,7 +911,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
               },
               // oxlint-disable-next-line react/no-children-prop
               children: [
-                createElement('span', {
+                h('span', {
                   dataset: {
                     lineNumberContent: '',
                   },
@@ -976,7 +996,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#primaryCaretElement = undefined;
     this.#component?.setSelectedLines(null);
     if (isCollapsedSelection(primarySelection)) {
-      const line = primarySelection.end.line + 1;
+      const line = primarySelection.start.line + 1;
       this.#component?.setSelectedLines({
         start: line,
         end: line,
@@ -1080,7 +1100,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         (annotation) => annotation.lineNumber < line
       ).length;
       const approximateLineY = (lineAnnotations + line) * this.#lineHeight;
-      const anchor = createElement('span', {
+      const anchor = h('span', {
         style: {
           position: 'absolute',
           top: approximateLineY + 'px',
@@ -1288,7 +1308,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       rangeEl = selectionEls.get(cacheKey)!;
       selectionEls.delete(cacheKey);
     } else {
-      rangeEl = createElement(
+      rangeEl = h(
         'div',
         {
           dataset: 'selectionRange',
@@ -1321,7 +1341,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     if (renderCtx.elements.has(cacheKey)) {
       return;
     }
-    const caretEl = createElement(
+    const caretEl = h(
       'div',
       {
         dataset: 'caret',
@@ -1334,6 +1354,186 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     renderCtx.elements.set(cacheKey, caretEl);
     if (isPrimary) {
       this.#primaryCaretElement = caretEl;
+    }
+  }
+
+  #renderSearchPanel() {
+    this.#searchPanelElement?.remove();
+    const textDocument = this.#textDocument;
+    const selections = this.#selections;
+    if (textDocument === undefined || selections === undefined) {
+      return;
+    }
+
+    const primaryIndex = selections.length - 1;
+    let primarySelection = selections[primaryIndex];
+    if (isCollapsedSelection(primarySelection)) {
+      const expanded = expandCollapsedSelectionToWord(
+        textDocument,
+        primarySelection
+      );
+      const nextSelections = [...selections.slice(0, primaryIndex), expanded];
+      this.#updateSelections(nextSelections, true);
+      primarySelection = expanded;
+    }
+
+    const anchor = primarySelection.end;
+    const top = this.#getLineY(anchor.line);
+    const [left, wrapLine] = this.#getCharX(anchor.line, anchor.character);
+    const defaultQuery = textDocument.getText(primarySelection);
+    const searchParams: DiffsEditorSearchParams = {
+      text: defaultQuery,
+      replaceText: '',
+      caseSensitive: false,
+      wholeWord: true,
+      regex: false,
+      action: 'findNext',
+    };
+    const input = h('input', {
+      type: 'text',
+      placeholder: 'Search',
+      value: defaultQuery,
+      dataset: 'search',
+      oninput: (e: Event) => {
+        searchParams.text = (e.target as HTMLInputElement).value;
+      },
+      onkeydown: (e: KeyboardEvent) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          searchParams.action = 'findNext';
+          this.#search(searchParams);
+        } else if (e.key === 'f' && isPrimaryModifier(e)) {
+          e.preventDefault();
+        }
+      },
+    });
+    const searchPanel = h('div', {
+      style: {
+        transform: `translateY(${top + wrapLine * this.#lineHeight}px) translateX(${left + SEARCH_PANEL_GAP}px)`,
+      },
+      dataset: 'searchPanel',
+      children: [
+        h('div', {
+          dataset: 'searchPanelRow',
+          children: [
+            h('div', {
+              dataset: { icon: 'search' },
+              html: `<svg width="16" height="16" viewBox="0 0 20 20">
+                <line x1="16.5" y1="16.5" x2="12.0355" y2="12.0355" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></line>
+                <circle cx="8.5" cy="8.5" r="5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></circle>
+                </svg>
+              `,
+            }),
+            input,
+            h('div', {
+              dataset: { icon: 'arrow-up' },
+              title: 'Previous',
+
+              html: `<svg width="16" height="16" viewBox="0 0 20 20">
+                <line x1="10" y1="17" x2="10" y2="3" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></line>
+                <polyline points="15 8 10 3 5 8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></polyline>
+                </svg>
+              `,
+              onclick: () => {
+                searchParams.action = 'findPrevious';
+                this.#search(searchParams);
+              },
+            }),
+            h('div', {
+              dataset: { icon: 'arrow-down' },
+              html: `<svg width="16" height="16" viewBox="0 0 20 20">
+                  <line x1="10" y1="3" x2="10" y2="17" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></line>
+                  <polyline points="5 12 10 17 15 12" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></polyline>
+                  </svg>
+                `,
+              title: 'Next',
+              onclick: () => {
+                searchParams.action = 'findNext';
+                this.#search(searchParams);
+              },
+            }),
+            h('div', {
+              dataset: { icon: 'close' },
+              html: `<svg width="16" height="16" viewBox="0 0 20 20">
+                <line x1="5" y1="5" x2="15" y2="15" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></line>
+                <line x1="5" y1="15" x2="15" y2="5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></line>
+                </svg>
+              `,
+              title: 'Close',
+              onclick: () => {
+                this.#overlayElement?.removeChild(searchPanel);
+                this.#searchPanelElement = undefined;
+              },
+            }),
+          ],
+        }),
+      ],
+    });
+    this.#overlayElement?.appendChild(searchPanel);
+    this.#searchPanelElement = searchPanel;
+    input.focus();
+  }
+
+  #focusSearchPanelInput(): void {
+    requestAnimationFrame(() => {
+      const panel = this.#searchPanelElement;
+      if (panel === undefined) {
+        return;
+      }
+      const input = panel.querySelector<HTMLInputElement>('input[data-search]');
+      if (input?.isConnected === true) {
+        input.focus({ preventScroll: true });
+      }
+    });
+  }
+
+  #positionSearchPanelRightOf(position: Position): void {
+    const panel = this.#searchPanelElement;
+    if (panel === undefined) {
+      return;
+    }
+    const top = this.#getLineY(position.line);
+    const [left, wrapLine] = this.#getCharX(position.line, position.character);
+    panel.style.transform = `translateY(${top + wrapLine * this.#lineHeight}px) translateX(${left + SEARCH_PANEL_GAP}px)`;
+  }
+
+  #search(searchParams: DiffsEditorSearchParams) {
+    const primarySelection = this.#selections?.at(-1);
+    const textDocument = this.#textDocument;
+    if (textDocument === undefined) {
+      return;
+    }
+    const matches = textDocument.search(searchParams, primarySelection);
+    if (matches.length === 0) {
+      return;
+    }
+
+    const [startOffset, endOffset] = matches[0];
+    const startPosition = textDocument.positionAt(startOffset);
+    const endPosition = textDocument.positionAt(endOffset);
+    const action = searchParams.action;
+
+    if (
+      action === 'findNext' ||
+      action === 'findPrevious' ||
+      action === 'replace'
+    ) {
+      const nextSelection = createSelectionFromAnchorAndFocusOffsets(
+        textDocument,
+        startOffset,
+        endOffset
+      );
+      this.#updateSelections([nextSelection], true);
+      this.#scrollToLine(startPosition.line);
+      requestAnimationFrame(() => {
+        this.#scrollToPrimaryCaret();
+        this.#positionSearchPanelRightOf(nextSelection.end);
+        this.#focusSearchPanelInput();
+      });
+    } else if (action === 'findAll' || action === 'replaceAll') {
+      this.#scrollToLine(startPosition.line);
+      this.#positionSearchPanelRightOf(endPosition);
+      this.#focusSearchPanelInput();
     }
   }
 
@@ -1684,7 +1884,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       return offsets;
     }
 
-    const div = createElement(
+    const div = h(
       'div',
       {
         style: {
