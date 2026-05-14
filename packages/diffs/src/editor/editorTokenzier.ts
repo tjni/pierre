@@ -1,0 +1,423 @@
+import {
+  EncodedTokenMetadata,
+  type IGrammar,
+  INITIAL,
+  type StateStack,
+} from 'shiki/textmate';
+
+import type { DiffsHighlighter, HighlightedToken, RenderRange } from '../types';
+import { TOKENIZE_MAX_LINE_LENGTH, TOKENIZE_TIME_LIMIT } from './constants';
+import { debounce } from './editorUtils';
+import type { TextDocument, TextDocumentChange } from './textDocument';
+
+export interface EditorTokenizerProps {
+  highlighter: DiffsHighlighter;
+  theme: { name: string; type: 'dark' | 'light' };
+  textDocument: TextDocument<unknown>;
+  linesPreTokenize?: number;
+  onTokenize: (
+    themeType: 'light' | 'dark',
+    lines: Map<number, Array<HighlightedToken>>
+  ) => void;
+}
+
+/** Stoppable code tokenizer for the editor */
+export class EditorTokenizer {
+  #highlighter: DiffsHighlighter;
+  #grammar: IGrammar | undefined;
+  #themeType: 'light' | 'dark';
+  #colorMap: string[];
+  #textDocument: TextDocument<unknown>;
+  #onMessage: (event: MessageEvent) => void;
+  #onTokenize: (
+    themeType: 'light' | 'dark',
+    lines: Map<number, Array<HighlightedToken>>
+  ) => void;
+
+  // state
+  #stateStackMap: StateStack[] = [INITIAL];
+  #lastLine: number = -1;
+  #isStopped: boolean = true;
+  #backgroundJobId: number = 0;
+  #backgroundChangedLineRanges: readonly [number, number][] | undefined;
+  #backgroundChangedRangeIndex: number = 0;
+
+  #prebuildStateStackMap = debounce(async (renderRange?: RenderRange) => {
+    const { startingLine = 0, totalLines = Infinity } = renderRange ?? {};
+    const endLine = Math.min(
+      totalLines === Infinity ? Infinity : startingLine + totalLines,
+      this.#textDocument.lineCount
+    );
+    if (this.#grammar === undefined) {
+      await this.#highlighter.loadLanguage(this.#textDocument.languageId);
+      this.#grammar = this.#highlighter.getLanguage(
+        this.#textDocument.languageId
+      );
+    }
+    this.#buildStateStackMap(endLine);
+  }, 500);
+
+  constructor({
+    highlighter,
+    theme,
+    textDocument,
+    onTokenize,
+  }: EditorTokenizerProps) {
+    this.#highlighter = highlighter;
+    this.#themeType = theme.type;
+    this.#colorMap = highlighter.setTheme(theme.name).colorMap;
+    this.#textDocument = textDocument;
+    this.#onTokenize = onTokenize;
+    this.#onMessage = ({
+      data,
+    }: MessageEvent<{ type: 'tokenize'; jobId: number }>) => {
+      if (data.type === 'tokenize' && data.jobId === this.#backgroundJobId) {
+        this.#backgroundTokenize(data.jobId);
+      }
+    };
+    if (highlighter.getLoadedLanguages().includes(textDocument.languageId)) {
+      this.#grammar = highlighter.getLanguage(textDocument.languageId);
+    }
+  }
+
+  get themeType(): 'light' | 'dark' {
+    return this.#themeType;
+  }
+
+  tokenize(
+    change: TextDocumentChange,
+    renderRange?: RenderRange
+  ): Map<number, Array<HighlightedToken>> {
+    if (this.#grammar === undefined) {
+      throw new Error('Grammar not loaded');
+    }
+
+    const t = performance.now();
+
+    const { lineCount } = this.#textDocument;
+    const { startingLine = 0, totalLines = Infinity } = renderRange ?? {};
+    const renderRangeEndLine =
+      totalLines === Infinity
+        ? lineCount
+        : Math.min(startingLine + totalLines, lineCount);
+
+    const dirtyStart = change.startLine;
+    const viewStart = Math.max(startingLine, dirtyStart);
+    const canReuseCachedStates = change.lineDelta === 0;
+    const changedLineRanges: readonly [number, number][] = canReuseCachedStates
+      ? (change.changedLineRanges ?? [[dirtyStart, change.endLine]])
+      : [[dirtyStart, change.endLine]];
+    if (canReuseCachedStates) {
+      this.#buildStateStackMap(dirtyStart);
+    } else {
+      this.#stateStackMap.length = Math.min(
+        this.#stateStackMap.length,
+        dirtyStart + 1
+      );
+      this.#buildStateStackMap(viewStart);
+    }
+
+    let changedRangeIndex = 0;
+    let currentChangedRangeEnd = changedLineRanges[changedRangeIndex][1];
+    let backgroundStartLine: number | undefined;
+    let backgroundChangedRangeIndex = 0;
+    let line = canReuseCachedStates
+      ? changedLineRanges[changedRangeIndex][0]
+      : viewStart;
+    let state = this.#stateStackMap[line] ?? INITIAL;
+    let settled = false;
+    const dirtyLines: Map<number, Array<HighlightedToken>> = new Map();
+    const offscreenDirtyLines:
+      | Map<number, Array<HighlightedToken>>
+      | undefined =
+      canReuseCachedStates && dirtyStart < viewStart ? new Map() : undefined;
+    for (; line < renderRangeEndLine; ) {
+      const previousNextState = canReuseCachedStates
+        ? this.#stateStackMap[line + 1]
+        : undefined;
+      this.#stateStackMap[line] = state;
+
+      const lineText = this.#textDocument.getLineText(line);
+      let resolvedTokens: Array<HighlightedToken>;
+      if (lineText.length > TOKENIZE_MAX_LINE_LENGTH) {
+        console.warn(
+          `[diffs] Line(${line}) too long to tokenize: ${lineText.length}`
+        );
+        resolvedTokens = [[0, '', lineText]];
+      } else if (lineText === '' || lineText.trim() === '') {
+        resolvedTokens = [[0, '', lineText]];
+      } else {
+        const result = tokenizeLine(
+          this.#grammar,
+          this.#colorMap,
+          lineText,
+          state,
+          TOKENIZE_TIME_LIMIT
+        );
+        resolvedTokens = result.resolvedTokens;
+        state = result.ruleStack;
+      }
+
+      if (line >= viewStart) {
+        dirtyLines.set(line, resolvedTokens);
+      } else {
+        offscreenDirtyLines?.set(line, resolvedTokens);
+      }
+
+      this.#stateStackMap[line + 1] = state;
+      settled =
+        line >= currentChangedRangeEnd &&
+        canReuseCachedStates &&
+        previousNextState !== undefined &&
+        state.equals(previousNextState);
+      if (settled) {
+        changedRangeIndex++;
+        const nextRange = changedLineRanges[changedRangeIndex];
+        if (nextRange === undefined) {
+          break;
+        }
+        if (nextRange[0] >= renderRangeEndLine) {
+          backgroundStartLine = nextRange[0];
+          backgroundChangedRangeIndex = changedRangeIndex;
+          break;
+        }
+        if (this.#stateStackMap[nextRange[0]] === undefined) {
+          currentChangedRangeEnd = nextRange[1];
+          line++;
+        } else {
+          line = nextRange[0];
+          state = this.#stateStackMap[line] ?? state;
+          currentChangedRangeEnd = nextRange[1];
+        }
+        settled = false;
+        continue;
+      }
+      line++;
+    }
+
+    if (line < renderRangeEndLine) {
+      this.#stateStackMap[line + 1] = state;
+    } else {
+      this.#stateStackMap[line] = state;
+    }
+
+    if (offscreenDirtyLines !== undefined && offscreenDirtyLines.size > 0) {
+      this.#onTokenize(this.#themeType, offscreenDirtyLines);
+    }
+
+    if (backgroundStartLine !== undefined) {
+      this.#scheduleBackgroundTokenize(
+        backgroundStartLine,
+        changedLineRanges,
+        backgroundChangedRangeIndex
+      );
+    } else if (!settled && line < lineCount) {
+      this.#scheduleBackgroundTokenize(
+        dirtyStart < viewStart && !canReuseCachedStates ? dirtyStart : line,
+        canReuseCachedStates ? changedLineRanges : undefined,
+        changedRangeIndex
+      );
+    }
+
+    console.log(
+      `[diffs/editor] tokenize time: ${Math.round((performance.now() - t) * 1000) / 1000}ms`
+    );
+
+    return dirtyLines;
+  }
+
+  prebuildStateStackMap(renderRange?: RenderRange): void {
+    this.#prebuildStateStackMap(renderRange);
+  }
+
+  stopBackgroundTokenize(): void {
+    this.#backgroundJobId++;
+    removeEventListener('message', this.#onMessage);
+    this.#isStopped = true;
+    this.#lastLine = -1;
+    this.#backgroundChangedLineRanges = undefined;
+    this.#backgroundChangedRangeIndex = 0;
+  }
+
+  #scheduleBackgroundTokenize(
+    startLine: number,
+    changedLineRanges?: readonly [number, number][],
+    changedRangeIndex = 0
+  ): void {
+    const jobId = ++this.#backgroundJobId;
+
+    this.#isStopped = false;
+    this.#lastLine = startLine;
+    this.#backgroundChangedLineRanges = changedLineRanges;
+    this.#backgroundChangedRangeIndex = changedRangeIndex;
+
+    addEventListener('message', this.#onMessage);
+    this.#postBackgroundTokenizeMessage(jobId);
+  }
+
+  #postBackgroundTokenizeMessage(jobId: number): void {
+    // use `postMessage` instead of `setTimeout(fn, 0)` to avoid 4ms delay
+    postMessage({ type: 'tokenize', jobId });
+  }
+
+  #buildStateStackMap(endAt: number) {
+    const boundedEndAt = Math.min(
+      Math.max(0, endAt),
+      this.#textDocument.lineCount
+    );
+    if (
+      this.#stateStackMap.length > boundedEndAt ||
+      this.#grammar === undefined
+    ) {
+      return;
+    }
+    let line = this.#stateStackMap.length - 1;
+    let state = this.#stateStackMap[line] ?? INITIAL;
+    for (; line < boundedEndAt; line++) {
+      this.#stateStackMap[line] = state;
+      const lineText = this.#textDocument.getLineText(line);
+      if (
+        lineText.length <= TOKENIZE_MAX_LINE_LENGTH &&
+        lineText !== '' &&
+        lineText.trim() !== ''
+      ) {
+        state = this.#grammar.tokenizeLine2(
+          lineText,
+          state,
+          TOKENIZE_TIME_LIMIT
+        ).ruleStack;
+      }
+    }
+    this.#stateStackMap[line] = state;
+  }
+
+  #backgroundTokenize(jobId: number) {
+    if (
+      this.#isStopped ||
+      this.#grammar === undefined ||
+      jobId !== this.#backgroundJobId
+    ) {
+      return;
+    }
+
+    const t = performance.now();
+    const lines = new Map<number, Array<HighlightedToken>>();
+    const totalLines = this.#textDocument.lineCount;
+    const changedLineRanges = this.#backgroundChangedLineRanges;
+
+    let line = this.#lastLine;
+    let state = this.#stateStackMap[line] ?? INITIAL;
+    let settled = false;
+    let changedRangeIndex = this.#backgroundChangedRangeIndex;
+    let currentChangedRangeEnd = changedLineRanges?.[changedRangeIndex]?.[1];
+    for (; line < totalLines; ) {
+      const previousNextState =
+        currentChangedRangeEnd !== undefined
+          ? this.#stateStackMap[line + 1]
+          : undefined;
+      this.#stateStackMap[line] = state;
+
+      const lineText = this.#textDocument.getLineText(line);
+      if (lineText.length > TOKENIZE_MAX_LINE_LENGTH) {
+        console.warn(
+          `[diffs] Line(${line}) too long to tokenize: ${lineText.length}`
+        );
+        lines.set(line, [[0, '', lineText]]);
+      } else if (lineText === '' || lineText.trim() === '') {
+        lines.set(line, [[0, '', lineText]]);
+      } else {
+        const ret = tokenizeLine(
+          this.#grammar,
+          this.#colorMap,
+          lineText,
+          state,
+          TOKENIZE_TIME_LIMIT
+        );
+        lines.set(line, ret.resolvedTokens);
+        state = ret.ruleStack;
+      }
+
+      this.#stateStackMap[line + 1] = state;
+      settled =
+        currentChangedRangeEnd !== undefined &&
+        line >= currentChangedRangeEnd &&
+        previousNextState !== undefined &&
+        state.equals(previousNextState);
+      line++;
+      if (settled) {
+        changedRangeIndex++;
+        const nextRange = changedLineRanges?.[changedRangeIndex];
+        if (nextRange === undefined) {
+          break;
+        }
+        currentChangedRangeEnd = nextRange[1];
+        if (this.#stateStackMap[nextRange[0]] === undefined) {
+          settled = false;
+        } else {
+          line = nextRange[0];
+          state = this.#stateStackMap[line] ?? state;
+          settled = false;
+          continue;
+        }
+      }
+
+      // limit the time of partial tokenize to 1ms
+      if (performance.now() - t > 1) {
+        break;
+      }
+    }
+
+    this.#onTokenize(this.#themeType, lines);
+    if (this.#isStopped || jobId !== this.#backgroundJobId) {
+      return;
+    }
+
+    if (settled || line >= totalLines) {
+      this.stopBackgroundTokenize();
+      return;
+    }
+
+    this.#lastLine = line;
+    this.#backgroundChangedRangeIndex = changedRangeIndex;
+    this.#postBackgroundTokenizeMessage(jobId);
+  }
+}
+
+export function tokenizeLine(
+  grammar: IGrammar,
+  colorMap: string[],
+  lineText: string,
+  stateStack: StateStack,
+  timeLimit?: number
+): {
+  ruleStack: StateStack;
+  resolvedTokens: Array<HighlightedToken>;
+} {
+  const result = grammar.tokenizeLine2(lineText, stateStack, timeLimit);
+  if (result.stoppedEarly) {
+    console.warn(
+      `[diffs] Time limit reached when tokenizing line: ${lineText.substring(0, 100)}`
+    );
+  }
+  const rawTokens = result.tokens;
+  const tokensLength = rawTokens.length / 2;
+  const resolvedTokens: Array<HighlightedToken> = [];
+  for (let j = 0; j < tokensLength; j++) {
+    const offset = rawTokens[2 * j];
+    const nextOffset =
+      j + 1 < tokensLength ? rawTokens[2 * j + 2] : lineText.length;
+    if (offset === nextOffset) {
+      // should never reach here, skip if happens anyway
+      continue;
+    }
+    const metadata = rawTokens[2 * j + 1];
+    const bg = EncodedTokenMetadata.getForeground(metadata);
+    const fg = colorMap[bg];
+    const tokenText = lineText.slice(offset, nextOffset);
+    resolvedTokens.push([offset, fg, tokenText]);
+  }
+  return {
+    ruleStack: result.ruleStack,
+    resolvedTokens,
+  };
+}

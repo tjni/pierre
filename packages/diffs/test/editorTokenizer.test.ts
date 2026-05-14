@@ -1,0 +1,242 @@
+import { describe, expect, test } from 'bun:test';
+import type { IGrammar, StateStack } from 'shiki/textmate';
+
+import { EditorTokenizer } from '../src/editor/editorTokenzier';
+import {
+  TextDocument,
+  type TextDocumentChange,
+} from '../src/editor/textDocument';
+import type { DiffsHighlighter, HighlightedToken } from '../src/types';
+
+describe('EditorTokenizer', () => {
+  test('settles zero-line edits before the viewport without rebuilding to the viewport', () => {
+    let tokenizeLineCount = 0;
+    const grammar = {
+      tokenizeLine2(lineText: string, ruleStack: StateStack) {
+        tokenizeLineCount++;
+        return {
+          tokens: new Uint32Array([0, 0]),
+          ruleStack,
+          stoppedEarly: false,
+          lineText,
+        };
+      },
+    } as unknown as IGrammar;
+    const textDocument = new TextDocument(
+      'test.ts',
+      Array.from({ length: 110 }, (_, i) => `line ${i}`).join('\n'),
+      'typescript'
+    );
+    const offscreenUpdates: Map<number, Array<HighlightedToken>>[] = [];
+    const tokenizer = new EditorTokenizer({
+      highlighter: {
+        getLanguage: () => grammar,
+        getLoadedLanguages: () => ['typescript'],
+        setTheme: () => ({ colorMap: [''] }),
+      } as unknown as DiffsHighlighter,
+      textDocument,
+      theme: { name: 'test-theme', type: 'dark' },
+      onTokenize: (_themeType, lines) => {
+        offscreenUpdates.push(lines);
+      },
+    });
+
+    tokenizer.tokenize(
+      {
+        startLine: 0,
+        startCharacter: 0,
+        endLine: 0,
+        previousLineCount: textDocument.lineCount,
+        lineCount: textDocument.lineCount,
+        lineDelta: 0,
+        changedLineRanges: [[0, 0]],
+      },
+      { startingLine: 100, totalLines: 10, bufferBefore: 0, bufferAfter: 0 }
+    );
+    tokenizeLineCount = 0;
+
+    const change = textDocument.applyEdits([
+      {
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: 'line 0'.length },
+        },
+        newText: 'LINE 0',
+      },
+    ])!;
+    const dirtyLines = tokenizer.tokenize(change, {
+      startingLine: 100,
+      totalLines: 10,
+      bufferBefore: 0,
+      bufferAfter: 0,
+    });
+
+    expect(tokenizeLineCount).toBe(1);
+    expect(dirtyLines.size).toBe(0);
+    expect(offscreenUpdates.at(-1)?.get(0)?.[0]?.[2]).toBe('LINE 0');
+  });
+
+  test('ignores queued background messages from stopped jobs', () => {
+    const originalAddEventListener = globalThis.addEventListener;
+    const originalRemoveEventListener = globalThis.removeEventListener;
+    const originalPostMessage = globalThis.postMessage;
+    let messageListener: ((event: MessageEvent) => void) | undefined;
+    const postedMessages: unknown[] = [];
+
+    globalThis.addEventListener = ((
+      type: string,
+      listener: EventListenerOrEventListenerObject
+    ) => {
+      if (type === 'message' && typeof listener === 'function') {
+        messageListener = listener as (event: MessageEvent) => void;
+      }
+    }) as typeof globalThis.addEventListener;
+    globalThis.removeEventListener = ((
+      type: string,
+      listener: EventListenerOrEventListenerObject
+    ) => {
+      if (type === 'message' && listener === messageListener) {
+        messageListener = undefined;
+      }
+    }) as typeof globalThis.removeEventListener;
+    globalThis.postMessage = ((message: unknown) => {
+      postedMessages.push(message);
+    }) as typeof globalThis.postMessage;
+
+    try {
+      let tokenizeLineCount = 0;
+      const state = { equals: () => false } as unknown as StateStack;
+      const grammar = {
+        tokenizeLine2() {
+          tokenizeLineCount++;
+          return {
+            tokens: new Uint32Array([0, 0]),
+            ruleStack: state,
+            stoppedEarly: false,
+          };
+        },
+      } as unknown as IGrammar;
+      const textDocument = new TextDocument(
+        'test.ts',
+        ['line 0', 'line 1', 'line 2'].join('\n'),
+        'typescript'
+      );
+      const tokenizer = new EditorTokenizer({
+        highlighter: {
+          getLanguage: () => grammar,
+          getLoadedLanguages: () => ['typescript'],
+          setTheme: () => ({ colorMap: [''] }),
+        } as unknown as DiffsHighlighter,
+        textDocument,
+        theme: { name: 'test-theme', type: 'dark' },
+        onTokenize: () => {},
+      });
+      const change: TextDocumentChange = {
+        startLine: 0,
+        startCharacter: 0,
+        endLine: 0,
+        previousLineCount: textDocument.lineCount,
+        lineCount: textDocument.lineCount,
+        lineDelta: 0,
+        changedLineRanges: [[0, 0]],
+      };
+      const renderRange = {
+        startingLine: 0,
+        totalLines: 1,
+        bufferBefore: 0,
+        bufferAfter: 0,
+      };
+
+      tokenizer.tokenize(change, renderRange);
+      const stoppedJobMessage = postedMessages.at(-1);
+      tokenizer.stopBackgroundTokenize();
+      tokenizer.tokenize(change, renderRange);
+      const activeJobMessage = postedMessages.at(-1);
+      tokenizeLineCount = 0;
+
+      messageListener?.({ data: stoppedJobMessage } as MessageEvent);
+      expect(tokenizeLineCount).toBe(0);
+
+      messageListener?.({ data: activeJobMessage } as MessageEvent);
+      expect(tokenizeLineCount).toBeGreaterThan(0);
+    } finally {
+      globalThis.addEventListener = originalAddEventListener;
+      globalThis.removeEventListener = originalRemoveEventListener;
+      globalThis.postMessage = originalPostMessage;
+    }
+  });
+
+  test('jumps between exact changed ranges for multi-cursor edits', () => {
+    let tokenizeLineCount = 0;
+    const grammar = {
+      tokenizeLine2(lineText: string, ruleStack: StateStack) {
+        tokenizeLineCount++;
+        return {
+          tokens: new Uint32Array([0, 0]),
+          ruleStack,
+          stoppedEarly: false,
+          lineText,
+        };
+      },
+    } as unknown as IGrammar;
+    const textDocument = new TextDocument(
+      'test.ts',
+      Array.from({ length: 800 }, (_, i) => `line ${i}`).join('\n'),
+      'typescript'
+    );
+    const tokenizer = new EditorTokenizer({
+      highlighter: {
+        getLanguage: () => grammar,
+        getLoadedLanguages: () => ['typescript'],
+        setTheme: () => ({ colorMap: [''] }),
+      } as unknown as DiffsHighlighter,
+      textDocument,
+      theme: { name: 'test-theme', type: 'dark' },
+      onTokenize: () => {},
+    });
+
+    tokenizer.tokenize(
+      {
+        startLine: 0,
+        startCharacter: 0,
+        endLine: 799,
+        previousLineCount: textDocument.lineCount,
+        lineCount: textDocument.lineCount,
+        lineDelta: 1,
+        changedLineRanges: [[0, 799]],
+      },
+      { startingLine: 0, totalLines: 800, bufferBefore: 0, bufferAfter: 0 }
+    );
+    tokenizeLineCount = 0;
+
+    const change = textDocument.applyEdits([
+      {
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: 'line 0'.length },
+        },
+        newText: 'LINE 0',
+      },
+      {
+        range: {
+          start: { line: 750, character: 0 },
+          end: { line: 750, character: 'line 750'.length },
+        },
+        newText: 'LINE 750',
+      },
+    ])!;
+    const dirtyLines = tokenizer.tokenize(change, {
+      startingLine: 0,
+      totalLines: 800,
+      bufferBefore: 0,
+      bufferAfter: 0,
+    });
+
+    expect(change.changedLineRanges).toEqual([
+      [0, 0],
+      [750, 750],
+    ]);
+    expect(tokenizeLineCount).toBe(2);
+    expect([...dirtyLines.keys()]).toEqual([0, 750]);
+  });
+});

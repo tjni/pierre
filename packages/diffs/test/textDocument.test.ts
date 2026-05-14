@@ -122,6 +122,7 @@ describe('TextDocument', () => {
       previousLineCount: 1,
       lineCount: 1,
       lineDelta: 0,
+      changedLineRanges: [[0, 0]],
     });
   });
 
@@ -181,6 +182,7 @@ describe('TextDocument', () => {
       previousLineCount: 3,
       lineCount: 3,
       lineDelta: 0,
+      changedLineRanges: [[1, 1]],
     });
   });
 
@@ -203,6 +205,7 @@ describe('TextDocument', () => {
       previousLineCount: 1,
       lineCount: 2,
       lineDelta: 1,
+      changedLineRanges: [[0, 1]],
     });
   });
 
@@ -225,6 +228,7 @@ describe('TextDocument', () => {
       previousLineCount: 3,
       lineCount: 1,
       lineDelta: -2,
+      changedLineRanges: [[0, 0]],
     });
   });
 
@@ -795,6 +799,7 @@ describe('TextDocument', () => {
       previousLineCount: 1,
       lineCount: 1,
       lineDelta: 0,
+      changedLineRanges: [[0, 0]],
     });
     expect(d.canUndo).toBe(false);
     expect(d.canRedo).toBe(true);
@@ -808,6 +813,7 @@ describe('TextDocument', () => {
       previousLineCount: 1,
       lineCount: 1,
       lineDelta: 0,
+      changedLineRanges: [[0, 0]],
     });
     expect(d.canUndo).toBe(true);
     expect(d.canRedo).toBe(false);

@@ -107,6 +107,8 @@ export interface TextDocumentChange {
   readonly lineCount: number;
   /** Difference between the old and new line counts. */
   readonly lineDelta: number;
+  /** Exact rendered line ranges touched by each edit after the edit was applied. */
+  readonly changedLineRanges?: readonly [startLine: number, endLine: number][];
 }
 
 /**
@@ -343,6 +345,7 @@ export class TextDocument<LAnnotation> {
       previousLineCount,
       lineCount,
       lineDelta: lineCount - previousLineCount,
+      changedLineRanges: changedLineRange.ranges,
     };
     return change;
   }
@@ -350,25 +353,39 @@ export class TextDocument<LAnnotation> {
   #computeChangedLineRange(edits: ResolvedTextEdit[]): {
     startLine: number;
     endLine: number;
+    ranges: [number, number][];
   } {
     let startLine = Infinity;
     let endLine = 0;
     let lineDeltaBeforeEdit = 0;
+    const ranges: [number, number][] = [];
     for (const edit of edits) {
       const editStartLine = this.positionAt(edit.start).line;
       const editEndLine = this.positionAt(edit.end).line;
       const insertedLineSpan = lineFeedCount(edit.text);
+      const changedStartLine = editStartLine + lineDeltaBeforeEdit;
+      const changedEndLine = changedStartLine + insertedLineSpan;
       startLine = Math.min(startLine, editStartLine);
-      endLine = Math.max(
-        endLine,
-        editStartLine + lineDeltaBeforeEdit + insertedLineSpan
-      );
+      endLine = Math.max(endLine, changedEndLine);
+      const lastRange = ranges[ranges.length - 1];
+      if (lastRange !== undefined && changedStartLine <= lastRange[1] + 1) {
+        ranges[ranges.length - 1] = [
+          lastRange[0],
+          Math.max(lastRange[1], changedEndLine),
+        ];
+      } else {
+        ranges.push([changedStartLine, changedEndLine]);
+      }
       lineDeltaBeforeEdit += insertedLineSpan - (editEndLine - editStartLine);
     }
     if (startLine === Infinity) {
-      return { startLine: 0, endLine: 0 };
+      return {
+        startLine: 0,
+        endLine: 0,
+        ranges: [[0, 0]],
+      };
     }
-    return { startLine, endLine };
+    return { startLine, endLine, ranges };
   }
 }
 

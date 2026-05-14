@@ -1,5 +1,3 @@
-import { type IGrammar, INITIAL, type StateStack } from 'shiki/textmate';
-
 import type { File } from '../components/File';
 import { DEFAULT_THEMES } from '../constants';
 import {
@@ -47,30 +45,26 @@ import type {
   DiffsEditableComponent,
   DiffsEditor,
   DiffsEditorSelection,
-  DiffsHighlighter,
   FileContents,
-  HighlightedToken,
   LineAnnotation,
   RenderRange,
 } from '../types';
 import { getFiletypeFromFileName } from '../utils/getFiletypeFromFileName';
-import {
-  EDITOR_CSS,
-  TOKENIZE_MAX_LINE_LENGTH,
-  TOKENIZE_TIME_LIMIT,
-} from './constants';
+import { EDITOR_CSS } from './constants';
 import { applyDocumentChangeToLineAnnotations } from './editorLineAnnotations';
+import { EditorTokenizer } from './editorTokenzier';
 import { isPrimaryModifier } from './platform';
-import { BackgroundTokenizer, tokenizeLine } from './tokenzier';
 
 export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
-  #disposes?: (() => void)[];
+  // event handlers
+  #editorEventDisposes?: (() => void)[];
+  #globalEventDisposes?: (() => void)[];
   #onChange?: (
     file: FileContents,
     lineAnnotations?: LineAnnotation<LAnnotation>[]
   ) => void;
 
-  // css properties
+  // metrics
   #charWidth = -1;
   #lineHeight = 20;
   #tabSize = 2;
@@ -81,16 +75,12 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #fileContents?: FileContents;
   #lineAnnotations?: LineAnnotation<LAnnotation>[];
   #textDocument?: TextDocument<LAnnotation>;
+  #renderRange?: RenderRange;
 
   // highlighter
-  #highlighter?: DiffsHighlighter;
-  #currentTheme?: string;
-  #colorMap?: string[];
-  #renderRange?: RenderRange;
-  #backgroundTokenizer?: BackgroundTokenizer;
+  #tokenizer?: EditorTokenizer;
 
   // cache
-  #stateStackCache?: StateStack[];
   #lineYCache = new Map<number, number>();
   #wrapLineOffsetsCache = new Map<number, Uint32Array>();
   #lastCharX?: [line: number, character: number, x: number, wrapLine: number];
@@ -98,7 +88,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   // dom elements
   #fileContainer?: HTMLElement;
   #contentElement?: HTMLElement;
-  #contentElementDisposes?: (() => void)[];
   #styleElement?: HTMLStyleElement;
   #overlayElement?: HTMLElement;
   #selectionElements?: Map<string, HTMLElement>;
@@ -114,32 +103,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #selectionStart: EditorSelection | undefined;
   #reservedSelections?: EditorSelection[];
   #selections?: EditorSelection[];
-  #ensureScrollToLine?: number;
-
-  #prebuildStateStackCache = debounce(async () => {
-    const textDocument = this.#textDocument;
-    const highlighter = this.#highlighter;
-    if (textDocument === undefined || highlighter === undefined) {
-      return;
-    }
-
-    if (!highlighter.getLoadedLanguages().includes(textDocument.languageId)) {
-      await highlighter.loadLanguage(textDocument.languageId);
-    }
-
-    const grammar = highlighter.getLanguage(textDocument.languageId);
-    if (grammar === undefined) {
-      return;
-    }
-
-    const { startingLine = 0, totalLines = Infinity } = this.#renderRange ?? {};
-    const endLine = Math.min(
-      totalLines === Infinity ? Infinity : startingLine + totalLines,
-      textDocument.lineCount
-    );
-
-    this.#buildStateStackCache(textDocument, grammar, endLine);
-  }, 500);
+  #scrollingToLine?: number;
 
   #emitChange = debounce(
     (
@@ -194,8 +158,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   }
 
   cleanUp(): void {
-    this.#disposes?.forEach((dispose) => dispose());
-    this.#disposes = undefined;
+    this.#globalEventDisposes?.forEach((dispose) => dispose());
+    this.#globalEventDisposes = undefined;
+    this.#editorEventDisposes?.forEach((dispose) => dispose());
+    this.#editorEventDisposes = undefined;
     this.#onChange = undefined;
 
     this.#component?.setSelectedLines(null);
@@ -204,15 +170,11 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#fileContents = undefined;
     this.#lineAnnotations = undefined;
     this.#textDocument = undefined;
-
-    this.#highlighter = undefined;
-    this.#currentTheme = undefined;
-    this.#colorMap = undefined;
     this.#renderRange = undefined;
-    this.#backgroundTokenizer?.stop();
-    this.#backgroundTokenizer = undefined;
 
-    this.#stateStackCache = undefined;
+    this.#tokenizer?.stopBackgroundTokenize();
+    this.#tokenizer = undefined;
+
     this.#lineYCache.clear();
     this.#wrapLineOffsetsCache.clear();
     this.#lastCharX = undefined;
@@ -220,8 +182,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#fileContainer = undefined;
     this.#contentElement?.removeAttribute('contentEditable');
     this.#contentElement = undefined;
-    this.#contentElementDisposes?.forEach((dispose) => dispose());
-    this.#contentElementDisposes = undefined;
     this.#styleElement?.remove();
     this.#styleElement = undefined;
     this.#overlayElement?.remove();
@@ -250,16 +210,16 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       fileContainer.shadowRoot ?? fileContainer.attachShadow({ mode: 'open' });
     const contentEl =
       shadowRoot.querySelector<HTMLElement>('div[data-content]') ?? undefined;
-    if (contentEl === undefined) {
-      throw new Error('Could not edit the file.');
-    }
-
-    this.#wrap = this.#component?.options.overflow === 'wrap';
-    this.#highlighter ??= areThemesAttached(
+    const highlighter = areThemesAttached(
       this.#component?.options.theme ?? DEFAULT_THEMES
     )
       ? getHighlighterIfLoaded()
       : undefined;
+    if (contentEl === undefined || highlighter === undefined) {
+      throw new Error('Could not edit the file.');
+    }
+
+    this.#wrap = this.#component?.options.overflow === 'wrap';
 
     if (this.#fileContainer !== fileContainer) {
       this.#fileContainer = fileContainer;
@@ -282,8 +242,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       if (this.#overlayElement !== undefined) {
         contentEl.after(this.#overlayElement);
       }
-      this.#contentElementDisposes?.forEach((dispose) => dispose());
-      this.#contentElementDisposes = [
+      this.#editorEventDisposes?.forEach((dispose) => dispose());
+      this.#editorEventDisposes = [
         addEventListener(
           contentEl,
           'keydown',
@@ -406,13 +366,22 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       this.#fileContents.lang !== fileContents.lang ||
       this.#fileContents.contents !== fileContents.contents
     ) {
-      this.#fileContents = fileContents;
-      this.#textDocument = new TextDocument(
+      const textDocument = new TextDocument<LAnnotation>(
         fileContents.name,
         fileContents.contents,
         fileContents.lang ?? getFiletypeFromFileName(fileContents.name)
       );
-      this.#stateStackCache = undefined;
+      this.#fileContents = fileContents;
+      this.#textDocument = textDocument;
+      this.#tokenizer?.stopBackgroundTokenize();
+      this.#tokenizer = new EditorTokenizer({
+        highlighter,
+        textDocument,
+        theme: this.#getTheme(),
+        onTokenize: (themeType, lines) => {
+          this.#component?.emitDirtyLines(themeType, lines);
+        },
+      });
       this.#shouldIgnoreSelectionChange = false;
       this.#selectionElements?.forEach((el) => el.remove());
       this.#selectionElements?.clear();
@@ -428,7 +397,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
     this.#lineAnnotations = lineAnnotations;
     this.#renderRange = renderRange;
-    this.#prebuildStateStackCache();
+    this.#tokenizer?.prebuildStateStackMap(renderRange);
 
     if (this.#selections !== undefined && this.#selections.length > 0) {
       // when re-rendering triggered by viewport scroll,
@@ -453,9 +422,26 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       );
     }
 
-    if (this.#ensureScrollToLine !== undefined) {
-      this.#scrollToLine(this.#ensureScrollToLine);
+    if (this.#scrollingToLine !== undefined) {
+      this.#scrollToLine(this.#scrollingToLine);
     }
+  }
+
+  #getTheme(): {
+    name: string;
+    type: 'dark' | 'light';
+  } {
+    let { themeType = 'system', theme = DEFAULT_THEMES } =
+      this.#component?.options ?? {};
+    if (themeType === 'system') {
+      themeType = window.matchMedia('(prefers-color-scheme: dark)').matches
+        ? 'dark'
+        : 'light';
+    }
+    return {
+      name: typeof theme === 'string' ? theme : theme[themeType],
+      type: themeType,
+    };
   }
 
   #initialize(): void {
@@ -468,7 +454,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       dataset: 'editorOverlay',
     });
 
-    this.#disposes = [
+    this.#globalEventDisposes = [
       addEventListener(
         document,
         'selectionchange',
@@ -782,17 +768,14 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     change: TextDocumentChange,
     nextLineAnnotations?: LineAnnotation<LAnnotation>[] | undefined
   ) {
-    // cancel existing background tokenzier task
-    this.#backgroundTokenizer?.stop();
-
-    const highlighter = this.#highlighter;
+    const tokenizer = this.#tokenizer;
     const file = this.#component;
     const fileContents = this.#fileContents;
     const textDocument = this.#textDocument;
     const contentEl = this.#contentElement;
     const gutterEl = this.#contentElement?.previousElementSibling ?? undefined;
     if (
-      highlighter === undefined ||
+      tokenizer === undefined ||
       file === undefined ||
       fileContents === undefined ||
       textDocument === undefined ||
@@ -804,65 +787,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       return;
     }
 
-    const t = performance.now();
-    const grammar = highlighter.getLanguage(textDocument.languageId);
-    const themeType = this.#getThemeType();
-    const colorMap = this.#getThemeColorMap(themeType);
-    const stateStackCache = this.#buildStateStackCache(
-      textDocument,
-      grammar,
-      change.startLine
-    );
+    // cancel existing background tokenzier task
+    tokenizer.stopBackgroundTokenize();
 
-    const { lineCount } = textDocument;
-    const { startingLine = 0, totalLines = Infinity } = this.#renderRange ?? {};
-    const renderRangeEndLine =
-      totalLines === Infinity
-        ? lineCount
-        : Math.min(startingLine + totalLines, lineCount);
-
-    let line = change.startLine;
-    let state = stateStackCache[line];
-    let settled = false;
-    let dirtyLines: Map<number, Array<HighlightedToken>> = new Map();
-    for (; line < renderRangeEndLine; line++) {
-      const lineText = textDocument.getLineText(line);
-
-      stateStackCache[line] = state;
-
-      if (lineText.length > TOKENIZE_MAX_LINE_LENGTH) {
-        console.warn(
-          `[diffs] Line(${line}) too long to tokenize: ${lineText.length}`
-        );
-        dirtyLines.set(line, [[0, '', lineText]]);
-      } else if (lineText === '' || lineText.trim() === '') {
-        dirtyLines.set(line, [[0, '', lineText === '' ? ' ' : lineText]]);
-      } else {
-        const result = tokenizeLine(
-          grammar,
-          colorMap,
-          lineText,
-          state,
-          TOKENIZE_TIME_LIMIT
-        );
-        dirtyLines.set(line, result.resolvedTokens);
-        state = result.ruleStack;
-      }
-
-      settled =
-        line >= change.endLine &&
-        change.lineDelta === 0 &&
-        stateStackCache[line + 1] !== undefined &&
-        state.equals(stateStackCache[line + 1]);
-      if (settled) {
-        break;
-      }
-    }
-    if (line < renderRangeEndLine) {
-      stateStackCache[line + 1] = state;
-    } else {
-      stateStackCache[line] = state;
-    }
+    const dirtyLines = tokenizer.tokenize(change, this.#renderRange);
 
     // Invalidate layout caches touched by the edit.
     // - line inserts/deletes shift line numbers, so clear from startLine onward
@@ -882,9 +810,12 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       }
     }
 
+    const t = performance.now();
+
     if (dirtyLines.size > 0) {
       const children = contentEl.children;
       const dirtyLineIndexes = new Set<number>(dirtyLines.keys());
+      const startingLine = this.#renderRange?.startingLine ?? 0;
 
       // update line elements that have been changed in the document
       for (let i = change.startLine - startingLine; i < children.length; i++) {
@@ -908,7 +839,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
                   dataset: {
                     char: char.toString(),
                   },
-                  style: `--diffs-token-${themeType}:${fg};`,
+                  style: `--diffs-token-${tokenizer.themeType}:${fg};`,
                   textContent: textContent,
                 });
               })
@@ -943,7 +874,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
                   dataset: {
                     char: char.toString(),
                   },
-                  style: `--diffs-token-${themeType}:${fg};`,
+                  style: `--diffs-token-${tokenizer.themeType}:${fg};`,
                   textContent,
                 });
               }),
@@ -996,26 +927,11 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       }
     }
 
-    file.emitDirtyLines(themeType, dirtyLines);
+    file.emitDirtyLines(tokenizer.themeType, dirtyLines);
     if (change.lineDelta !== 0) {
       gutterEl.style.gridRow = 'span ' + gutterEl.children.length;
       contentEl.style.gridRow = 'span ' + gutterEl.children.length;
       file.emitLineCountChange(change.lineCount, nextLineAnnotations);
-    }
-
-    if (!settled && line < lineCount) {
-      requestAnimationFrame(() => {
-        this.#backgroundTokenizer = new BackgroundTokenizer({
-          grammar,
-          colorMap,
-          textDocument,
-          onTokenize: (lines) => {
-            file.emitDirtyLines(themeType, lines);
-          },
-        });
-        this.#backgroundTokenizer.scheduleTokenize(line, state);
-      });
-      // TODO(@ije): should add another background tokenzier for the other theme?
     }
 
     console.log(
@@ -1023,69 +939,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       'lastChange:',
       change,
       'dirtyLines:',
-      dirtyLines.size,
-      settled ? '(settled)' : ''
+      dirtyLines.size
     );
-  }
-
-  #getThemeType(): 'dark' | 'light' {
-    const { themeType } = this.#component?.options ?? {};
-    if (themeType !== undefined && themeType !== 'system') {
-      return themeType;
-    }
-    return window.matchMedia('(prefers-color-scheme: dark)').matches
-      ? 'dark'
-      : 'light';
-  }
-
-  #getThemeColorMap(themeType: 'dark' | 'light'): string[] {
-    if (this.#highlighter === undefined || this.#component === undefined) {
-      throw new Error('editor not initialized');
-    }
-    let themeName: string;
-    const { theme = DEFAULT_THEMES } = this.#component.options;
-    if (typeof theme === 'string') {
-      themeName = theme;
-    } else {
-      themeName = theme[themeType];
-    }
-    if (this.#currentTheme !== themeName || this.#colorMap === undefined) {
-      const ret = this.#highlighter.setTheme(themeName);
-      this.#colorMap = ret.colorMap;
-      this.#currentTheme = themeName;
-    }
-    return this.#colorMap;
-  }
-
-  #buildStateStackCache(
-    textDocument: TextDocument<LAnnotation>,
-    grammar: IGrammar,
-    endLine: number
-  ): StateStack[] {
-    const stateStackCache = (this.#stateStackCache ??= [INITIAL]);
-    const boundedEndLine = Math.min(
-      Math.max(0, endLine),
-      textDocument.lineCount
-    );
-    let line = Math.min(stateStackCache.length - 1, boundedEndLine);
-    let state = stateStackCache[line] ?? INITIAL;
-    for (; line < boundedEndLine; line++) {
-      stateStackCache[line] = state;
-      const lineText = textDocument.getLineText(line);
-      if (
-        lineText.length <= TOKENIZE_MAX_LINE_LENGTH &&
-        lineText !== '' &&
-        lineText.trim() !== ''
-      ) {
-        state = grammar.tokenizeLine2(
-          lineText,
-          state,
-          TOKENIZE_TIME_LIMIT
-        ).ruleStack;
-      }
-    }
-    stateStackCache[line] = state;
-    return stateStackCache;
   }
 
   #handleInput(inputType: string, data: string | null) {
@@ -1209,8 +1064,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       const scrollToLine = () => {
         lineElement.scrollIntoView({ block: 'center', inline: 'start' });
       };
-      if (this.#ensureScrollToLine !== undefined) {
-        this.#ensureScrollToLine = undefined;
+      if (this.#scrollingToLine !== undefined) {
+        this.#scrollingToLine = undefined;
         requestAnimationFrame(scrollToLine);
       } else {
         scrollToLine();
@@ -1236,7 +1091,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         },
       });
       this.#contentElement?.getRootNode()?.appendChild(anchor);
-      this.#ensureScrollToLine = line;
+      this.#scrollingToLine = line;
       anchor.scrollIntoView({ block: 'center', inline: 'start' });
       requestAnimationFrame(() => anchor.remove());
     }
