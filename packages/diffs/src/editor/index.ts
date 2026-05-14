@@ -433,12 +433,12 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     if (this.#selections !== undefined && this.#selections.length > 0) {
       // when re-rendering triggered by viewport scroll,
       // re-render the existing selections
-      this.#updateSelections(this.#selections);
+      this.#updateSelections(this.#selections, true);
     }
 
     if (renderRange !== undefined) {
       console.log(
-        '[diffs] render file:',
+        '[diffs/editor] render file:',
         fileContents.name,
         'RenderRange:',
         renderRange.startingLine +
@@ -454,7 +454,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
 
     if (this.#ensureScrollToLine !== undefined) {
-      console.log('[diffs] ensureScrollToLine:', this.#ensureScrollToLine);
       this.#scrollToLine(this.#ensureScrollToLine);
     }
   }
@@ -1020,7 +1019,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
 
     console.log(
-      `[diffs] re-render time: ${Math.round((performance.now() - t) * 1000) / 1000}ms`,
+      `[diffs/editor] re-render time: ${Math.round((performance.now() - t) * 1000) / 1000}ms`,
       'lastChange:',
       change,
       'dirtyLines:',
