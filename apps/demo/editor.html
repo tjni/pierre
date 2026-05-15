@@ -42,5 +42,26 @@
       <!-- <div id="sidebar"></div> -->
     </div>
     <script type="module" src="/src/editor.ts"></script>
+
+    <!-- lag radar -->
+    <div
+      id="radar"
+      style="
+        position: fixed;
+        bottom: 0;
+        right: 0;
+        width: 100px;
+        height: 100px;
+        z-index: 1000;
+      "
+    ></div>
+    <script type="module">
+      import lagRadar from 'https://mobz.github.io/lag-radar/lag-radar.js';
+      const dispose = lagRadar({
+        parent: document.querySelector('#radar'),
+        size: 100,
+        frames: 60,
+      });
+    </script>
   </body>
 </html>
