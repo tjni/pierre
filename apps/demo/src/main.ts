@@ -921,6 +921,32 @@ cleanButton?.addEventListener('click', () => {
   cleanupInstances(container);
 });
 
+const lagRadarCheckbox = document.getElementById('lag-radar');
+const radar = document.getElementById('radar');
+if (lagRadarCheckbox != null && radar != null) {
+  const { default: lagRadar } =
+    // @ts-expect-error dynamic import
+    await import('https://mobz.github.io/lag-radar/lag-radar.js');
+  let dispose: (() => void) | undefined;
+  lagRadarCheckbox.addEventListener('change', () => {
+    if (
+      lagRadarCheckbox instanceof HTMLInputElement &&
+      lagRadarCheckbox.checked
+    ) {
+      dispose = lagRadar({
+        parent: radar,
+        size: 100,
+        frames: 60,
+      });
+      radar.style.display = 'block';
+    } else {
+      dispose?.();
+      dispose = undefined;
+      radar.style.display = 'none';
+    }
+  });
+}
+
 function createToggle(
   labelText: string,
   checked: boolean,
