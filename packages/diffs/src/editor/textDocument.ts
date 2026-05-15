@@ -163,8 +163,16 @@ export class TextDocument<LAnnotation> {
     return this.#pieceTable.positionAt(offset);
   }
 
+  positionsAt(offsets: readonly number[]): Position[] {
+    return this.#pieceTable.positionsAt(offsets);
+  }
+
   offsetAt(position: Position): number {
     return this.#pieceTable.offsetAt(position);
+  }
+
+  offsetsAt(positions: readonly Position[]): number[] {
+    return this.#pieceTable.offsetsAt(positions);
   }
 
   getText(range?: Range): string {
@@ -213,9 +221,28 @@ export class TextDocument<LAnnotation> {
     if (edits.length === 0) {
       return;
     }
-    const resolvedEdits = this.#sortAndValidateResolvedEdits(
-      edits.map((edit) => this.#resolveEdit(edit))
+    return this.applyResolvedEdits(
+      edits.map((edit) => this.#resolveEdit(edit)),
+      updateHistory,
+      selectionsBefore,
+      selectionsAfter,
+      lineAnnotationsBefore,
+      lineAnnotationsAfter
     );
+  }
+
+  applyResolvedEdits(
+    edits: ResolvedTextEdit[],
+    updateHistory = false,
+    selectionsBefore?: EditorSelection[],
+    selectionsAfter?: EditorSelection[],
+    lineAnnotationsBefore?: LineAnnotation<LAnnotation>[],
+    lineAnnotationsAfter?: LineAnnotation<LAnnotation>[]
+  ): TextDocumentChange | undefined {
+    if (edits.length === 0) {
+      return;
+    }
+    const resolvedEdits = this.#sortAndValidateResolvedEdits(edits);
     if (updateHistory) {
       const entry = createEditStackEntry(
         this,
@@ -228,7 +255,7 @@ export class TextDocument<LAnnotation> {
         lineAnnotationsAfter
       );
       const previousEntry = this.#editStack.peekUndo();
-      const change = this.#applyResolvedEdits(resolvedEdits);
+      const change = this.#applyResolvedEditsToBuffer(resolvedEdits);
       this.#version++;
       if (
         change.lineDelta === 0 &&
@@ -242,7 +269,7 @@ export class TextDocument<LAnnotation> {
       }
       return change;
     }
-    const change = this.#applyResolvedEdits(resolvedEdits);
+    const change = this.#applyResolvedEditsToBuffer(resolvedEdits);
     this.#version++;
     return change;
   }
@@ -268,7 +295,7 @@ export class TextDocument<LAnnotation> {
     if (entry === undefined) {
       return undefined;
     }
-    const change = this.#applyResolvedEdits(entry.inverseEdits);
+    const change = this.#applyResolvedEditsToBuffer(entry.inverseEdits);
     if (change === undefined) {
       return undefined;
     }
@@ -291,7 +318,7 @@ export class TextDocument<LAnnotation> {
     if (entry === undefined) {
       return undefined;
     }
-    const change = this.#applyResolvedEdits(entry.forwardEdits);
+    const change = this.#applyResolvedEditsToBuffer(entry.forwardEdits);
     if (change === undefined) {
       return undefined;
     }
@@ -335,15 +362,17 @@ export class TextDocument<LAnnotation> {
     return sortedEdits;
   }
 
-  #applyResolvedEdits(edits: ResolvedTextEdit[]): TextDocumentChange {
+  #applyResolvedEditsToBuffer(edits: ResolvedTextEdit[]): TextDocumentChange {
     const previousLineCount = this.#pieceTable.lineCount;
-    const changedLineRange = this.#computeChangedLineRange(edits);
-    const startPosition = this.positionAt(edits[0].start);
-    for (let i = edits.length - 1; i >= 0; i--) {
-      const edit = edits[i];
-      this.#pieceTable.delete(edit.start, edit.end - edit.start);
-      this.#pieceTable.insert(edit.text, edit.start);
-    }
+    const editPositions = this.positionsAt(
+      edits.flatMap((edit) => [edit.start, edit.end])
+    );
+    const changedLineRange = this.#computeChangedLineRange(
+      edits,
+      editPositions
+    );
+    const startPosition = editPositions[0];
+    this.#pieceTable.applyEdits(edits);
     const lineCount = this.#pieceTable.lineCount;
     const change: TextDocumentChange = {
       startLine: changedLineRange.startLine,
@@ -357,7 +386,10 @@ export class TextDocument<LAnnotation> {
     return change;
   }
 
-  #computeChangedLineRange(edits: ResolvedTextEdit[]): {
+  #computeChangedLineRange(
+    edits: ResolvedTextEdit[],
+    editPositions: Position[]
+  ): {
     startLine: number;
     endLine: number;
     ranges: [number, number][];
@@ -366,9 +398,10 @@ export class TextDocument<LAnnotation> {
     let endLine = 0;
     let lineDeltaBeforeEdit = 0;
     const ranges: [number, number][] = [];
-    for (const edit of edits) {
-      const editStartLine = this.positionAt(edit.start).line;
-      const editEndLine = this.positionAt(edit.end).line;
+    for (let i = 0; i < edits.length; i++) {
+      const edit = edits[i];
+      const editStartLine = editPositions[i * 2].line;
+      const editEndLine = editPositions[i * 2 + 1].line;
       const insertedLineSpan = lineFeedCount(edit.text);
       const changedStartLine = editStartLine + lineDeltaBeforeEdit;
       const changedEndLine = changedStartLine + insertedLineSpan;

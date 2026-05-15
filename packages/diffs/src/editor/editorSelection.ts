@@ -230,17 +230,37 @@ export function applyTextChangeToSelections<LAnnotation>(
   if (primarySelection === undefined) {
     return { nextSelections: [] };
   }
-  const primaryStartOffset = textDocument.offsetAt(primarySelection.start);
-  const primaryEndOffset = textDocument.offsetAt(primarySelection.end);
-  const ordered = selections
-    .map((selection, index) => ({
-      selection,
+  const selectionPositions: Position[] = [];
+  for (const selection of selections) {
+    selectionPositions.push(selection.start, selection.end);
+  }
+  const selectionOffsets = textDocument.offsetsAt(selectionPositions);
+  const primaryStartOffset = selectionOffsets[(selections.length - 1) * 2];
+  const primaryEndOffset = selectionOffsets[(selections.length - 1) * 2 + 1];
+  const ordered: Array<{
+    index: number;
+    start: number;
+    end: number;
+  }> = [];
+  let isAlreadyOrdered = true;
+  for (let index = 0; index < selections.length; index++) {
+    const entry = {
       index,
-      start: textDocument.offsetAt(selection.start),
-      end: textDocument.offsetAt(selection.end),
-      isPrimary: index === selections.length - 1,
-    }))
-    .sort((a, b) => {
+      start: selectionOffsets[index * 2],
+      end: selectionOffsets[index * 2 + 1],
+    };
+    const previous = ordered[ordered.length - 1];
+    if (
+      previous !== undefined &&
+      (entry.start < previous.start ||
+        (entry.start === previous.start && entry.end < previous.end))
+    ) {
+      isAlreadyOrdered = false;
+    }
+    ordered.push(entry);
+  }
+  if (!isAlreadyOrdered) {
+    ordered.sort((a, b) => {
       const startOrder = a.start - b.start;
       if (startOrder !== 0) {
         return startOrder;
@@ -251,14 +271,15 @@ export function applyTextChangeToSelections<LAnnotation>(
       }
       return a.index - b.index;
     });
+  }
   const adjustedChange = normalizeLeadingIndentForChange(
     textDocument,
     edit,
     primarySelection,
     tabSize
   );
-  const edits: TextEdit[] = [];
-  const nextSelectionOffsets: Array<[number, number]> = Array.from({
+  const edits: ResolvedTextEdit[] = [];
+  const nextSelectionOffsets: Array<[number, number] | undefined> = Array.from({
     length: selections.length,
   });
   let offsetDelta = 0;
@@ -279,11 +300,9 @@ export function applyTextChangeToSelections<LAnnotation>(
       mergedGroup.start
     );
     edits.push({
-      range: {
-        start: textDocument.positionAt(mergedGroup.start),
-        end: textDocument.positionAt(mergedGroup.end),
-      },
-      newText,
+      start: mergedGroup.start,
+      end: mergedGroup.end,
+      text: newText,
     });
     const nextOffsets: [number, number] = [
       mergedGroup.start + offsetDelta + newText.length,
@@ -318,15 +337,21 @@ export function applyTextChangeToSelections<LAnnotation>(
   }
   finalizeMergedGroup();
 
-  const change = textDocument.applyEdits(
+  const change = textDocument.applyResolvedEdits(
     edits,
     true,
     selections,
     undefined,
     lineAnnotations
   );
-  const nextSelections = nextSelectionOffsets.map((offsets) =>
-    createSelectionFromAnchorAndFocusOffsets(textDocument, ...offsets)
+  const nextSelections = createSelectionsFromOffsetPairs(
+    textDocument,
+    nextSelectionOffsets.map((offsets) => {
+      if (offsets === undefined) {
+        throw new Error('Missing next selection offsets');
+      }
+      return offsets;
+    })
   );
   textDocument.setLastUndoSelectionsAfter(nextSelections);
 
@@ -350,14 +375,37 @@ export function applyTextReplaceToSelections<LAnnotation>(
       'Selection text replacements must match the selection count'
     );
   }
-  const ordered = selections
-    .map((selection, index) => ({
+  const selectionPositions: Position[] = [];
+  for (const selection of selections) {
+    selectionPositions.push(selection.start, selection.end);
+  }
+  const selectionOffsets = textDocument.offsetsAt(selectionPositions);
+  const ordered: Array<{
+    index: number;
+    start: number;
+    end: number;
+    text: string;
+  }> = [];
+  let isAlreadyOrdered = true;
+  for (let index = 0; index < selections.length; index++) {
+    const entry = {
       index,
-      start: textDocument.offsetAt(selection.start),
-      end: textDocument.offsetAt(selection.end),
+      start: selectionOffsets[index * 2],
+      end: selectionOffsets[index * 2 + 1],
       text: texts[index],
-    }))
-    .sort((a, b) => {
+    };
+    const previous = ordered[ordered.length - 1];
+    if (
+      previous !== undefined &&
+      (entry.start < previous.start ||
+        (entry.start === previous.start && entry.end < previous.end))
+    ) {
+      isAlreadyOrdered = false;
+    }
+    ordered.push(entry);
+  }
+  if (!isAlreadyOrdered) {
+    ordered.sort((a, b) => {
       const startOrder = a.start - b.start;
       if (startOrder !== 0) {
         return startOrder;
@@ -368,7 +416,8 @@ export function applyTextReplaceToSelections<LAnnotation>(
       }
       return a.index - b.index;
     });
-  const edits: TextEdit[] = [];
+  }
+  const edits: ResolvedTextEdit[] = [];
   const nextSelectionOffsets: number[] = Array.from({
     length: selections.length,
   });
@@ -385,26 +434,25 @@ export function applyTextReplaceToSelections<LAnnotation>(
       entry.start
     );
     edits.push({
-      range: {
-        start: textDocument.positionAt(entry.start),
-        end: textDocument.positionAt(entry.end),
-      },
-      newText,
+      start: entry.start,
+      end: entry.end,
+      text: newText,
     });
     nextSelectionOffsets[entry.index] =
       entry.start + offsetDelta + newText.length;
     offsetDelta += newText.length - (entry.end - entry.start);
   }
 
-  const change = textDocument.applyEdits(
+  const change = textDocument.applyResolvedEdits(
     edits,
     true,
     selections,
     undefined,
     lineAnnotations
   );
-  const nextSelections = nextSelectionOffsets.map((offset) =>
-    createSelectionFromAnchorAndFocusOffsets(textDocument, offset, offset)
+  const nextSelections = createSelectionsFromOffsetPairs(
+    textDocument,
+    nextSelectionOffsets.map((offset) => [offset, offset])
   );
   textDocument.setLastUndoSelectionsAfter(nextSelections);
   return { nextSelections, change };
@@ -777,6 +825,33 @@ function expandSingleNewlineInsert(
     return insertText;
   }
   return '\n' + lineText.slice(0, indentLen);
+}
+
+function createSelectionsFromOffsetPairs(
+  textDocument: TextDocument<unknown>,
+  offsetPairs: readonly [anchorOffset: number, focusOffset: number][]
+): EditorSelection[] {
+  const normalizedOffsets: number[] = [];
+  for (const [anchorOffset, focusOffset] of offsetPairs) {
+    normalizedOffsets.push(
+      Math.min(anchorOffset, focusOffset),
+      Math.max(anchorOffset, focusOffset)
+    );
+  }
+  const positions = textDocument.positionsAt(normalizedOffsets);
+  return offsetPairs.map(([anchorOffset, focusOffset], index) => {
+    const direction =
+      anchorOffset === focusOffset
+        ? DirectionNone
+        : anchorOffset < focusOffset
+          ? DirectionForward
+          : DirectionBackward;
+    return {
+      start: positions[index * 2],
+      end: positions[index * 2 + 1],
+      direction,
+    };
+  });
 }
 
 // Expands a backspace over leading spaces into one soft-tab width so mixed hard/soft indentation

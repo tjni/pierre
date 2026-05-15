@@ -1,12 +1,10 @@
 import type { DiffsEditorSearchParams } from '../types';
 import { computeLineOffsets } from '../utils/computeFileOffsets';
 import { DirectionBackward, type EditorSelection } from './editorSelection';
-import type { Position, Range } from './textDocument';
+import type { Position, Range, ResolvedTextEdit } from './textDocument';
 
-/** Monaco-style cap on how many matches are materialized for find-all. */
-const MAX_FIND_MATCHES = 19999;
-
-// Default word separators align with VS Code / Monaco defaults for whole-word search.
+const MAX_FIND_MATCHES = 100000;
+// TODO(ije): use Intl.Segmenter instead of regex for word separators
 const WORD_SEPARATORS = '`~!@#$%^&*()-=+[{]}\\|;:\'",.<>/?' as const;
 
 // A piece is a segment of text that is either original or added.
@@ -17,8 +15,14 @@ class Piece {
   constructor(
     public readonly source: number,
     public readonly offset: number,
-    public readonly length: number
+    public readonly length: number,
+    public readonly lineOffsetStart: number,
+    public readonly lineOffsetEnd: number
   ) {}
+
+  get lineBreakCount(): number {
+    return this.lineOffsetEnd - this.lineOffsetStart;
+  }
 }
 
 // A text buffer is a string with its line offsets.
@@ -42,19 +46,16 @@ class TextBuffer {
   }
 }
 
-// A node in the piece tree, which is a red-black tree
+// A node in the balanced piece tree.
 class PieceNode {
-  static Red = 0;
-  static Black = 1;
-
   left: PieceNode | null = null;
   right: PieceNode | null = null;
   parent: PieceNode | null = null;
 
   constructor(
     public piece: Piece,
-    public color: number = PieceNode.Red,
-    public subtreeLength: number = piece.length
+    public subtreeLength: number = piece.length,
+    public subtreeLineBreakCount: number = piece.lineBreakCount
   ) {}
 
   updateSubtreeLength(): void {
@@ -62,26 +63,33 @@ class PieceNode {
       (this.left?.subtreeLength ?? 0) +
       this.piece.length +
       (this.right?.subtreeLength ?? 0);
+    this.subtreeLineBreakCount =
+      (this.left?.subtreeLineBreakCount ?? 0) +
+      this.piece.lineBreakCount +
+      (this.right?.subtreeLineBreakCount ?? 0);
   }
 }
 
 /**
  * A piece table is a data structure that allows for efficient insertion and deletion of text.
  * It is a tree of pieces, where each piece is a segment of text that is either original or added.
- * The tree is balanced to ensure that the operations are efficient.
+ * The tree is rebuilt as a balanced tree after edits to keep lookups efficient.
  * Inspired by https://code.visualstudio.com/blogs/2018/03/23/text-buffer-reimplementation
  */
 export class PieceTable {
   #original: TextBuffer;
   #add = new TextBuffer('');
   #root: PieceNode | null = null;
+  #piecesCache: Piece[] = [];
   #length = 0;
   #lineCount = 0;
   #lastVisitedLine: [number, string] | null = null;
 
   constructor(originalText: string) {
     this.#original = new TextBuffer(originalText);
-    this.#setPieces([new Piece(Piece.Original, 0, originalText.length)]);
+    this.#setPieces([
+      this.#createPiece(Piece.Original, 0, originalText.length),
+    ]);
   }
 
   get lineCount(): number {
@@ -340,7 +348,11 @@ export class PieceTable {
 
     const insertOffset = clamp(offset, 0, this.#length);
     const addOffset = this.#add.append(text);
-    const insertedPiece = new Piece(Piece.Added, addOffset, text.length);
+    const insertedPiece = this.#createPiece(
+      Piece.Added,
+      addOffset,
+      text.length
+    );
     const pieces = this.#pieces();
     const nextPieces: Piece[] = [];
 
@@ -352,15 +364,19 @@ export class PieceTable {
       if (!inserted && insertOffset <= pieceEnd) {
         const splitOffset = insertOffset - cursor;
         if (splitOffset > 0) {
-          nextPieces.push({ ...piece, length: splitOffset });
+          nextPieces.push(
+            this.#createPiece(piece.source, piece.offset, splitOffset)
+          );
         }
         nextPieces.push(insertedPiece);
         if (splitOffset < piece.length) {
-          nextPieces.push({
-            ...piece,
-            offset: piece.offset + splitOffset,
-            length: piece.length - splitOffset,
-          });
+          nextPieces.push(
+            this.#createPiece(
+              piece.source,
+              piece.offset + splitOffset,
+              piece.length - splitOffset
+            )
+          );
         }
         inserted = true;
       } else {
@@ -397,17 +413,101 @@ export class PieceTable {
       const keepAfter = clamp(pieceEnd - end, 0, piece.length);
 
       if (keepBefore > 0) {
-        nextPieces.push({ ...piece, length: keepBefore });
+        nextPieces.push(
+          this.#createPiece(piece.source, piece.offset, keepBefore)
+        );
       }
       if (keepAfter > 0) {
-        nextPieces.push({
-          ...piece,
-          offset: piece.offset + piece.length - keepAfter,
-          length: keepAfter,
-        });
+        nextPieces.push(
+          this.#createPiece(
+            piece.source,
+            piece.offset + piece.length - keepAfter,
+            keepAfter
+          )
+        );
       }
       cursor = pieceEnd;
     }
+
+    this.#setPieces(nextPieces);
+    this.#lastVisitedLine = null;
+  }
+
+  applyEdits(edits: readonly ResolvedTextEdit[]): void {
+    if (edits.length === 0) {
+      return;
+    }
+
+    let pieceIndex = 0;
+    let pieceStart = 0;
+    let copyCursor = 0;
+
+    const pieces = this.#pieces();
+    const insertedPieces = edits.map((edit) =>
+      edit.text.length === 0
+        ? undefined
+        : this.#createPiece(
+            Piece.Added,
+            this.#add.append(edit.text),
+            edit.text.length
+          )
+    );
+    const nextPieces: Piece[] = [];
+
+    const advancePiece = () => {
+      const piece = pieces[pieceIndex];
+      if (piece !== undefined) {
+        pieceStart += piece.length;
+        pieceIndex++;
+      }
+    };
+
+    const appendRange = (start: number, end: number) => {
+      let rangeStart = clamp(start, 0, this.#length);
+      const rangeEnd = clamp(end, rangeStart, this.#length);
+      while (
+        pieceIndex < pieces.length &&
+        pieceStart + pieces[pieceIndex].length <= rangeStart
+      ) {
+        advancePiece();
+      }
+      while (pieceIndex < pieces.length && rangeStart < rangeEnd) {
+        const piece = pieces[pieceIndex];
+        const pieceEnd = pieceStart + piece.length;
+        const offsetInPiece = clamp(rangeStart - pieceStart, 0, piece.length);
+        const takeEnd = Math.min(pieceEnd, rangeEnd);
+        const takeLength = takeEnd - (pieceStart + offsetInPiece);
+        if (takeLength > 0) {
+          nextPieces.push(
+            offsetInPiece === 0 && takeLength === piece.length
+              ? piece
+              : this.#createPiece(
+                  piece.source,
+                  piece.offset + offsetInPiece,
+                  takeLength
+                )
+          );
+        }
+        rangeStart = takeEnd;
+        if (rangeStart >= pieceEnd) {
+          advancePiece();
+        }
+      }
+    };
+
+    for (let i = 0; i < edits.length; i++) {
+      const edit = edits[i];
+      const start = clamp(edit.start, copyCursor, this.#length);
+      const end = clamp(edit.end, start, this.#length);
+      appendRange(copyCursor, start);
+
+      const insertedPiece = insertedPieces[i];
+      if (insertedPiece !== undefined) {
+        nextPieces.push(insertedPiece);
+      }
+      copyCursor = end;
+    }
+    appendRange(copyCursor, this.#length);
 
     this.#setPieces(nextPieces);
     this.#lastVisitedLine = null;
@@ -418,27 +518,28 @@ export class PieceTable {
     if (this.#length === 0) {
       return { line: 0, character: 0 };
     }
+    const line = this.#lineAtOffset(clampedOffset);
+    const lineStart = line === 0 ? 0 : this.#lineBreakOffset(line - 1);
+    return {
+      line,
+      character: clampedOffset - lineStart,
+    };
+  }
 
-    let position: Position | undefined;
-    const scan = this.#forEachLineBreak((lineBreak, line) => {
-      if (clampedOffset < lineBreak[1]) {
-        position = {
-          line,
-          character: clampedOffset - lineBreak[0],
-        };
-        return false;
-      }
-      return true;
-    });
-
-    if (position !== undefined) {
-      return position;
+  positionsAt(offsets: readonly number[]): Position[] {
+    const positions: Position[] = Array.from({ length: offsets.length });
+    if (offsets.length === 0) {
+      return positions;
+    }
+    if (this.#length === 0) {
+      return positions.fill({ line: 0, character: 0 });
     }
 
-    return {
-      line: scan.nextLine,
-      character: clampedOffset - scan.nextLineStart,
-    };
+    for (let i = 0; i < offsets.length; i++) {
+      positions[i] = this.positionAt(offsets[i]);
+    }
+
+    return positions;
   }
 
   offsetAt(position: Position): number {
@@ -454,6 +555,22 @@ export class PieceTable {
     }
     const character = clamp(position.character, 0, offset[1] - offset[0]);
     return offset[0] + character;
+  }
+
+  offsetsAt(positions: readonly Position[]): number[] {
+    const offsets: number[] = Array.from({ length: positions.length });
+    if (positions.length === 0) {
+      return offsets;
+    }
+    if (this.#length === 0) {
+      return offsets.fill(0);
+    }
+
+    for (let i = 0; i < positions.length; i++) {
+      offsets[i] = this.offsetAt(positions[i]);
+    }
+
+    return offsets;
   }
 
   #findPieceAtOffset(
@@ -510,23 +627,75 @@ export class PieceTable {
       }
       throw new Error(`Line index out of range: ${line}`);
     }
-
-    let offset: [start: number, end: number] | undefined;
-    const scan = this.#forEachLineBreak((lineBreak, ln) => {
-      if (ln === line) {
-        offset = lineBreak;
-        return false;
-      }
-      return true;
-    });
-
-    if (offset !== undefined) {
-      return offset;
-    }
-    if (scan.nextLine !== line) {
+    if (line >= this.#lineCount) {
       throw new Error(`Line index out of range: ${line}`);
     }
-    return [scan.nextLineStart, this.#length];
+
+    const start = line === 0 ? 0 : this.#lineBreakOffset(line - 1);
+    const end =
+      line < this.#lineCount - 1 ? this.#lineBreakOffset(line) : this.#length;
+    return [start, end];
+  }
+
+  #lineAtOffset(offset: number): number {
+    let node = this.#root;
+    let remaining = clamp(offset, 0, this.#length);
+    let line = 0;
+
+    while (node !== null) {
+      const leftLength = node.left?.subtreeLength ?? 0;
+      if (remaining < leftLength) {
+        node = node.left;
+        continue;
+      }
+
+      line += node.left?.subtreeLineBreakCount ?? 0;
+      remaining -= leftLength;
+      if (remaining <= node.piece.length) {
+        const buffer = this.#bufferFor(node.piece.source);
+        line +=
+          upperBound(buffer.lineOffsets, node.piece.offset + remaining) -
+          node.piece.lineOffsetStart;
+        return line;
+      }
+
+      line += node.piece.lineBreakCount;
+      remaining -= node.piece.length;
+      node = node.right;
+    }
+
+    return this.#lineCount - 1;
+  }
+
+  #lineBreakOffset(lineBreakIndex: number): number {
+    let node = this.#root;
+    let remaining = lineBreakIndex;
+    let documentOffset = 0;
+
+    while (node !== null) {
+      const leftLineBreakCount = node.left?.subtreeLineBreakCount ?? 0;
+      if (remaining < leftLineBreakCount) {
+        node = node.left;
+        continue;
+      }
+
+      const leftLength = node.left?.subtreeLength ?? 0;
+      documentOffset += leftLength;
+      remaining -= leftLineBreakCount;
+
+      if (remaining < node.piece.lineBreakCount) {
+        const bufferLineOffset = this.#bufferFor(node.piece.source).lineOffsets[
+          node.piece.lineOffsetStart + remaining
+        ];
+        return documentOffset + (bufferLineOffset - node.piece.offset);
+      }
+
+      documentOffset += node.piece.length;
+      remaining -= node.piece.lineBreakCount;
+      node = node.right;
+    }
+
+    return this.#length;
   }
 
   #textFromPieces(): string {
@@ -543,6 +712,8 @@ export class PieceTable {
       readonly end: number;
       readonly text: string;
       readonly lineOffsets: number[];
+      readonly lineOffsetStart: number;
+      readonly lineOffsetEnd: number;
     }) => boolean | void
   ): void {
     this.#walk(this.#root, (node) => {
@@ -550,94 +721,69 @@ export class PieceTable {
       return callback({
         text: buffer.text,
         lineOffsets: buffer.lineOffsets,
+        lineOffsetStart: node.piece.lineOffsetStart,
+        lineOffsetEnd: node.piece.lineOffsetEnd,
         start: node.piece.offset,
         end: node.piece.offset + node.piece.length,
       });
     });
   }
 
-  #forEachLineBreak(
-    callback: (
-      lineBreak: [start: number, end: number],
-      line: number
-    ) => boolean | void
-  ): {
-    nextLine: number;
-    nextLineStart: number;
-  } {
-    let line = 0;
-    let lineStart = 0;
-    let documentOffset = 0;
-
-    this.#forEachPieceSegment((segment) => {
-      const lineOffsetStart = upperBound(segment.lineOffsets, segment.start);
-      const lineOffsetEnd = upperBound(segment.lineOffsets, segment.end);
-      for (let i = lineOffsetStart; i < lineOffsetEnd; i++) {
-        const bufferLineOffset = segment.lineOffsets[i];
-        const endWithEOL = documentOffset + (bufferLineOffset - segment.start);
-
-        if (callback([lineStart, endWithEOL], line) === false) {
-          return false;
-        }
-
-        line++;
-        lineStart = endWithEOL;
-      }
-
-      documentOffset += segment.end - segment.start;
-      return true;
-    });
-
-    return { nextLine: line, nextLineStart: lineStart };
-  }
-
   #bufferFor(source: number): TextBuffer {
     return source === Piece.Original ? this.#original : this.#add;
   }
 
+  #createPiece(source: number, offset: number, length: number): Piece {
+    const buffer = this.#bufferFor(source);
+    return new Piece(
+      source,
+      offset,
+      length,
+      upperBound(buffer.lineOffsets, offset),
+      upperBound(buffer.lineOffsets, offset + length)
+    );
+  }
+
   #pieces(): Piece[] {
-    const pieces: Piece[] = [];
-    this.#walk(this.#root, (node) => {
-      pieces.push(node.piece);
-    });
-    return pieces;
+    return this.#piecesCache;
   }
 
   #setPieces(pieces: Piece[]): void {
     const coalescedPieces = coalescePieces(pieces);
-    this.#root = null;
-    for (const piece of coalescedPieces) {
-      this.#insertRightmost(piece);
-    }
-    this.#recomputeSubtreeLength(this.#root);
-    this.#computeBufferMetadata();
-  }
-
-  #computeBufferMetadata(): void {
+    this.#piecesCache = coalescedPieces;
     let length = 0;
-    let lineCount = 0;
-
-    this.#forEachPieceSegment((segment) => {
-      length += segment.end - segment.start;
-      lineCount +=
-        upperBound(segment.lineOffsets, segment.end) -
-        upperBound(segment.lineOffsets, segment.start);
-    });
-
+    let lineBreakCount = 0;
+    for (const piece of coalescedPieces) {
+      length += piece.length;
+      lineBreakCount += piece.lineBreakCount;
+    }
+    this.#root = this.#buildBalancedTree(
+      coalescedPieces,
+      0,
+      coalescedPieces.length,
+      null
+    );
     this.#length = length;
-    this.#lineCount = length === 0 ? 0 : lineCount + 1;
+    this.#lineCount = length === 0 ? 0 : lineBreakCount + 1;
   }
 
-  #recomputeSubtreeLength(node: PieceNode | null): number {
-    if (node === null) {
-      return 0;
+  #buildBalancedTree(
+    pieces: Piece[],
+    start: number,
+    end: number,
+    parent: PieceNode | null
+  ): PieceNode | null {
+    if (start >= end) {
+      return null;
     }
 
-    node.subtreeLength =
-      this.#recomputeSubtreeLength(node.left) +
-      node.piece.length +
-      this.#recomputeSubtreeLength(node.right);
-    return node.subtreeLength;
+    const middle = start + Math.floor((end - start) / 2);
+    const node = new PieceNode(pieces[middle]);
+    node.parent = parent;
+    node.left = this.#buildBalancedTree(pieces, start, middle, node);
+    node.right = this.#buildBalancedTree(pieces, middle + 1, end, node);
+    node.updateSubtreeLength();
+    return node;
   }
 
   #walk(
@@ -654,117 +800,6 @@ export class PieceTable {
       return false;
     }
     return this.#walk(node.right, visit);
-  }
-
-  #insertRightmost(piece: Piece): void {
-    const node = new PieceNode(piece);
-    if (this.#root === null) {
-      node.color = PieceNode.Black;
-      this.#root = node;
-      return;
-    }
-
-    let parent = this.#root;
-    while (parent.right !== null) {
-      parent = parent.right;
-    }
-    parent.right = node;
-    node.parent = parent;
-
-    let current = node;
-    while (current.parent?.color === PieceNode.Red) {
-      const parent = current.parent;
-      const grandparent = parent.parent;
-      if (grandparent === null) {
-        break;
-      }
-
-      if (parent === grandparent.left) {
-        const uncle = grandparent.right;
-        if (uncle?.color === PieceNode.Red) {
-          parent.color = PieceNode.Black;
-          uncle.color = PieceNode.Black;
-          grandparent.color = PieceNode.Red;
-          current = grandparent;
-        } else {
-          if (current === parent.right) {
-            current = parent;
-            this.#rotateLeft(current);
-          }
-          current.parent!.color = PieceNode.Black;
-          grandparent.color = PieceNode.Red;
-          this.#rotateRight(grandparent);
-        }
-      } else {
-        const uncle = grandparent.left;
-        if (uncle?.color === PieceNode.Red) {
-          parent.color = PieceNode.Black;
-          uncle.color = PieceNode.Black;
-          grandparent.color = PieceNode.Red;
-          current = grandparent;
-        } else {
-          if (current === parent.left) {
-            current = parent;
-            this.#rotateRight(current);
-          }
-          current.parent!.color = PieceNode.Black;
-          grandparent.color = PieceNode.Red;
-          this.#rotateLeft(grandparent);
-        }
-      }
-    }
-
-    if (this.#root !== null) {
-      this.#root.color = PieceNode.Black;
-    }
-  }
-
-  #rotateLeft(node: PieceNode): void {
-    const right = node.right;
-    if (right === null) {
-      return;
-    }
-
-    node.right = right.left;
-    if (right.left !== null) {
-      right.left.parent = node;
-    }
-    right.parent = node.parent;
-    if (node.parent === null) {
-      this.#root = right;
-    } else if (node === node.parent.left) {
-      node.parent.left = right;
-    } else {
-      node.parent.right = right;
-    }
-    right.left = node;
-    node.parent = right;
-    node.updateSubtreeLength();
-    right.updateSubtreeLength();
-  }
-
-  #rotateRight(node: PieceNode): void {
-    const left = node.left;
-    if (left === null) {
-      return;
-    }
-
-    node.left = left.right;
-    if (left.right !== null) {
-      left.right.parent = node;
-    }
-    left.parent = node.parent;
-    if (node.parent === null) {
-      this.#root = left;
-    } else if (node === node.parent.right) {
-      node.parent.right = left;
-    } else {
-      node.parent.left = left;
-    }
-    left.right = node;
-    node.parent = left;
-    node.updateSubtreeLength();
-    left.updateSubtreeLength();
   }
 }
 
@@ -853,10 +888,13 @@ function coalescePieces(pieces: Piece[]): Piece[] {
       previous.source === piece.source &&
       previous.offset + previous.length === piece.offset
     ) {
-      coalescedPieces[coalescedPieces.length - 1] = {
-        ...previous,
-        length: previous.length + piece.length,
-      };
+      coalescedPieces[coalescedPieces.length - 1] = new Piece(
+        previous.source,
+        previous.offset,
+        previous.length + piece.length,
+        previous.lineOffsetStart,
+        piece.lineOffsetEnd
+      );
       continue;
     }
 
@@ -892,7 +930,8 @@ function isWordSeparatorCharCode(charCode: number): boolean {
   return WORD_SEPARATORS.includes(ch);
 }
 
-/** Whole-word check using real document neighbors (Monaco `isValidMatch` style). */
+// Checks if the given text is a whole word by checking if the
+// characters before and after are word separators.
 function isWholeWordAtDocOffsets(
   docStart: number,
   length: number,
@@ -954,7 +993,8 @@ function getSearchCaretOffset(
   return focusAtStart ? offsetAt(selection.start) : offsetAt(selection.end);
 }
 
-/** Leftmost UTF-16 offset of the selection; used for find-previous so we skip the current match. */
+// Returns the leftmost UTF-16 offset of the selection; used for find-previous
+// so we skip the current match.
 function getSearchFindPreviousReferenceOffset(
   selection: EditorSelection | Range | undefined,
   offsetAt: (p: Position) => number
