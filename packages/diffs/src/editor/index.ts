@@ -786,14 +786,14 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     nextLineAnnotations?: LineAnnotation<LAnnotation>[] | undefined
   ) {
     const tokenizer = this.#tokenizer;
-    const file = this.#component;
+    const component = this.#component;
     const fileContents = this.#fileContents;
     const textDocument = this.#textDocument;
     const contentEl = this.#contentElement;
     const gutterEl = this.#contentElement?.previousElementSibling ?? undefined;
     if (
       tokenizer === undefined ||
-      file === undefined ||
+      component === undefined ||
       fileContents === undefined ||
       textDocument === undefined ||
       contentEl === undefined ||
@@ -808,25 +808,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     tokenizer.stopBackgroundTokenize();
 
     const dirtyLines = tokenizer.tokenize(change, this.#renderRange);
-
-    // Invalidate layout caches touched by the edit.
-    // - line inserts/deletes shift line numbers, so clear from startLine onward
-    // - wrapped edits can change visual height, which shifts downstream line Y
-    if (change.lineDelta !== 0) {
-      for (const line of this.#lineYCache.keys()) {
-        if (line >= change.startLine) {
-          this.#lineYCache.delete(line);
-        }
-      }
-    }
-    if (this.#wrap) {
-      for (const line of this.#wrapLineOffsetsCache.keys()) {
-        if (line >= change.startLine) {
-          this.#wrapLineOffsetsCache.delete(line);
-        }
-      }
-    }
-
     const t = performance.now();
 
     if (dirtyLines.size > 0) {
@@ -944,11 +925,11 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       }
     }
 
-    file.emitDirtyLines(tokenizer.themeType, dirtyLines);
+    component.emitDirtyLines(tokenizer.themeType, dirtyLines);
     if (change.lineDelta !== 0) {
       gutterEl.style.gridRow = 'span ' + gutterEl.children.length;
       contentEl.style.gridRow = 'span ' + gutterEl.children.length;
-      file.emitLineCountChange(change.lineCount, nextLineAnnotations);
+      component.emitLineCountChange(change.lineCount, nextLineAnnotations);
     }
 
     console.log(
@@ -1004,19 +985,21 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       fragment,
       elements: new Map<string, HTMLElement>(),
     };
-    selections.forEach((selection) => {
-      if (selections.length > 1 || !isCollapsedSelection(selection)) {
+    for (const selection of selections) {
+      if (!isCollapsedSelection(selection)) {
         this.#renderSelection(renderCtx, selection);
       }
       this.#renderCaret(renderCtx, selection, selection === primarySelection);
-    });
-    this.#overlayElement?.appendChild(fragment);
-    this.#selectionElements?.forEach((el) => el.remove());
-    this.#selectionElements?.clear();
-    this.#selectionElements = renderCtx.elements;
-    if (updateWindowSelection) {
-      this.#updateWindowSelection(primarySelection);
     }
+    this.#overlayElement?.appendChild(fragment);
+    requestAnimationFrame(() => {
+      this.#selectionElements?.forEach((el) => el.remove());
+      this.#selectionElements?.clear();
+      this.#selectionElements = renderCtx.elements;
+      if (updateWindowSelection) {
+        this.#updateWindowSelection(primarySelection);
+      }
+    });
   }
 
   #updateWindowSelection(primarySelection: EditorSelection) {
@@ -1649,8 +1632,36 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         lineAnnotations ?? this.#lineAnnotations
       );
     }
+
+    // Invalidate layout caches touched by the edit.
+    // - line inserts/deletes shift line numbers, so clear from startLine onward
+    // - wrapped edits can change visual height, which shifts downstream line Y
+    if (change.lineDelta !== 0) {
+      for (const line of this.#lineYCache.keys()) {
+        if (line >= change.startLine) {
+          this.#lineYCache.delete(line);
+        }
+      }
+    }
+    if (this.#wrap) {
+      for (const line of this.#wrapLineOffsetsCache.keys()) {
+        if (line >= change.startLine) {
+          this.#wrapLineOffsetsCache.delete(line);
+        }
+      }
+    }
+
+    // update render range if new line count is greater than the current render range
+    if (this.#renderRange !== undefined) {
+      const { startingLine, totalLines } = this.#renderRange;
+      if (change.lineCount > startingLine + totalLines) {
+        this.#renderRange.totalLines = change.lineCount - startingLine;
+      }
+    }
+
     this.#selections = selections;
     this.#rerender(change, lineAnnotations);
+
     if (this.#selections !== undefined) {
       // since we prevent the default input event,
       // we need to update the window selection manually
