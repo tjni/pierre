@@ -436,7 +436,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       this.#selections.length > 0
     ) {
       const primary = this.#selections.at(-1)!;
-      this.#positionSearchPanelRightOf(primary.end);
+      this.#updateSearchPanelPosition(primary.end);
       this.#focusSearchPanelInput();
     }
   }
@@ -1107,7 +1107,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           left: '0',
           width: '1px',
           height: '1px',
-          pointerEvents: 'none',
         },
       });
       this.#contentElement?.getRootNode()?.appendChild(anchor);
@@ -1471,6 +1470,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     });
     this.#overlayElement?.appendChild(searchPanel);
     this.#searchPanelElement = searchPanel;
+    input.select();
     input.focus();
   }
 
@@ -1487,7 +1487,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     });
   }
 
-  #positionSearchPanelRightOf(position: Position): void {
+  #updateSearchPanelPosition(position: Position): void {
     const panel = this.#searchPanelElement;
     if (panel === undefined) {
       return;
@@ -1527,12 +1527,12 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       this.#scrollToLine(startPosition.line);
       requestAnimationFrame(() => {
         this.#scrollToPrimaryCaret();
-        this.#positionSearchPanelRightOf(nextSelection.end);
+        this.#updateSearchPanelPosition(nextSelection.end);
         this.#focusSearchPanelInput();
       });
     } else if (action === 'findAll' || action === 'replaceAll') {
       this.#scrollToLine(startPosition.line);
-      this.#positionSearchPanelRightOf(endPosition);
+      this.#updateSearchPanelPosition(endPosition);
       this.#focusSearchPanelInput();
     }
   }

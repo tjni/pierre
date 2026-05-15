@@ -13,8 +13,10 @@ export const EDITOR_CSS: string = /* CSS */ `
     50% { opacity: 0; }
     100% { opacity: 1; }
   }
-  [data-code],
-  [data-content] {
+  :host, /* for jump anchor */
+  [data-code], /* for editor overlay */
+  [data-content] /* for wrap line */
+  {
     position: relative;
   }
   [data-content] {
