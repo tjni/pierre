@@ -86,8 +86,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #lineYCache = new Map<number, number>();
   #wrapLineOffsetsCache = new Map<number, Uint32Array>();
   #lastCharX?: [line: number, character: number, x: number, wrapLine: number];
+  #lastContentWidth = -1;
+  #lastGutterWidth = -1;
 
-  // dom elements
+  // dom
   #shadowRoot?: ShadowRoot;
   #contentElement?: HTMLElement;
   #styleElement?: HTMLStyleElement;
@@ -97,7 +99,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #primaryCaretElement?: HTMLElement;
   #measureCtx?: CanvasRenderingContext2D;
   #contentResizeObserver?: ResizeObserver;
-  #lastContentWidth = -1;
 
   // state
   #shouldIgnoreSelectionChange = false;
@@ -182,6 +183,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#lineYCache.clear();
     this.#wrapLineOffsetsCache.clear();
     this.#lastCharX = undefined;
+    this.#lastContentWidth = -1;
+    this.#lastGutterWidth = -1;
 
     this.#shadowRoot = undefined;
     this.#contentElement?.removeAttribute('contentEditable');
@@ -197,7 +200,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#measureCtx = undefined;
     this.#contentResizeObserver?.disconnect();
     this.#contentResizeObserver = undefined;
-    this.#lastContentWidth = -1;
 
     this.#shouldIgnoreSelectionChange = false;
     this.#selectionStart = undefined;
@@ -358,6 +360,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#tabSize = Number(tabSize);
     this.#wrap = this.#component?.options.overflow === 'wrap';
     this.#lastContentWidth = this.#getContentWidth();
+    this.#lastGutterWidth = this.#getGutterWidth();
     this.#measureCtx ??=
       document.createElement('canvas').getContext('2d') ?? undefined;
     const font = fontSize + ' ' + fontFamily;
@@ -771,15 +774,22 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
   #handleLayoutResize() {
     const contentWidth = this.#getContentWidth();
-    const widthChanged = contentWidth !== this.#lastContentWidth;
+    const gutterWidth = this.#getGutterWidth();
+    const contentWidthChanged = contentWidth !== this.#lastContentWidth;
+    const gutterWidthChanged = gutterWidth !== this.#lastGutterWidth;
     this.#lastContentWidth = contentWidth;
-    if (this.#wrap && widthChanged) {
+    this.#lastGutterWidth = gutterWidth;
+    if (!contentWidthChanged && !gutterWidthChanged) {
+      return;
+    }
+
+    this.#lastCharX = undefined;
+    if (this.#wrap && contentWidthChanged) {
       this.#lineYCache.clear();
-      this.#lastCharX = undefined;
       this.#wrapLineOffsetsCache.clear();
-      if (this.#selections !== undefined) {
-        this.#updateSelections(this.#selections);
-      }
+    }
+    if (this.#selections !== undefined) {
+      this.#updateSelections(this.#selections);
     }
   }
 
@@ -1651,6 +1661,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         }
       }
     }
+    this.#lastCharX = undefined;
 
     this.#selections = selections;
     this.#rerender(change, lineAnnotations);
@@ -1722,25 +1733,31 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   }
 
   #getGutterWidth() {
-    const diffsColumnNumbertWidth =
+    const gutterElement =
+      this.#contentElement?.previousElementSibling ?? undefined;
+    if (
+      gutterElement instanceof HTMLElement &&
+      gutterElement.hasAttribute('data-gutter')
+    ) {
+      // Prefer the live gutter width: `--diffs-column-number-width` is updated
+      // asynchronously by ResizeManager and can lag after line-count edits.
+      const measuredWidth = gutterElement.offsetWidth;
+      if (measuredWidth > 0) {
+        return measuredWidth;
+      }
+    }
+
+    const diffsColumnNumberWidth =
       this.#contentElement?.parentElement?.style.getPropertyValue(
         '--diffs-column-number-width'
       ) ?? '';
     if (
-      diffsColumnNumbertWidth.length > 2 &&
-      diffsColumnNumbertWidth.endsWith('px')
+      diffsColumnNumberWidth.length > 2 &&
+      diffsColumnNumberWidth.endsWith('px')
     ) {
-      return Number(diffsColumnNumbertWidth.slice(0, -2));
+      return Number(diffsColumnNumberWidth.slice(0, -2));
     }
-    const gutterElement =
-      this.#contentElement?.previousElementSibling ?? undefined;
-    if (
-      gutterElement === undefined ||
-      !gutterElement.hasAttribute('data-gutter')
-    ) {
-      return 0;
-    }
-    return (gutterElement as HTMLElement).offsetWidth ?? 0;
+    return 0;
   }
 
   #getContentWidth() {
