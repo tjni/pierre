@@ -35,21 +35,12 @@ const fileTreeContainer = document.getElementById('file-tree-container')!;
 const editorContainer = document.getElementById('editor-container')!;
 const editor = new Editor<undefined>();
 const virtualizer = new Virtualizer();
-const poolManager = (() => {
-  const manager = createWorkerAPI({
-    theme: DEFAULT_THEMES,
-    langs: ['typescript', 'tsx'],
-    preferredHighlighter: 'shiki-wasm',
-    useTokenTransformer: true,
-  });
-  void manager.initialize().then(() => {
-    console.log('WorkerPoolManager initialized, with:', manager.getStats());
-  });
-
-  // @ts-expect-error bcuz
-  window.__POOL = manager;
-  return manager;
-})();
+const poolManager = createWorkerAPI({
+  theme: DEFAULT_THEMES,
+  langs: ['typescript', 'tsx'],
+  preferredHighlighter: 'shiki-wasm',
+  useTokenTransformer: true,
+});
 const fileInstance = new VirtualizedFile<undefined>(
   {},
   virtualizer,
@@ -94,6 +85,9 @@ function onFileChange(file: FileContents) {
   console.log('writeFile', file.name);
 }
 
+void poolManager.initialize().then(() => {
+  console.log('WorkerPoolManager initialized, with:', poolManager.getStats());
+});
 virtualizer.setup(editorContainer);
 fileTree.setSearch('editor');
 fileTree.render({ fileTreeContainer });

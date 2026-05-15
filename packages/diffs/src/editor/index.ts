@@ -385,7 +385,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         highlighter,
         textDocument,
         theme: this.#getTheme(),
-        onTokenize: (themeType, lines) => {
+        onDeferTokenize: (themeType, lines) => {
           this.#component?.emitDirtyLines(themeType, lines);
         },
       });
@@ -1648,14 +1648,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         if (line >= change.startLine) {
           this.#wrapLineOffsetsCache.delete(line);
         }
-      }
-    }
-
-    // update render range if new line count is greater than the current render range
-    if (this.#renderRange !== undefined) {
-      const { startingLine, totalLines } = this.#renderRange;
-      if (change.lineCount > startingLine + totalLines) {
-        this.#renderRange.totalLines = change.lineCount - startingLine;
       }
     }
 

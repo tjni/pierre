@@ -9,6 +9,90 @@ import {
 import type { DiffsHighlighter, HighlightedToken } from '../src/types';
 
 describe('EditorTokenizer', () => {
+  test('limits foreground tokenization to the render range after prepending lines', () => {
+    const originalAddEventListener = globalThis.addEventListener;
+    const originalPostMessage = globalThis.postMessage;
+    const postedMessages: unknown[] = [];
+
+    globalThis.addEventListener =
+      (() => {}) as typeof globalThis.addEventListener;
+    globalThis.postMessage = ((message: unknown) => {
+      postedMessages.push(message);
+    }) as typeof globalThis.postMessage;
+
+    try {
+      let tokenizeLineCount = 0;
+      const grammar = {
+        tokenizeLine2(lineText: string, ruleStack: StateStack) {
+          tokenizeLineCount++;
+          return {
+            tokens: new Uint32Array([0, 0]),
+            ruleStack,
+            stoppedEarly: false,
+            lineText,
+          };
+        },
+      } as unknown as IGrammar;
+      const textDocument = new TextDocument(
+        'test.ts',
+        Array.from({ length: 1_000 }, (_, i) => `line ${i}`).join('\n'),
+        'typescript'
+      );
+      const tokenizer = new EditorTokenizer({
+        highlighter: {
+          getLanguage: () => grammar,
+          getLoadedLanguages: () => ['typescript'],
+          setTheme: () => ({ colorMap: [''] }),
+        } as unknown as DiffsHighlighter,
+        textDocument,
+        theme: { name: 'test-theme', type: 'dark' },
+        onDeferTokenize: () => {},
+      });
+      const renderRange = {
+        startingLine: 900,
+        totalLines: 10,
+        bufferBefore: 0,
+        bufferAfter: 0,
+      };
+
+      tokenizer.tokenize(
+        {
+          startLine: 0,
+          startCharacter: 0,
+          endLine: 999,
+          previousLineCount: textDocument.lineCount,
+          lineCount: textDocument.lineCount,
+          lineDelta: 1,
+          changedLineRanges: [[0, 999]],
+        },
+        renderRange
+      );
+      tokenizeLineCount = 0;
+      postedMessages.length = 0;
+
+      const change = textDocument.applyEdits([
+        {
+          range: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: 0 },
+          },
+          newText:
+            Array.from({ length: 100 }, (_, i) => `new ${i}`).join('\n') + '\n',
+        },
+      ])!;
+      const dirtyLines = tokenizer.tokenize(change, renderRange);
+
+      expect(tokenizeLineCount).toBe(10);
+      expect([...dirtyLines.keys()]).toEqual([
+        900, 901, 902, 903, 904, 905, 906, 907, 908, 909,
+      ]);
+      expect(postedMessages).toHaveLength(1);
+    } finally {
+      globalThis.addEventListener = originalAddEventListener;
+      globalThis.postMessage = originalPostMessage;
+    }
+  });
+
   test('settles zero-line edits before the viewport without rebuilding to the viewport', () => {
     let tokenizeLineCount = 0;
     const grammar = {
@@ -36,7 +120,7 @@ describe('EditorTokenizer', () => {
       } as unknown as DiffsHighlighter,
       textDocument,
       theme: { name: 'test-theme', type: 'dark' },
-      onTokenize: (_themeType, lines) => {
+      onDeferTokenize: (_themeType, lines) => {
         offscreenUpdates.push(lines);
       },
     });
@@ -129,7 +213,7 @@ describe('EditorTokenizer', () => {
         } as unknown as DiffsHighlighter,
         textDocument,
         theme: { name: 'test-theme', type: 'dark' },
-        onTokenize: () => {},
+        onDeferTokenize: () => {},
       });
       const change: TextDocumentChange = {
         startLine: 0,
@@ -192,7 +276,7 @@ describe('EditorTokenizer', () => {
       } as unknown as DiffsHighlighter,
       textDocument,
       theme: { name: 'test-theme', type: 'dark' },
-      onTokenize: () => {},
+      onDeferTokenize: () => {},
     });
 
     tokenizer.tokenize(

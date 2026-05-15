@@ -15,7 +15,7 @@ export interface EditorTokenizerProps {
   theme: { name: string; type: 'dark' | 'light' };
   textDocument: TextDocument<unknown>;
   linesPreTokenize?: number;
-  onTokenize: (
+  onDeferTokenize: (
     themeType: 'light' | 'dark',
     lines: Map<number, Array<HighlightedToken>>
   ) => void;
@@ -28,7 +28,6 @@ export class EditorTokenizer {
   #themeType: 'light' | 'dark';
   #colorMap: string[];
   #textDocument: TextDocument<unknown>;
-  #onMessage: (event: MessageEvent) => void;
   #onTokenize: (
     themeType: 'light' | 'dark',
     lines: Map<number, Array<HighlightedToken>>
@@ -41,6 +40,14 @@ export class EditorTokenizer {
   #backgroundJobId: number = 0;
   #backgroundChangedLineRanges: readonly [number, number][] | undefined;
   #backgroundChangedRangeIndex: number = 0;
+
+  #onMessage = ({
+    data,
+  }: MessageEvent<{ type: 'tokenize'; jobId: number }>) => {
+    if (data.type === 'tokenize' && data.jobId === this.#backgroundJobId) {
+      this.#backgroundTokenize(data.jobId);
+    }
+  };
 
   #prebuildStateStackMap = debounce(async (renderRange?: RenderRange) => {
     const { startingLine = 0, totalLines = Infinity } = renderRange ?? {};
@@ -61,20 +68,13 @@ export class EditorTokenizer {
     highlighter,
     theme,
     textDocument,
-    onTokenize,
+    onDeferTokenize: onTokenize,
   }: EditorTokenizerProps) {
     this.#highlighter = highlighter;
     this.#themeType = theme.type;
     this.#colorMap = highlighter.setTheme(theme.name).colorMap;
     this.#textDocument = textDocument;
     this.#onTokenize = onTokenize;
-    this.#onMessage = ({
-      data,
-    }: MessageEvent<{ type: 'tokenize'; jobId: number }>) => {
-      if (data.type === 'tokenize' && data.jobId === this.#backgroundJobId) {
-        this.#backgroundTokenize(data.jobId);
-      }
-    };
     if (highlighter.getLoadedLanguages().includes(textDocument.languageId)) {
       this.#grammar = highlighter.getLanguage(textDocument.languageId);
     }
@@ -95,7 +95,6 @@ export class EditorTokenizer {
     }
 
     const t = performance.now();
-
     const { lineCount } = this.#textDocument;
     const { startingLine = 0, totalLines = Infinity } = renderRange ?? {};
     const renderRangeEndLine =
@@ -106,6 +105,10 @@ export class EditorTokenizer {
     const dirtyStart = change.startLine;
     const viewStart = Math.max(startingLine, dirtyStart);
     const canReuseCachedStates = change.lineDelta === 0;
+    const canCacheTokenizedStates =
+      canReuseCachedStates ||
+      renderRange === undefined ||
+      dirtyStart >= viewStart;
     const changedLineRanges: readonly [number, number][] = canReuseCachedStates
       ? (change.changedLineRanges ?? [[dirtyStart, change.endLine]])
       : [[dirtyStart, change.endLine]];
@@ -116,7 +119,9 @@ export class EditorTokenizer {
         this.#stateStackMap.length,
         dirtyStart + 1
       );
-      this.#buildStateStackMap(viewStart);
+      if (renderRange === undefined || dirtyStart >= viewStart) {
+        this.#buildStateStackMap(viewStart);
+      }
     }
 
     let changedRangeIndex = 0;
@@ -137,7 +142,9 @@ export class EditorTokenizer {
       const previousNextState = canReuseCachedStates
         ? this.#stateStackMap[line + 1]
         : undefined;
-      this.#stateStackMap[line] = state;
+      if (canCacheTokenizedStates) {
+        this.#stateStackMap[line] = state;
+      }
 
       const lineText = this.#textDocument.getLineText(line);
       let resolvedTokens: Array<HighlightedToken>;
@@ -166,7 +173,9 @@ export class EditorTokenizer {
         offscreenDirtyLines?.set(line, resolvedTokens);
       }
 
-      this.#stateStackMap[line + 1] = state;
+      if (canCacheTokenizedStates) {
+        this.#stateStackMap[line + 1] = state;
+      }
       settled =
         line >= currentChangedRangeEnd &&
         canReuseCachedStates &&
@@ -197,10 +206,12 @@ export class EditorTokenizer {
       line++;
     }
 
-    if (line < renderRangeEndLine) {
-      this.#stateStackMap[line + 1] = state;
-    } else {
-      this.#stateStackMap[line] = state;
+    if (canCacheTokenizedStates) {
+      if (line < renderRangeEndLine) {
+        this.#stateStackMap[line + 1] = state;
+      } else {
+        this.#stateStackMap[line] = state;
+      }
     }
 
     if (offscreenDirtyLines !== undefined && offscreenDirtyLines.size > 0) {
