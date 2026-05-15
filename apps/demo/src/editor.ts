@@ -51,15 +51,7 @@ const poolManager = (() => {
   return manager;
 })();
 const fileInstance = new VirtualizedFile<undefined>(
-  {
-    unsafeCSS: /* CSS */ `
-      [data-diffs-header] {
-        position: sticky;
-        top: 0;
-        z-index: 100;
-      }
-    `,
-  },
+  {},
   virtualizer,
   undefined,
   poolManager
@@ -72,6 +64,7 @@ const fileTree = new FileTree({
   paths,
   gitStatus,
   search: true,
+  searchBlurBehavior: 'retain',
   onSelectionChange: (selectedPaths) => {
     if (selectedPaths.length === 1) {
       const filename = selectedPaths[0];
@@ -101,6 +94,7 @@ function onFileChange(file: FileContents) {
   console.log('writeFile', file.name);
 }
 
-virtualizer.setup(editorContainer, editorContainer);
+virtualizer.setup(editorContainer);
+fileTree.setSearch('editor');
 fileTree.render({ fileTreeContainer });
 editor.edit(fileInstance, (file) => void onFileChange(file));

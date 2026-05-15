@@ -256,23 +256,16 @@ diffs-container {
   overflow: hidden;
 }
 
-#editor[data-show-sidebar] {
-  grid-template-columns: 280px 1fr 280px;
-}
-
-#file-tree {
-  background-color: light-dark(#f8f8f8, #141415);
-}
-
-#file-tree h1 {
+#file-tree-header h1 {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 14px;
+  color: var(--fg);
   padding: 4px 16px 12px;
 }
 
-#file-tree h1 svg {
+#file-tree-header svg {
   width: 20px;
   height: 20px;
 }
@@ -280,6 +273,7 @@ diffs-container {
 #editor-container {
   overflow-y: auto;
   overscroll-behavior: none;
+  height: 100%;
 }
 
 #editor-container diffs-container {

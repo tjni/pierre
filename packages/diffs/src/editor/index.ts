@@ -36,7 +36,6 @@ import {
   round,
 } from '../editor/editorUtils';
 import {
-  type Position,
   TextDocument,
   type TextDocumentChange,
   type TextEdit,
@@ -53,7 +52,7 @@ import type {
   RenderRange,
 } from '../types';
 import { getFiletypeFromFileName } from '../utils/getFiletypeFromFileName';
-import { EDITOR_CSS, SEARCH_PANEL_GAP } from './constants';
+import { EDITOR_CSS } from './constants';
 import { applyDocumentChangeToLineAnnotations } from './editorLineAnnotations';
 import { EditorTokenizer } from './editorTokenzier';
 import { isPrimaryModifier } from './platform';
@@ -108,6 +107,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #reservedSelections?: EditorSelection[];
   #selections?: EditorSelection[];
   #scrollingToLine?: number;
+  #retainSearchPanelFocus = false;
 
   #emitChange = debounce(
     (
@@ -429,15 +429,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       this.#scrollToLine(this.#scrollingToLine);
     }
 
-    if (
-      this.#searchPanelElement !== undefined &&
-      this.#searchPanelElement.isConnected &&
-      this.#selections !== undefined &&
-      this.#selections.length > 0
-    ) {
-      const primary = this.#selections.at(-1)!;
-      this.#updateSearchPanelPosition(primary.end);
-      this.#focusSearchPanelInput();
+    if (this.#retainSearchPanelFocus) {
+      requestAnimationFrame(() => {
+        this.#focusSearchPanelInput();
+      });
     }
   }
 
@@ -596,6 +591,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           this.#isMouseDown = true;
           this.#selectionStart = undefined;
           this.#searchPanelElement?.remove();
+          this.#searchPanelElement = undefined;
+          this.#retainSearchPanelFocus = false;
           if (e.button === 0 && isPrimaryModifier(e)) {
             this.#reservedSelections = this.#selections?.map((selection) => ({
               ...selection,
@@ -1358,6 +1355,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
   #renderSearchPanel() {
     this.#searchPanelElement?.remove();
+
     const textDocument = this.#textDocument;
     const selections = this.#selections;
     if (textDocument === undefined || selections === undefined) {
@@ -1376,9 +1374,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       primarySelection = expanded;
     }
 
-    const anchor = primarySelection.end;
-    const top = this.#getLineY(anchor.line);
-    const [left, wrapLine] = this.#getCharX(anchor.line, anchor.character);
     const defaultQuery = textDocument.getText(primarySelection);
     const searchParams: DiffsEditorSearchParams = {
       text: defaultQuery,
@@ -1400,16 +1395,13 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         if (e.key === 'Enter') {
           e.preventDefault();
           searchParams.action = 'findNext';
-          this.#search(searchParams);
+          this.#search(searchParams, true);
         } else if (e.key === 'f' && isPrimaryModifier(e)) {
           e.preventDefault();
         }
       },
     });
     const searchPanel = h('div', {
-      style: {
-        transform: `translateY(${top + wrapLine * this.#lineHeight}px) translateX(${left + SEARCH_PANEL_GAP}px)`,
-      },
       dataset: 'searchPanel',
       children: [
         h('div', {
@@ -1452,6 +1444,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
               },
             }),
             h('div', {
+              dataset: 'spacer',
+            }),
+            h('div', {
               dataset: { icon: 'close' },
               html: `<svg width="16" height="16" viewBox="0 0 20 20">
                 <line x1="5" y1="5" x2="15" y2="15" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></line>
@@ -1460,44 +1455,30 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
               `,
               title: 'Close',
               onclick: () => {
-                this.#overlayElement?.removeChild(searchPanel);
+                this.#searchPanelElement?.remove();
                 this.#searchPanelElement = undefined;
+                this.#retainSearchPanelFocus = false;
               },
             }),
           ],
         }),
       ],
     });
-    this.#overlayElement?.appendChild(searchPanel);
-    this.#searchPanelElement = searchPanel;
+    const shadowRoot = this.#contentElement?.getRootNode() as
+      | ShadowRoot
+      | undefined;
+    shadowRoot
+      ?.querySelector<HTMLElement>('[data-diffs-header]')
+      ?.after(searchPanel);
     input.select();
-    input.focus();
+    this.#searchPanelElement = searchPanel;
+    this.#retainSearchPanelFocus = false;
   }
 
-  #focusSearchPanelInput(): void {
-    requestAnimationFrame(() => {
-      const panel = this.#searchPanelElement;
-      if (panel === undefined) {
-        return;
-      }
-      const input = panel.querySelector<HTMLInputElement>('input[data-search]');
-      if (input?.isConnected === true) {
-        input.focus({ preventScroll: true });
-      }
-    });
-  }
-
-  #updateSearchPanelPosition(position: Position): void {
-    const panel = this.#searchPanelElement;
-    if (panel === undefined) {
-      return;
-    }
-    const top = this.#getLineY(position.line);
-    const [left, wrapLine] = this.#getCharX(position.line, position.character);
-    panel.style.transform = `translateY(${top + wrapLine * this.#lineHeight}px) translateX(${left + SEARCH_PANEL_GAP}px)`;
-  }
-
-  #search(searchParams: DiffsEditorSearchParams) {
+  #search(
+    searchParams: DiffsEditorSearchParams,
+    retainSearchPanelFocus: boolean = false
+  ) {
     const primarySelection = this.#selections?.at(-1);
     const textDocument = this.#textDocument;
     if (textDocument === undefined) {
@@ -1510,7 +1491,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
     const [startOffset, endOffset] = matches[0];
     const startPosition = textDocument.positionAt(startOffset);
-    const endPosition = textDocument.positionAt(endOffset);
     const action = searchParams.action;
 
     if (
@@ -1524,16 +1504,28 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         endOffset
       );
       this.#updateSelections([nextSelection], true);
-      this.#scrollToLine(startPosition.line);
-      requestAnimationFrame(() => {
-        this.#scrollToPrimaryCaret();
-        this.#updateSearchPanelPosition(nextSelection.end);
-        this.#focusSearchPanelInput();
-      });
+      this.#scrollToPrimaryCaret();
+      if (retainSearchPanelFocus) {
+        this.#retainSearchPanelFocus = true;
+        requestAnimationFrame(() => {
+          this.#focusSearchPanelInput();
+        });
+      }
     } else if (action === 'findAll' || action === 'replaceAll') {
       this.#scrollToLine(startPosition.line);
-      this.#updateSearchPanelPosition(endPosition);
-      this.#focusSearchPanelInput();
+    }
+  }
+
+  #focusSearchPanelInput() {
+    const rowElements = this.#searchPanelElement?.firstElementChild?.children;
+    if (rowElements === undefined) {
+      return;
+    }
+    for (const rowElement of rowElements) {
+      if (rowElement instanceof HTMLInputElement) {
+        rowElement.select();
+        break;
+      }
     }
   }
 

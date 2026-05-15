@@ -1,6 +1,5 @@
 export const TOKENIZE_TIME_LIMIT = 100;
 export const TOKENIZE_MAX_LINE_LENGTH = 10000;
-export const SEARCH_PANEL_GAP = 8;
 
 const DEBUG_SELECTION = false;
 
@@ -54,7 +53,6 @@ export const EDITOR_CSS: string = /* CSS */ `
     height: 1lh;
     z-index: -10;
     background-color: var(--diffs-line-bg);
-    opacity: 0.5;
   }
   [data-editor-overlay] {
     display: contents;
@@ -64,59 +62,63 @@ export const EDITOR_CSS: string = /* CSS */ `
       visibility: visible;
     }
   }
-  [data-content]:focus ~ [data-editor-overlay] [data-selection-range] {
-    opacity: 1;
-  }
 
   [data-search-panel] {
+    position: sticky;
+    top: 8px;
+    left: 0;
+    z-index: 100;
     display: flex;
     flex-direction: column;
     gap: 4px;
-    position: absolute;
-    top: 0;
-    left: 0;
-    background-color: color-mix(in lab, var(--diffs-fg) 3%, var(--diffs-bg));
+    margin-inline: 16px;
+    background-color: color-mix(in lab, color-mix(in lab, var(--diffs-fg) 3%, var(--diffs-bg)), transparent 40%);
     border: 1px solid color-mix(in lab, var(--diffs-fg) 10%, var(--diffs-bg));
-    padding: 6px;
+    padding: 8px;
     border-radius: 6px;
     box-shadow: 0 0 12px 0 color-mix(in lab, var(--diffs-fg) 10% var(--diffs-bg));
-    font-family: Arial, Helvetica, sans-serif;
-    font-size: 14px;
+    backdrop-filter: blur(8px);
   }
   [data-search-panel-row] {
     display: flex;
     align-items: center;
     justify-content: flex-start;
     gap: 4px;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 14px;
   }
   [data-search-panel-row] input {
     font-size: 14px;
-    line-height: 22px;
-    padding: 0 6px;
-    border-radius: 4px;
-    border: 1px solid color-mix(in lab, var(--diffs-fg) 20%, var(--diffs-bg));
+    line-height: 24px;
+    padding-inline: 4px;
+    border: none;
     outline: none;
-    background-color: var(--diffs-bg);
+    background-color: transparent;
     color: var(--diffs-fg);
+    field-sizing: content;
   }
-  [data-search-panel-row] input:focus {
-    border: 1px solid color-mix(in lab, var(--diffs-fg) 50%, var(--diffs-bg));
+  [data-search-panel-row] input::selection {
+    background-color: color-mix(in lab, var(--diffs-fg) 8%, var(--diffs-bg));
   }
   [data-search-panel-row] [data-icon] {
-    width: 22px;
-    height: 22px;
+    width: 24px;
+    height: 24px;
     display: flex;
-    color: color-mix(in lab, var(--diffs-fg) 60%, var(--diffs-bg));
+    color: color-mix(in lab, var(--diffs-fg) 50%, var(--diffs-bg));
     align-items: center;
     justify-content: center;
     border-radius: 4px;
     cursor: pointer;
+    transition: background-color 0.1s ease-in-out, color 0.1s ease-in-out;
   }
   [data-search-panel-row] [data-icon]:is([data-icon='search']) {
     color: color-mix(in lab, var(--diffs-fg) 30%, var(--diffs-bg));
   }
   [data-search-panel-row] [data-icon]:not([data-icon='search']):hover {
-    background-color: color-mix(in lab, var(--diffs-fg) 10%, var(--diffs-bg));
+    background-color: color-mix(in lab, var(--diffs-fg) 6%, var(--diffs-bg));
     color: var(--diffs-fg);
+  }
+  [data-search-panel-row] [data-spacer] {
+    flex: 1;
   }
 `;
