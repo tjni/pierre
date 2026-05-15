@@ -4,8 +4,6 @@ import fs from 'fs';
 import type { IncomingMessage, ServerResponse } from 'http';
 import { execFileSync } from 'node:child_process';
 import path, { resolve } from 'path';
-import { Readable } from 'stream';
-import { ReadableStream } from 'stream/web';
 import type { Plugin, PreviewServer, ViteDevServer } from 'vite';
 import { createLogger, defineConfig, type Logger } from 'vite';
 
@@ -285,60 +283,20 @@ export default defineConfig(() => {
         if (pathname.startsWith('/fs/')) {
           const reqPath = pathname.slice(4);
           try {
-            switch (req.method) {
-              case 'GET':
-                {
-                  const stat = fs.lstatSync(path.join(projectDir, reqPath));
-                  if (stat.isDirectory()) {
-                    const enties = readProjectDirSync(reqPath);
-                    res.setHeader('Content-Type', 'application/json');
-                    res.end(JSON.stringify(enties));
-                  } else {
-                    const stream = fs.createReadStream(
-                      path.join(projectDir, reqPath)
-                    );
-                    res.setHeader('Content-Type', 'text/plain');
-                    for await (const chunk of stream) {
-                      res.write(chunk);
-                    }
-                    res.end();
-                  }
-                }
-                break;
-
-              case 'POST':
-                {
-                  const stream = new ReadableStream({
-                    start(controller) {
-                      req.on('data', (chunk) => {
-                        controller.enqueue(chunk);
-                      });
-                      req.on('end', () => {
-                        controller.close();
-                      });
-                    },
-                  });
-                  const writer = fs.createWriteStream(
-                    path.join(projectDir, reqPath)
-                  );
-                  Readable.fromWeb(stream).pipe(writer);
-                  res.setHeader('Content-Type', 'text/plain');
-                  res.end('File created');
-                }
-                break;
-
-              case 'DELETE':
-                {
-                  fs.unlinkSync(path.join(projectDir, reqPath));
-                  res.setHeader('Content-Type', 'text/plain');
-                  res.end('File deleted');
-                }
-                break;
-
-              default: {
-                res.writeHead(405, { 'Content-Type': 'text/plain' });
-                res.end('Method not allowed');
+            const stat = fs.lstatSync(path.join(projectDir, reqPath));
+            if (stat.isDirectory()) {
+              const enties = readProjectDirSync(reqPath);
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify(enties));
+            } else {
+              const stream = fs.createReadStream(
+                path.join(projectDir, reqPath)
+              );
+              res.setHeader('Content-Type', 'text/plain');
+              for await (const chunk of stream) {
+                res.write(chunk);
               }
+              res.end();
             }
           } catch (e) {
             res.writeHead(500, { 'Content-Type': 'text/plain' });

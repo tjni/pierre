@@ -29,17 +29,8 @@ const API = {
   readFile: (path: string) => {
     return fetch(`/fs/packages/diffs/${path}`).then((res) => res.text());
   },
-
-  // write file to disk
-  writeFile: (path: string, contents: string) => {
-    return fetch(`/fs/packages/diffs/${path}`, {
-      method: 'POST',
-      body: contents,
-    });
-  },
 };
 
-const recentFile = localStorage.getItem('diffs-editor:recentFile');
 const fileTreeContainer = document.getElementById('file-tree-container')!;
 const editorContainer = document.getElementById('editor-container')!;
 const editor = new Editor<undefined>();
@@ -101,20 +92,15 @@ async function openDocument(filename: string) {
     containerWrapper: editorContainer,
   });
   editorContainer.scrollTo({ left: 0, top: 0 });
-  localStorage.setItem('diffs-editor:recentFile', filename);
 }
 
 function onFileChange(file: FileContents) {
+  const gs = gitStatus.filter((e) => e.path !== file.name);
+  gs.push({ path: file.name, status: 'modified' });
+  fileTree.setGitStatus(gs);
   console.log('writeFile', file.name);
-  // await API.writeFile(file.name, file.contents);
-  // fileTree.setGitStatus(await API.getGitStatus());
 }
 
 virtualizer.setup(editorContainer, editorContainer);
 fileTree.render({ fileTreeContainer });
 editor.edit(fileInstance, (file) => void onFileChange(file));
-
-if (recentFile !== null && paths.includes(recentFile)) {
-  fileTree.focusPath(recentFile);
-  void openDocument(recentFile);
-}
