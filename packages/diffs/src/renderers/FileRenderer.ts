@@ -243,20 +243,6 @@ export class FileRenderer<LAnnotation = undefined> {
     if (renderCache == null || renderCache.result == null) {
       return undefined;
     }
-    const prevCodeLines = renderCache.result.code.length;
-    renderCache.result.code.length = lineCount;
-    for (let i = prevCodeLines; i < lineCount; i++) {
-      renderCache.result.code[i] = {
-        type: 'element',
-        tagName: 'div',
-        properties: {
-          'data-line': i + 1,
-          'data-line-type': 'context',
-          'data-line-index': i,
-        },
-        children: [{ type: 'text', value: ' ' }],
-      };
-    }
     this.currentLineCount.set(renderCache.file, lineCount);
     if (newLineAnnotations != null) {
       this.setLineAnnotations(newLineAnnotations);

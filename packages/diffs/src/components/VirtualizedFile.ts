@@ -244,7 +244,8 @@ export class VirtualizedFile<
     newLineAnnotations?: LineAnnotation<LAnnotation>[]
   ): void {
     super.emitLineCountChange(lineCount, newLineAnnotations);
-    this.heightCache.clear();
+    this.virtualizer.markDOMDirty();
+    this.reconcileHeights();
     this.computeApproximateSize();
   }
 
