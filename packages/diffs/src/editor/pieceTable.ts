@@ -764,7 +764,7 @@ export class PieceTable {
       null
     );
     this.#length = length;
-    this.#lineCount = length === 0 ? 0 : lineBreakCount + 1;
+    this.#lineCount = lineBreakCount + 1;
   }
 
   #buildBalancedTree(

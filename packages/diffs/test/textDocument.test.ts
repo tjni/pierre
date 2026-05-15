@@ -25,6 +25,38 @@ describe('TextDocument', () => {
     expect(d.lineCount).toBe(3);
   });
 
+  test('empty document keeps one logical line', () => {
+    const d = doc('');
+    expect(d.lineCount).toBe(1);
+    expect(d.getLineText(0)).toBe('');
+    expect(d.getText()).toBe('');
+  });
+
+  test('clearing all content keeps one logical line', () => {
+    const d = doc('hello\nworld');
+    const change = d.applyEdits([
+      {
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 1, character: 5 },
+        },
+        newText: '',
+      },
+    ]);
+    expect(d.getText()).toBe('');
+    expect(d.lineCount).toBe(1);
+    expect(d.getLineText(0)).toBe('');
+    expect(change).toEqual({
+      startLine: 0,
+      startCharacter: 0,
+      endLine: 0,
+      previousLineCount: 2,
+      lineCount: 1,
+      lineDelta: -1,
+      changedLineRanges: [[0, 0]],
+    });
+  });
+
   test('getText without range returns full buffer', () => {
     expect(doc('hello').getText()).toBe('hello');
   });

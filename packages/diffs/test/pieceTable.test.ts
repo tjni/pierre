@@ -5,7 +5,7 @@ import type { Position } from '../src/editor/textDocument';
 
 function lineTexts(text: string): string[] {
   if (text === '') {
-    return [];
+    return [''];
   }
 
   const lines: string[] = [];
@@ -199,7 +199,8 @@ describe('PieceTable', () => {
   test('handles an empty document', () => {
     const table = new PieceTable('');
 
-    expectTableToMatchText(table, '');
+    expect(table.getText()).toBe('');
+    expect(table.lineCount).toBe(1);
     expect(table.getLineText(0)).toBe('');
     expect(table.positionAt(99)).toEqual({ line: 0, character: 0 });
     expect(table.offsetAt({ line: 99, character: 99 })).toBe(0);
