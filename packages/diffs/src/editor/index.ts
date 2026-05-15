@@ -88,7 +88,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #lastCharX?: [line: number, character: number, x: number, wrapLine: number];
 
   // dom elements
-  #fileContainer?: HTMLElement;
+  #shadowRoot?: ShadowRoot;
   #contentElement?: HTMLElement;
   #styleElement?: HTMLStyleElement;
   #overlayElement?: HTMLElement;
@@ -183,7 +183,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#wrapLineOffsetsCache.clear();
     this.#lastCharX = undefined;
 
-    this.#fileContainer = undefined;
+    this.#shadowRoot = undefined;
     this.#contentElement?.removeAttribute('contentEditable');
     this.#contentElement = undefined;
     this.#styleElement?.remove();
@@ -211,23 +211,26 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     lineAnnotations: LineAnnotation<LAnnotation>[] | undefined,
     renderRange: RenderRange | undefined
   ): void {
-    const shadowRoot =
-      fileContainer.shadowRoot ?? fileContainer.attachShadow({ mode: 'open' });
+    const shadowRoot = fileContainer.shadowRoot ?? undefined;
     const contentEl =
-      shadowRoot.querySelector<HTMLElement>('div[data-content]') ?? undefined;
+      shadowRoot?.querySelector<HTMLElement>('div[data-content]') ?? undefined;
     const highlighter = areThemesAttached(
       this.#component?.options.theme ?? DEFAULT_THEMES
     )
       ? getHighlighterIfLoaded()
       : undefined;
-    if (contentEl === undefined || highlighter === undefined) {
+    if (
+      shadowRoot === undefined ||
+      contentEl === undefined ||
+      highlighter === undefined
+    ) {
       throw new Error('Could not edit the file.');
     }
 
     this.#wrap = this.#component?.options.overflow === 'wrap';
 
-    if (this.#fileContainer !== fileContainer) {
-      this.#fileContainer = fileContainer;
+    if (this.#shadowRoot !== shadowRoot) {
+      this.#shadowRoot = shadowRoot;
       if (this.#styleElement !== undefined) {
         shadowRoot.appendChild(this.#styleElement);
       }
@@ -430,6 +433,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
 
     if (this.#retainSearchPanelFocus) {
+      this.#retainSearchPanelFocus = false;
       requestAnimationFrame(() => {
         this.#focusSearchPanelInput();
       });
@@ -468,18 +472,16 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         document,
         'selectionchange',
         () => {
-          if (this.#shouldIgnoreSelectionChange) {
-            return;
-          }
-
-          const shadowRoot = this.#contentElement?.getRootNode();
-          if (shadowRoot === undefined || !(shadowRoot instanceof ShadowRoot)) {
+          if (
+            this.#shouldIgnoreSelectionChange ||
+            this.#shadowRoot === undefined
+          ) {
             return;
           }
 
           const selectionRaw = document.getSelection();
           const composedRange = selectionRaw?.getComposedRanges({
-            shadowRoots: [shadowRoot],
+            shadowRoots: [this.#shadowRoot],
           })?.[0];
           if (
             composedRange === undefined ||
@@ -1369,8 +1371,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     const input = h('input', {
       type: 'text',
       placeholder: 'Search',
-      value: defaultQuery,
       dataset: 'search',
+      value: defaultQuery,
       oninput: (e: Event) => {
         searchParams.text = (e.target as HTMLInputElement).value;
       },
@@ -1447,15 +1449,14 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         }),
       ],
     });
-    const shadowRoot = this.#contentElement?.getRootNode() as
-      | ShadowRoot
-      | undefined;
-    shadowRoot
+    this.#shadowRoot
       ?.querySelector<HTMLElement>('[data-diffs-header]')
       ?.after(searchPanel);
-    input.select();
     this.#searchPanelElement = searchPanel;
     this.#retainSearchPanelFocus = false;
+    requestAnimationFrame(() => {
+      input.select();
+    });
   }
 
   #search(
