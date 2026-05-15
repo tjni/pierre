@@ -93,6 +93,73 @@ describe('EditorTokenizer', () => {
     }
   });
 
+  test('flushes offscreen line 0 when select-all delete shrinks the document', () => {
+    const grammar = {
+      tokenizeLine2(lineText: string, ruleStack: StateStack) {
+        return {
+          tokens: new Uint32Array([0, 0]),
+          ruleStack,
+          stoppedEarly: false,
+          lineText,
+        };
+      },
+    } as unknown as IGrammar;
+    const textDocument = new TextDocument(
+      'test.ts',
+      Array.from({ length: 110 }, (_, i) => `line ${i}`).join('\n'),
+      'typescript'
+    );
+    const offscreenUpdates: Map<number, Array<HighlightedToken>>[] = [];
+    const tokenizer = new EditorTokenizer({
+      highlighter: {
+        getLanguage: () => grammar,
+        getLoadedLanguages: () => ['typescript'],
+        setTheme: () => ({ colorMap: [''] }),
+      } as unknown as DiffsHighlighter,
+      textDocument,
+      theme: { name: 'test-theme', type: 'dark' },
+      onDeferTokenize: (_themeType, lines) => {
+        offscreenUpdates.push(lines);
+      },
+    });
+    const renderRange = {
+      startingLine: 100,
+      totalLines: 10,
+      bufferBefore: 0,
+      bufferAfter: 0,
+    };
+
+    tokenizer.tokenize(
+      {
+        startLine: 0,
+        startCharacter: 0,
+        endLine: 109,
+        previousLineCount: textDocument.lineCount,
+        lineCount: textDocument.lineCount,
+        lineDelta: 0,
+        changedLineRanges: [[0, 109]],
+      },
+      renderRange
+    );
+    offscreenUpdates.length = 0;
+
+    const change = textDocument.applyEdits([
+      {
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 109, character: `line 109`.length },
+        },
+        newText: '',
+      },
+    ])!;
+    const dirtyLines = tokenizer.tokenize(change, renderRange);
+
+    expect(change.lineDelta).toBeLessThan(0);
+    expect(dirtyLines.size).toBe(0);
+    expect(offscreenUpdates.at(-1)?.has(0)).toBe(true);
+    expect(offscreenUpdates.at(-1)?.get(0)?.[0]?.[2]).toBe('');
+  });
+
   test('settles zero-line edits before the viewport without rebuilding to the viewport', () => {
     let tokenizeLineCount = 0;
     const grammar = {

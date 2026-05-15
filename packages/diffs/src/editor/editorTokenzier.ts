@@ -112,6 +112,20 @@ export class EditorTokenizer {
     const changedLineRanges: readonly [number, number][] = canReuseCachedStates
       ? (change.changedLineRanges ?? [[dirtyStart, change.endLine]])
       : [[dirtyStart, change.endLine]];
+    let offscreenSyncEnd = -1;
+    if (dirtyStart < viewStart) {
+      for (const [rangeStart, rangeEnd] of changedLineRanges) {
+        if (rangeStart < viewStart) {
+          offscreenSyncEnd = Math.max(
+            offscreenSyncEnd,
+            Math.min(rangeEnd, viewStart - 1)
+          );
+        }
+      }
+    }
+    const shouldFlushOffscreenLines =
+      offscreenSyncEnd >= dirtyStart &&
+      (canReuseCachedStates || change.lineDelta < 0);
     if (canReuseCachedStates) {
       this.#buildStateStackMap(dirtyStart);
     } else {
@@ -136,8 +150,27 @@ export class EditorTokenizer {
     const dirtyLines: Map<number, Array<HighlightedToken>> = new Map();
     const offscreenDirtyLines:
       | Map<number, Array<HighlightedToken>>
-      | undefined =
-      canReuseCachedStates && dirtyStart < viewStart ? new Map() : undefined;
+      | undefined = shouldFlushOffscreenLines ? new Map() : undefined;
+    if (offscreenDirtyLines !== undefined && !canReuseCachedStates) {
+      const offscreenEnd = Math.min(
+        offscreenSyncEnd + 1,
+        viewStart,
+        renderRangeEndLine
+      );
+      if (offscreenEnd > dirtyStart) {
+        this.#buildStateStackMap(offscreenEnd);
+        let offscreenLine = dirtyStart;
+        let offscreenState = this.#stateStackMap[offscreenLine] ?? INITIAL;
+        for (; offscreenLine < offscreenEnd; offscreenLine++) {
+          const resolved = this.#tokenizeLineAt(offscreenLine, offscreenState);
+          offscreenState = resolved.state;
+          offscreenDirtyLines.set(offscreenLine, resolved.resolvedTokens);
+        }
+        if (canCacheTokenizedStates) {
+          this.#stateStackMap[offscreenEnd] = offscreenState;
+        }
+      }
+    }
     for (; line < renderRangeEndLine; ) {
       const previousNextState = canReuseCachedStates
         ? this.#stateStackMap[line + 1]
@@ -146,26 +179,11 @@ export class EditorTokenizer {
         this.#stateStackMap[line] = state;
       }
 
-      const lineText = this.#textDocument.getLineText(line);
-      let resolvedTokens: Array<HighlightedToken>;
-      if (lineText.length > TOKENIZE_MAX_LINE_LENGTH) {
-        console.warn(
-          `[diffs] Line(${line}) too long to tokenize: ${lineText.length}`
-        );
-        resolvedTokens = [[0, '', lineText]];
-      } else if (lineText === '' || lineText.trim() === '') {
-        resolvedTokens = [[0, '', lineText]];
-      } else {
-        const result = tokenizeLine(
-          this.#grammar,
-          this.#colorMap,
-          lineText,
-          state,
-          TOKENIZE_TIME_LIMIT
-        );
-        resolvedTokens = result.resolvedTokens;
-        state = result.ruleStack;
-      }
+      const { resolvedTokens, state: nextState } = this.#tokenizeLineAt(
+        line,
+        state
+      );
+      state = nextState;
 
       if (line >= viewStart) {
         dirtyLines.set(line, resolvedTokens);
@@ -270,6 +288,36 @@ export class EditorTokenizer {
   #postBackgroundTokenizeMessage(jobId: number): void {
     // use `postMessage` instead of `setTimeout(fn, 0)` to avoid 4ms delay
     postMessage({ type: 'tokenize', jobId });
+  }
+
+  #tokenizeLineAt(
+    line: number,
+    state: StateStack
+  ): { resolvedTokens: Array<HighlightedToken>; state: StateStack } {
+    if (this.#grammar === undefined) {
+      throw new Error('Grammar not loaded');
+    }
+    const lineText = this.#textDocument.getLineText(line);
+    if (lineText.length > TOKENIZE_MAX_LINE_LENGTH) {
+      console.warn(
+        `[diffs] Line(${line}) too long to tokenize: ${lineText.length}`
+      );
+      return { resolvedTokens: [[0, '', lineText]], state };
+    }
+    if (lineText === '' || lineText.trim() === '') {
+      return { resolvedTokens: [[0, '', lineText]], state };
+    }
+    const result = tokenizeLine(
+      this.#grammar,
+      this.#colorMap,
+      lineText,
+      state,
+      TOKENIZE_TIME_LIMIT
+    );
+    return {
+      resolvedTokens: result.resolvedTokens,
+      state: result.ruleStack,
+    };
   }
 
   #buildStateStackMap(endAt: number) {
