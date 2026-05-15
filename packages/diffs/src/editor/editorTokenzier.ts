@@ -28,7 +28,7 @@ export class EditorTokenizer {
   #themeType: 'light' | 'dark';
   #colorMap: string[];
   #textDocument: TextDocument<unknown>;
-  #onTokenize: (
+  #onDeferTokenize: (
     themeType: 'light' | 'dark',
     lines: Map<number, Array<HighlightedToken>>
   ) => void;
@@ -40,14 +40,6 @@ export class EditorTokenizer {
   #backgroundJobId: number = 0;
   #backgroundChangedLineRanges: readonly [number, number][] | undefined;
   #backgroundChangedRangeIndex: number = 0;
-
-  #onMessage = ({
-    data,
-  }: MessageEvent<{ type: 'tokenize'; jobId: number }>) => {
-    if (data.type === 'tokenize' && data.jobId === this.#backgroundJobId) {
-      this.#backgroundTokenize(data.jobId);
-    }
-  };
 
   #prebuildStateStackMap = debounce(async (renderRange?: RenderRange) => {
     const { startingLine = 0, totalLines = Infinity } = renderRange ?? {};
@@ -64,6 +56,14 @@ export class EditorTokenizer {
     this.#buildStateStackMap(endLine);
   }, 500);
 
+  #onMessage = ({
+    data,
+  }: MessageEvent<{ type: 'tokenize'; jobId: number }>) => {
+    if (data.type === 'tokenize' && data.jobId === this.#backgroundJobId) {
+      this.#backgroundTokenize(data.jobId);
+    }
+  };
+
   constructor({
     highlighter,
     theme,
@@ -74,7 +74,7 @@ export class EditorTokenizer {
     this.#themeType = theme.type;
     this.#colorMap = highlighter.setTheme(theme.name).colorMap;
     this.#textDocument = textDocument;
-    this.#onTokenize = onTokenize;
+    this.#onDeferTokenize = onTokenize;
     if (highlighter.getLoadedLanguages().includes(textDocument.languageId)) {
       this.#grammar = highlighter.getLanguage(textDocument.languageId);
     }
@@ -215,7 +215,7 @@ export class EditorTokenizer {
     }
 
     if (offscreenDirtyLines !== undefined && offscreenDirtyLines.size > 0) {
-      this.#onTokenize(this.#themeType, offscreenDirtyLines);
+      this.#onDeferTokenize(this.#themeType, offscreenDirtyLines);
     }
 
     if (backgroundStartLine !== undefined) {
@@ -379,7 +379,7 @@ export class EditorTokenizer {
       }
     }
 
-    this.#onTokenize(this.#themeType, lines);
+    this.#onDeferTokenize(this.#themeType, lines);
     if (this.#isStopped || jobId !== this.#backgroundJobId) {
       return;
     }
