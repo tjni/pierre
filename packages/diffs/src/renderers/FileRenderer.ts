@@ -82,8 +82,8 @@ export class FileRenderer<LAnnotation = undefined> {
   private renderCache: RenderedFileASTCache | undefined;
   private computedLang: SupportedLanguages = 'text';
   private lineAnnotations: AnnotationLineMap<LAnnotation> = {};
-  private lineOffsets = new WeakMap<FileContents, number[]>();
-  private currentLineCount = new WeakMap<FileContents, number>();
+  private lineOffsetsCache = new WeakMap<FileContents, number[]>();
+  private lineCountOverrides = new WeakMap<FileContents, number>();
 
   constructor(
     public options: FileRendererOptions = { theme: DEFAULT_THEMES },
@@ -177,17 +177,17 @@ export class FileRenderer<LAnnotation = undefined> {
   }
 
   public getOrCreateLineOffsets(file: FileContents): number[] {
-    let offsets = this.lineOffsets.get(file);
+    let offsets = this.lineOffsetsCache.get(file);
     if (offsets == null) {
       offsets = computeLineOffsets(file.contents);
-      this.lineOffsets.set(file, offsets);
+      this.lineOffsetsCache.set(file, offsets);
     }
     return offsets;
   }
 
   public getLineCount(file: FileContents): number {
     return (
-      this.currentLineCount.get(file) ??
+      this.lineCountOverrides.get(file) ??
       this.getOrCreateLineOffsets(file).length
     );
   }
@@ -243,7 +243,7 @@ export class FileRenderer<LAnnotation = undefined> {
     if (renderCache == null || renderCache.result == null) {
       return undefined;
     }
-    this.currentLineCount.set(renderCache.file, lineCount);
+    this.lineCountOverrides.set(renderCache.file, lineCount);
     if (newLineAnnotations != null) {
       this.setLineAnnotations(newLineAnnotations);
     }
