@@ -245,7 +245,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   ): void {
     const shadowRoot = fileContainer.shadowRoot ?? undefined;
     const contentEl =
-      shadowRoot?.querySelector<HTMLElement>('div[data-content]') ?? undefined;
+      shadowRoot?.querySelector<HTMLElement>('[data-content]') ?? undefined;
     const highlighter = areThemesAttached(
       this.#component?.options.theme ?? DEFAULT_THEMES
     )
@@ -1086,7 +1086,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       const primarySelection = this.#selections.at(-1)!;
       const { start, end, direction } = primarySelection;
       const isBackward = direction === DirectionBackward;
-      this.#scrollToLine(isBackward ? start.line : end.line);
+      this.#scrollToLine(isBackward ? start.line : end.line, false);
     }
   }
 
@@ -1405,23 +1405,36 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       regex: false,
       action: 'findNext',
     };
-    const input = h('input', {
+    let allMatches: [number, number][] = [];
+    const updateAllMatches = () => {
+      allMatches =
+        searchParams.text !== ''
+          ? textDocument.search({ ...searchParams, action: 'findAll' })
+          : [];
+    };
+    const inputElement = h('input', {
       type: 'text',
       placeholder: 'Search',
       dataset: 'search',
       value: defaultQuery,
       oninput: (e: Event) => {
         searchParams.text = (e.target as HTMLInputElement).value;
+        updateAllMatches();
+        this.#updateSearchMatches(allMatches, searchParams.text);
       },
       onkeydown: (e: KeyboardEvent) => {
         if (e.key === 'Enter') {
           e.preventDefault();
           searchParams.action = 'findNext';
-          this.#search(searchParams, true);
+          const match = this.#search(searchParams, true);
+          this.#updateSearchMatches(allMatches, searchParams.text, match);
         } else if (e.key === 'f' && isPrimaryModifier(e)) {
           e.preventDefault();
         }
       },
+    });
+    const matchesElement = h('div', {
+      dataset: 'matches',
     });
     const searchPanel = h('div', {
       dataset: 'searchPanel',
@@ -1437,7 +1450,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
                 </svg>
               `,
             }),
-            input,
+            inputElement,
+            matchesElement,
             h('div', {
               dataset: { icon: 'arrow-up' },
               title: 'Previous',
@@ -1448,7 +1462,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
               `,
               onclick: () => {
                 searchParams.action = 'findPrevious';
-                this.#search(searchParams);
+                const match = this.#search(searchParams);
+                this.#updateSearchMatches(allMatches, searchParams.text, match);
               },
             }),
             h('div', {
@@ -1461,7 +1476,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
                 `,
               onclick: () => {
                 searchParams.action = 'findNext';
-                this.#search(searchParams);
+                const match = this.#search(searchParams);
+                this.#updateSearchMatches(allMatches, searchParams.text, match);
               },
             }),
             h('div', {
@@ -1485,28 +1501,35 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         }),
       ],
     });
-    this.#shadowRoot
-      ?.querySelector<HTMLElement>('[data-diffs-header]')
-      ?.after(searchPanel);
+    this.#shadowRoot?.querySelector<HTMLElement>('pre')?.before(searchPanel);
     this.#searchPanelElement = searchPanel;
     this.#retainSearchPanelFocus = false;
     requestAnimationFrame(() => {
-      input.select();
+      if (defaultQuery !== '') {
+        updateAllMatches();
+        const startOffset = textDocument.offsetAt(primarySelection.start);
+        const endOffset = textDocument.offsetAt(primarySelection.end);
+        this.#updateSearchMatches(allMatches, searchParams.text, [
+          startOffset,
+          endOffset,
+        ]);
+      }
+      inputElement.select();
     });
   }
 
   #search(
     searchParams: DiffsEditorSearchParams,
     retainSearchPanelFocus: boolean = false
-  ) {
+  ): [number, number] | undefined {
     const primarySelection = this.#selections?.at(-1);
     const textDocument = this.#textDocument;
     if (textDocument === undefined) {
-      return;
+      return undefined;
     }
     const matches = textDocument.search(searchParams, primarySelection);
     if (matches.length === 0) {
-      return;
+      return undefined;
     }
 
     const [startOffset, endOffset] = matches[0];
@@ -1531,8 +1554,44 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           this.#focusSearchPanelInput();
         });
       }
+      return [startOffset, endOffset];
     } else if (action === 'findAll' || action === 'replaceAll') {
       this.#scrollToLine(startPosition.line);
+    }
+    return undefined;
+  }
+
+  #updateSearchMatches(
+    allMatches: [number, number][],
+    searchText: string,
+    currentMatch?: [number, number]
+  ) {
+    const matchesElement =
+      this.#searchPanelElement?.querySelector<HTMLElement>('[data-matches]');
+    if (matchesElement == null) return;
+
+    if (searchText === '') {
+      matchesElement.textContent = '';
+      delete matchesElement.dataset.noMatches;
+      return;
+    }
+
+    if (allMatches.length === 0) {
+      matchesElement.textContent = 'No results';
+      matchesElement.dataset.noMatches = '';
+    } else {
+      delete matchesElement.dataset.noMatches;
+      if (currentMatch !== undefined) {
+        const index = allMatches.findIndex(
+          (m) => m[0] === currentMatch[0] && m[1] === currentMatch[1]
+        );
+        matchesElement.textContent =
+          index !== -1
+            ? `${index + 1} of ${allMatches.length}`
+            : `${allMatches.length}`;
+      } else {
+        matchesElement.textContent = `${allMatches.length}`;
+      }
     }
   }
 

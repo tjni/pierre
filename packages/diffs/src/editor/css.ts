@@ -69,18 +69,18 @@ export const editorCSS: string = /* CSS */ `
     flex-direction: column;
     gap: 4px;
     margin-inline: 16px;
-    background-color: color-mix(in lab, color-mix(in lab, var(--diffs-fg) 3%, var(--diffs-bg)), transparent 40%);
-    border: 1px solid color-mix(in lab, var(--diffs-fg) 10%, var(--diffs-bg));
-    padding: 8px;
+    background-color: color-mix(in lab, color-mix(in lab, var(--diffs-fg) 4%, var(--diffs-bg)), transparent 40%);
+    border: 1px solid color-mix(in lab, var(--diffs-fg) 8%, var(--diffs-bg));
+    padding: 6px;
     border-radius: 6px;
-    box-shadow: 0 0 12px 0 color-mix(in lab, var(--diffs-fg) 10% var(--diffs-bg));
+    box-shadow: 0 0 12px 0 color-mix(in lab, var(--diffs-fg) 16% var(--diffs-bg));
     backdrop-filter: blur(8px);
   }
   [data-search-panel-row] {
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    gap: 4px;
+    gap: 2px;
     font-family: Arial, Helvetica, sans-serif;
     font-size: 14px;
   }
@@ -98,19 +98,26 @@ export const editorCSS: string = /* CSS */ `
   [data-search-panel-row] input::selection {
     background-color: color-mix(in lab, var(--diffs-fg) 8%, var(--diffs-bg));
   }
+  [data-search-panel-row] [data-matches] {
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 20px;
+    padding-inline: 6px;
+    color: color-mix(in lab, var(--diffs-fg) 50%, var(--diffs-bg));
+  }
+  [data-search-panel-row] [data-matches][data-no-matches] {
+    color: color-mix(in lab, var(--diffs-deletion-base) 90%, var(--diffs-bg));
+  }
   [data-search-panel-row] [data-icon] {
     width: 24px;
     height: 24px;
     display: flex;
-    color: color-mix(in lab, var(--diffs-fg) 50%, var(--diffs-bg));
+    color: color-mix(in lab, var(--diffs-fg) 40%, var(--diffs-bg));
     align-items: center;
     justify-content: center;
     border-radius: 4px;
     cursor: pointer;
     transition: background-color 0.1s ease-in-out, color 0.1s ease-in-out;
-  }
-  [data-search-panel-row] [data-icon]:is([data-icon='search']) {
-    color: color-mix(in lab, var(--diffs-fg) 30%, var(--diffs-bg));
   }
   [data-search-panel-row] [data-icon]:not([data-icon='search']):hover {
     background-color: color-mix(in lab, var(--diffs-fg) 6%, var(--diffs-bg));
