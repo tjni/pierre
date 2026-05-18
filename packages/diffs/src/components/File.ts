@@ -26,6 +26,7 @@ import type {
   BaseCodeOptions,
   DiffsEditableComponent,
   DiffsEditor,
+  DiffsTextDocument,
   FileContents,
   HighlightedToken,
   LineAnnotation,
@@ -410,18 +411,24 @@ export class File<
     return file != null ? this.fileRenderer.getLineCount(file) : 0;
   }
 
-  public emitDirtyLines(
-    themeType: 'dark' | 'light',
-    lines: Map<number, Array<HighlightedToken>>
+  protected updateBuffers(renderRange: RenderRange): void {
+    if (this.pre != null) {
+      this.applyBuffers(this.pre, renderRange);
+    }
+  }
+
+  public emitTokenize(
+    lines: Map<number, Array<HighlightedToken>>,
+    themeType: 'dark' | 'light'
   ): void {
-    this.fileRenderer.emitDirtyLines(themeType, lines);
+    this.fileRenderer.emitTokenize(lines, themeType);
   }
 
   public emitLineCountChange(
-    lineCount: number,
+    textDocument: DiffsTextDocument,
     newLineAnnotations?: LineAnnotation<LAnnotation>[]
   ): void {
-    this.fileRenderer.emitLineCountChange(lineCount, newLineAnnotations);
+    this.fileRenderer.emitLineCountChange(textDocument, newLineAnnotations);
     if (newLineAnnotations != null) {
       this.annotationCache.forEach(({ element }) => element.remove());
       this.annotationCache.clear();

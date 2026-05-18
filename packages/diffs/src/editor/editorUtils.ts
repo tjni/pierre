@@ -1,21 +1,14 @@
 export function h<K extends keyof HTMLElementTagNameMap>(
   tagName: K,
-  props: {
+  props?: {
     style?: string | Partial<CSSStyleDeclaration>;
     dataset?: DOMStringMap | string[] | string;
     children?: (Node | string)[];
-    textContent?: string;
-    html?: string;
-  } & Partial<
-    Omit<
-      HTMLElementTagNameMap[K],
-      'style' | 'dataset' | 'children' | 'textContent' | 'html'
-    >
-  > = {},
+  } & Partial<Omit<HTMLElementTagNameMap[K], 'style' | 'dataset' | 'children'>>,
   parent?: Element | ShadowRoot | DocumentFragment
 ): HTMLElementTagNameMap[K] {
+  const { style, dataset, children, ...attrs } = props ?? {};
   const el = document.createElement(tagName);
-  const { style, dataset, textContent, html, children, ...attrs } = props;
   Object.assign(el, attrs);
   if (style !== undefined) {
     if (typeof style === 'string') {
@@ -35,17 +28,11 @@ export function h<K extends keyof HTMLElementTagNameMap>(
       Object.assign(el.dataset, dataset);
     }
   }
-  if (textContent !== undefined) {
-    el.textContent = textContent;
-  }
-  if (html !== undefined) {
-    el.innerHTML = html;
+  if (children !== undefined) {
+    el.replaceChildren(...children);
   }
   if (parent !== undefined) {
     parent.appendChild(el);
-  }
-  if (children !== undefined) {
-    el.replaceChildren(...children);
   }
   return el;
 }

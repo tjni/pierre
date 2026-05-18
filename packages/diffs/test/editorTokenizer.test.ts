@@ -118,7 +118,7 @@ describe('EditorTokenizer', () => {
       } as unknown as DiffsHighlighter,
       textDocument,
       theme: { name: 'test-theme', type: 'dark' },
-      onDeferTokenize: (_themeType, lines) => {
+      onDeferTokenize: (lines) => {
         offscreenUpdates.push(lines);
       },
     });
@@ -212,7 +212,7 @@ describe('EditorTokenizer', () => {
         } as unknown as DiffsHighlighter,
         textDocument,
         theme: { name: 'test-theme', type: 'dark' },
-        onDeferTokenize: (_themeType, lines) => {
+        onDeferTokenize: (lines) => {
           deferredUpdates.push(lines);
         },
       });
@@ -288,7 +288,7 @@ describe('EditorTokenizer', () => {
       } as unknown as DiffsHighlighter,
       textDocument,
       theme: { name: 'test-theme', type: 'dark' },
-      onDeferTokenize: (_themeType, lines) => {
+      onDeferTokenize: (lines) => {
         offscreenUpdates.push(lines);
       },
     });

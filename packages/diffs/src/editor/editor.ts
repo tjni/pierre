@@ -49,13 +49,14 @@ import type {
   DiffsEditorSearchParams,
   DiffsEditorSelection,
   FileContents,
+  HighlightedToken,
   LineAnnotation,
   RenderRange,
 } from '../types';
 import { getFiletypeFromFileName } from '../utils/getFiletypeFromFileName';
 import { editorCSS } from './css';
 import { applyDocumentChangeToLineAnnotations } from './editorLineAnnotations';
-import { EditorTokenizer } from './editorTokenzier';
+import { EditorTokenizer, renderLineTokens } from './editorTokenzier';
 import { isPrimaryModifier } from './platform';
 
 export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
@@ -121,6 +122,33 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     },
     500
   );
+
+  #onDeferTokenize = (
+    lines: Map<number, Array<HighlightedToken>>,
+    themeType: 'light' | 'dark'
+  ) => {
+    this.#component?.emitTokenize(lines, themeType);
+    // update the view if the render range is updated by scrolling
+    // and the deferred tokenized lines inside the render range
+    if (
+      this.#renderRange !== undefined &&
+      this.#renderRange.totalLines !== Infinity
+    ) {
+      const { startingLine, totalLines } = this.#renderRange;
+      const endLine = Math.min(
+        startingLine + totalLines,
+        this.#textDocument?.lineCount ?? 0
+      );
+      for (const [line, tokens] of lines) {
+        if (line >= startingLine && line < endLine) {
+          const lineElement = this.#getLineElement(line);
+          if (lineElement !== undefined) {
+            lineElement.replaceChildren(...renderLineTokens(tokens, themeType));
+          }
+        }
+      }
+    }
+  };
 
   edit(
     component: DiffsEditableComponent<LAnnotation>,
@@ -299,7 +327,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
             e.preventDefault();
             const text = e.clipboardData?.getData('text');
             if (text !== undefined) {
-              // TODO(@ije): Add support of multiple selections paste
+              // TODO(@ije): Add support of multiple selections copy&paste
               // TODO(@ije): normalize the pasted text with textDocument.EOF
               this.#replaceSelectionText(text);
             }
@@ -395,9 +423,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         textDocument,
         tokenizeMaxLineLength:
           this.#component?.options.tokenizeMaxLineLength ?? 1000,
-        onDeferTokenize: (themeType, lines) => {
-          this.#component?.emitDirtyLines(themeType, lines);
-        },
+        onDeferTokenize: this.#onDeferTokenize,
       });
       this.#shouldIgnoreSelectionChange = false;
       this.#selectionElements?.forEach((el) => el.remove());
@@ -860,21 +886,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           if (dirtyLines.has(lineIndex)) {
             const tokens = dirtyLines.get(lineIndex)!;
             child.replaceChildren(
-              ...tokens.map(([char, fg, textContent]) => {
-                if (char === 0 && fg === '') {
-                  if (textContent === '') {
-                    return h('br');
-                  }
-                  return textContent;
-                }
-                return h('span', {
-                  dataset: {
-                    char: char.toString(),
-                  },
-                  style: `--diffs-token-${tokenizer.themeType}:${fg};`,
-                  textContent: textContent,
-                });
-              })
+              ...renderLineTokens(tokens, tokenizer.themeType)
             );
             dirtyLineIndexes.delete(lineIndex);
           }
@@ -895,21 +907,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
                 lineIndex: lineIndex.toString(),
               },
               // oxlint-disable-next-line react/no-children-prop
-              children: tokens.map(([char, fg, textContent]) => {
-                if (char === 0 && fg === '') {
-                  if (textContent === '') {
-                    return h('br');
-                  }
-                  return textContent;
-                }
-                return h('span', {
-                  dataset: {
-                    char: char.toString(),
-                  },
-                  style: `--diffs-token-${tokenizer.themeType}:${fg};`,
-                  textContent,
-                });
-              }),
+              children: renderLineTokens(tokens, tokenizer.themeType),
             },
             contentEl
           );
@@ -959,11 +957,11 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       }
     }
 
-    component.emitDirtyLines(tokenizer.themeType, dirtyLines);
+    component.emitTokenize(dirtyLines, tokenizer.themeType);
     if (change.lineDelta !== 0) {
       gutterEl.style.gridRow = 'span ' + gutterEl.children.length;
       contentEl.style.gridRow = 'span ' + gutterEl.children.length;
-      component.emitLineCountChange(change.lineCount, nextLineAnnotations);
+      component.emitLineCountChange(textDocument, nextLineAnnotations);
     }
 
     console.log(
@@ -1433,7 +1431,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           children: [
             h('div', {
               dataset: { icon: 'search' },
-              html: `<svg width="16" height="16" viewBox="0 0 20 20">
+              innerHTML: `<svg width="16" height="16" viewBox="0 0 20 20">
                 <line x1="16.5" y1="16.5" x2="12.0355" y2="12.0355" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></line>
                 <circle cx="8.5" cy="8.5" r="5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></circle>
                 </svg>
@@ -1443,8 +1441,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
             h('div', {
               dataset: { icon: 'arrow-up' },
               title: 'Previous',
-
-              html: `<svg width="16" height="16" viewBox="0 0 20 20">
+              innerHTML: `<svg width="16" height="16" viewBox="0 0 20 20">
                 <line x1="10" y1="17" x2="10" y2="3" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></line>
                 <polyline points="15 8 10 3 5 8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></polyline>
                 </svg>
@@ -1456,12 +1453,12 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
             }),
             h('div', {
               dataset: { icon: 'arrow-down' },
-              html: `<svg width="16" height="16" viewBox="0 0 20 20">
+              title: 'Next',
+              innerHTML: `<svg width="16" height="16" viewBox="0 0 20 20">
                   <line x1="10" y1="3" x2="10" y2="17" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></line>
                   <polyline points="5 12 10 17 15 12" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></polyline>
                   </svg>
                 `,
-              title: 'Next',
               onclick: () => {
                 searchParams.action = 'findNext';
                 this.#search(searchParams);
@@ -1472,12 +1469,12 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
             }),
             h('div', {
               dataset: { icon: 'close' },
-              html: `<svg width="16" height="16" viewBox="0 0 20 20">
+              title: 'Close',
+              innerHTML: `<svg width="16" height="16" viewBox="0 0 20 20">
                 <line x1="5" y1="5" x2="15" y2="15" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></line>
                 <line x1="5" y1="15" x2="15" y2="5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></line>
                 </svg>
               `,
-              title: 'Close',
               onclick: () => {
                 this.#searchPanelElement?.remove();
                 this.#searchPanelElement = undefined;
@@ -1695,11 +1692,11 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#selections = selections;
     this.#rerender(change, lineAnnotations);
 
-    if (this.#selections !== undefined) {
+    if (selections !== undefined) {
       // since we prevent the default input event,
       // we need to update the window selection manually
-      // and scroll to the primary caret
-      this.#updateSelections(this.#selections, true);
+      // and scroll to the primary caret to mock the input behavior
+      this.#updateSelections(selections, true);
       this.#scrollToPrimaryCaret();
     }
   }

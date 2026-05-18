@@ -6,7 +6,7 @@ import {
 } from 'shiki/textmate';
 
 import type { DiffsHighlighter, HighlightedToken, RenderRange } from '../types';
-import { debounce } from './editorUtils';
+import { debounce, h } from './editorUtils';
 import type { TextDocument, TextDocumentChange } from './textDocument';
 
 export interface EditorTokenizerProps {
@@ -15,8 +15,8 @@ export interface EditorTokenizerProps {
   textDocument: TextDocument<unknown>;
   tokenizeMaxLineLength?: number;
   onDeferTokenize: (
-    themeType: 'light' | 'dark',
-    lines: Map<number, Array<HighlightedToken>>
+    lines: Map<number, Array<HighlightedToken>>,
+    themeType: 'dark' | 'light'
   ) => void;
 }
 
@@ -30,10 +30,7 @@ export class EditorTokenizer {
   #colorMap: string[];
   #textDocument: TextDocument<unknown>;
   #tokenizeMaxLineLength: number;
-  #onDeferTokenize: (
-    themeType: 'light' | 'dark',
-    lines: Map<number, Array<HighlightedToken>>
-  ) => void;
+  #onDeferTokenize: EditorTokenizerProps['onDeferTokenize'];
 
   // state
   #stateStackMap: StateStack[] = [INITIAL];
@@ -108,6 +105,12 @@ export class EditorTokenizer {
 
     const dirtyStart = change.startLine;
     const viewStart = Math.max(startingLine, dirtyStart);
+    const crossesRenderRangeEnd =
+      renderRange !== undefined &&
+      totalLines !== Infinity &&
+      change.lineDelta > 0 &&
+      dirtyStart < renderRangeEndLine &&
+      change.endLine >= renderRangeEndLine;
     const canReuseCachedStates = change.lineDelta === 0;
     const canCacheTokenizedStates =
       canReuseCachedStates ||
@@ -237,7 +240,7 @@ export class EditorTokenizer {
     }
 
     if (offscreenDirtyLines !== undefined && offscreenDirtyLines.size > 0) {
-      this.#onDeferTokenize(this.#themeType, offscreenDirtyLines);
+      this.#onDeferTokenize(offscreenDirtyLines, this.#themeType);
     }
 
     if (backgroundStartLine !== undefined) {
@@ -247,8 +250,14 @@ export class EditorTokenizer {
         backgroundChangedRangeIndex
       );
     } else if (!settled && line < lineCount) {
+      const backgroundLine =
+        crossesRenderRangeEnd && dirtyStart >= viewStart
+          ? renderRangeEndLine
+          : dirtyStart < viewStart && !canReuseCachedStates
+            ? dirtyStart
+            : line;
       this.#scheduleBackgroundTokenize(
-        dirtyStart < viewStart && !canReuseCachedStates ? dirtyStart : line,
+        backgroundLine,
         canReuseCachedStates ? changedLineRanges : undefined,
         changedRangeIndex
       );
@@ -431,7 +440,7 @@ export class EditorTokenizer {
       }
     }
 
-    this.#onDeferTokenize(this.#themeType, lines);
+    this.#onDeferTokenize(lines, this.#themeType);
     if (this.#isStopped || jobId !== this.#backgroundJobId) {
       return;
     }
@@ -484,4 +493,25 @@ export function tokenizeLine(
     ruleStack: result.ruleStack,
     resolvedTokens,
   };
+}
+
+export function renderLineTokens(
+  tokens: Array<HighlightedToken>,
+  themeType: 'light' | 'dark'
+): (HTMLElement | string)[] {
+  return tokens.map(([char, fg, textContent]) => {
+    if (char === 0 && fg === '') {
+      if (textContent === '') {
+        return h('br');
+      }
+      return textContent;
+    }
+    return h('span', {
+      dataset: {
+        char: char.toString(),
+      },
+      style: `--diffs-token-${themeType}:${fg};`,
+      textContent: textContent,
+    });
+  });
 }

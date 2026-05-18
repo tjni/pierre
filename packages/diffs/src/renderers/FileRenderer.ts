@@ -12,6 +12,7 @@ import { hasResolvedThemes } from '../highlighter/themes/hasResolvedThemes';
 import type {
   BaseCodeOptions,
   DiffsHighlighter,
+  DiffsTextDocument,
   FileContents,
   FileHeaderRenderMode,
   HighlightedToken,
@@ -83,7 +84,7 @@ export class FileRenderer<LAnnotation = undefined> {
   private computedLang: SupportedLanguages = 'text';
   private lineAnnotations: AnnotationLineMap<LAnnotation> = {};
   private lineOffsetsCache = new WeakMap<FileContents, number[]>();
-  private lineCountOverrides = new WeakMap<FileContents, number>();
+  private textDoucmentCache = new WeakMap<FileContents, DiffsTextDocument>();
 
   constructor(
     public options: FileRendererOptions = { theme: DEFAULT_THEMES },
@@ -187,14 +188,14 @@ export class FileRenderer<LAnnotation = undefined> {
 
   public getLineCount(file: FileContents): number {
     return (
-      this.lineCountOverrides.get(file) ??
+      this.textDoucmentCache.get(file)?.lineCount ??
       this.getOrCreateLineOffsets(file).length
     );
   }
 
-  public emitDirtyLines(
-    themeType: 'dark' | 'light',
-    lines: Map<number, Array<HighlightedToken>>
+  public emitTokenize(
+    lines: Map<number, Array<HighlightedToken>>,
+    themeType: 'dark' | 'light'
   ): void {
     const result = this.renderCache?.result;
     if (result == null) {
@@ -236,18 +237,17 @@ export class FileRenderer<LAnnotation = undefined> {
   }
 
   public emitLineCountChange(
-    lineCount: number,
+    textDocument: DiffsTextDocument,
     newLineAnnotations?: LineAnnotation<LAnnotation>[]
   ): void {
     const renderCache = this.renderCache;
     if (renderCache == null) {
       return undefined;
     }
-    this.lineCountOverrides.set(renderCache.file, lineCount);
     const result = renderCache.result;
-    if (result != null && result.code.length !== lineCount) {
-      for (let i = result.code.length; i < lineCount; i++) {
-        // prefill line with empty content
+    if (result != null && result.code.length !== textDocument.lineCount) {
+      for (let i = result.code.length; i < textDocument.lineCount; i++) {
+        // prefill lines with plain text content
         result.code.push({
           type: 'element',
           tagName: 'div',
@@ -259,9 +259,16 @@ export class FileRenderer<LAnnotation = undefined> {
           children: [
             {
               type: 'element',
-              tagName: 'br',
-              properties: {},
-              children: [],
+              tagName: 'span',
+              properties: {
+                'data-char': 0,
+              },
+              children: [
+                {
+                  type: 'text',
+                  value: textDocument.getLineText(i),
+                },
+              ],
             },
           ],
         });
@@ -270,6 +277,7 @@ export class FileRenderer<LAnnotation = undefined> {
     if (newLineAnnotations != null) {
       this.setLineAnnotations(newLineAnnotations);
     }
+    this.textDoucmentCache.set(renderCache.file, textDocument);
   }
 
   public renderFile(

@@ -759,17 +759,22 @@ export interface DiffsEditableComponent<LAnnotation> {
   setEditor: (editor: DiffsEditor<LAnnotation>) => void;
   setOptions: (options: Partial<BaseCodeOptions>) => void;
   setSelectedLines: (range: { start: number; end: number } | null) => void;
-  emitDirtyLines: (
-    themeType: 'dark' | 'light',
-    lines: Map<number, Array<HighlightedToken>>
+  emitTokenize: (
+    lines: Map<number, Array<HighlightedToken>>,
+    themeType: 'dark' | 'light'
   ) => void;
   emitLineCountChange: (
-    lineCount: number,
+    textDocument: DiffsTextDocument,
     newLineAnnotations?: LineAnnotation<LAnnotation>[]
   ) => void;
   removeEditor(): void;
   rerender(): void;
   cleanUp(): void;
+}
+
+export interface DiffsTextDocument {
+  lineCount: number;
+  getLineText: (lineNumber: number) => string;
 }
 
 export interface DiffsEditorSelection {

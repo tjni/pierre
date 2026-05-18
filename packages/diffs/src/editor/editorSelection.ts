@@ -717,13 +717,22 @@ export function findNexMatch(
   textDocument: TextDocument<unknown>,
   selections: EditorSelection[]
 ): EditorSelection[] | undefined {
-  const texts = selections.map((s) => textDocument.getText(s));
+  if (selections.length === 0) {
+    return undefined;
+  }
+
+  const normalizedSelections = selections.map((selection) =>
+    isCollapsedSelection(selection)
+      ? expandCollapsedSelectionToWord(textDocument, selection)
+      : selection
+  );
+  const texts = normalizedSelections.map((s) => textDocument.getText(s));
   const needle = texts[0];
   if (needle.length === 0 || texts.some((t) => t !== needle)) {
     return undefined;
   }
 
-  const occupied = selections.map(
+  const occupied = normalizedSelections.map(
     (s) =>
       [textDocument.offsetAt(s.start), textDocument.offsetAt(s.end)] as [
         number,
@@ -735,14 +744,23 @@ export function findNexMatch(
     occupied
   );
   if (nextOffset === undefined) {
-    return undefined;
+    return normalizedSelections.some((selection, index) => {
+      const original = selections[index];
+      return (
+        comparePosition(selection.start, original.start) !== 0 ||
+        comparePosition(selection.end, original.end) !== 0 ||
+        selection.direction !== original.direction
+      );
+    })
+      ? normalizedSelections
+      : undefined;
   }
   const added = createSelectionFromAnchorAndFocusOffsets(
     textDocument,
     nextOffset,
     nextOffset + needle.length
   );
-  return [...selections, added];
+  return [...normalizedSelections, added];
 }
 
 export function getDocumentFullSelection(

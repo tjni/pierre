@@ -1,5 +1,6 @@
 import { DEFAULT_VIRTUAL_FILE_METRICS } from '../constants';
 import type {
+  DiffsTextDocument,
   FileContents,
   LineAnnotation,
   RenderRange,
@@ -240,13 +241,26 @@ export class VirtualizedFile<
   }
 
   override emitLineCountChange(
-    lineCount: number,
+    textDocument: DiffsTextDocument,
     newLineAnnotations?: LineAnnotation<LAnnotation>[]
   ): void {
-    super.emitLineCountChange(lineCount, newLineAnnotations);
+    super.emitLineCountChange(textDocument, newLineAnnotations);
+    this.heightCache.clear();
     this.virtualizer.markDOMDirty();
-    this.reconcileHeights();
     this.computeApproximateSize();
+    // we need to update the buffers caused by the line count change
+    // to make the editor scroll to the correct position before re-rendering
+    if (this.file != null && this.top != null && this.renderRange != null) {
+      const windowSpecs = this.virtualizer.getWindowSpecs();
+      const renderRange = this.computeRenderRangeFromWindow(
+        this.file,
+        this.top,
+        windowSpecs
+      );
+      if (renderRange.bufferAfter !== this.renderRange.bufferAfter) {
+        this.updateBuffers(renderRange);
+      }
+    }
   }
 
   override render({
@@ -280,14 +294,10 @@ export class VirtualizedFile<
     } else {
       this.top ??= this.virtualizer.getOffsetInScrollContainer(fileContainer);
       if (fileChanged) {
-        this.heightCache.clear();
-        this.computeApproximateSize();
         this.renderRange = undefined;
-        this.virtualizer.instanceChanged(this);
-        this.isVisible = this.virtualizer.isInstanceVisible(
-          this.top,
-          this.height
-        );
+        this.heightCache.clear();
+        this.virtualizer.markDOMDirty();
+        this.computeApproximateSize();
       }
     }
 
