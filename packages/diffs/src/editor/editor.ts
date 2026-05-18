@@ -1411,6 +1411,11 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         searchParams.text !== ''
           ? textDocument.search({ ...searchParams, action: 'findAll' })
           : [];
+      searchPanel
+        .querySelectorAll<HTMLElement>('[data-disabled]')
+        .forEach((element) => {
+          element.dataset.disabled = String(allMatches.length === 0);
+        });
     };
     const inputElement = h('input', {
       type: 'text',
@@ -1453,7 +1458,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
             inputElement,
             matchesElement,
             h('div', {
-              dataset: { icon: 'arrow-up' },
+              dataset: { icon: 'arrow-up', disabled: 'false' },
               title: 'Previous',
               innerHTML: `<svg width="16" height="16" viewBox="0 0 20 20">
                 <line x1="10" y1="17" x2="10" y2="3" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></line>
@@ -1467,7 +1472,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
               },
             }),
             h('div', {
-              dataset: { icon: 'arrow-down' },
+              dataset: { icon: 'arrow-down', disabled: 'false' },
               title: 'Next',
               innerHTML: `<svg width="16" height="16" viewBox="0 0 20 20">
                   <line x1="10" y1="3" x2="10" y2="17" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></line>
@@ -1564,7 +1569,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #updateSearchMatches(
     allMatches: [number, number][],
     searchText: string,
-    currentMatch?: [number, number]
+    currentMatch: [number, number] = allMatches[0]
   ) {
     const matchesElement =
       this.#searchPanelElement?.querySelector<HTMLElement>('[data-matches]');
@@ -1581,17 +1586,11 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       matchesElement.dataset.noMatches = '';
     } else {
       delete matchesElement.dataset.noMatches;
-      if (currentMatch !== undefined) {
-        const index = allMatches.findIndex(
-          (m) => m[0] === currentMatch[0] && m[1] === currentMatch[1]
-        );
-        matchesElement.textContent =
-          index !== -1
-            ? `${index + 1} of ${allMatches.length}`
-            : `${allMatches.length}`;
-      } else {
-        matchesElement.textContent = `${allMatches.length}`;
-      }
+      const index = allMatches.findIndex(
+        (m) => m[0] === currentMatch[0] && m[1] === currentMatch[1]
+      );
+      matchesElement.textContent =
+        index !== -1 ? `${index + 1} of ${allMatches.length}` : 'No results';
     }
   }
 

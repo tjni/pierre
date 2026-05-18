@@ -117,7 +117,11 @@ export const editorCSS: string = /* CSS */ `
     justify-content: center;
     border-radius: 4px;
     cursor: pointer;
-    transition: background-color 0.1s ease-in-out, color 0.1s ease-in-out;
+    transition: background-color 0.1s ease-in-out, color 0.1s ease-in-out, opacity 0.1s ease-in-out;
+  }
+  [data-search-panel-row] [data-icon][data-disabled='true'] {
+    opacity: 0.5;
+    pointer-events: none;
   }
   [data-search-panel-row] [data-icon]:not([data-icon='search']):hover {
     background-color: color-mix(in lab, var(--diffs-fg) 6%, var(--diffs-bg));
