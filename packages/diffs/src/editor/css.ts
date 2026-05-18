@@ -24,6 +24,9 @@ export const editorCSS: string = /* CSS */ `
     [data-content] {
       caret-color: ${DEBUG_SELECTION ? 'red' : 'transparent'};
     }
+    [data-quick-edit] {
+      caret-color: currentColor;
+    }
   }
   [data-line] {
     cursor: text;
@@ -58,6 +61,33 @@ export const editorCSS: string = /* CSS */ `
     [data-content]:focus ~ [data-editor-overlay] [data-caret] {
       visibility: visible;
     }
+  }
+  [data-quick-edit-icon] {
+    position: absolute;
+    top: 0;
+    left: -1lh;
+    z-index: 100;
+    width: 1lh;
+    height: 1lh;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: color-mix(in lab, var(--diffs-fg) 40%, var(--diffs-bg));
+    background-color: color-mix(in lab, var(--diffs-fg) 16% var(--diffs-bg));
+    transition: background-color 0.1s ease-in-out, color 0.1s ease-in-out;
+    cursor: pointer;
+    visibility: hidden;
+  }
+  [data-quick-edit-icon][data-visible='true'] {
+    visibility: visible;
+  }
+  [data-quick-edit-icon]:hover {
+    background-color: color-mix(in lab, var(--diffs-fg) 5%, var(--diffs-bg));
+    color: var(--diffs-fg);
+  }
+  [data-quick-edit] {
+    padding-inline-end: 1ch;
   }
 
   [data-search-panel] {
@@ -120,7 +150,7 @@ export const editorCSS: string = /* CSS */ `
     transition: background-color 0.1s ease-in-out, color 0.1s ease-in-out, opacity 0.1s ease-in-out;
   }
   [data-search-panel-row] [data-icon][data-disabled='true'] {
-    opacity: 0.5;
+    opacity: 0.5ZZ;
     pointer-events: none;
   }
   [data-search-panel-row] [data-icon]:not([data-icon='search']):hover {

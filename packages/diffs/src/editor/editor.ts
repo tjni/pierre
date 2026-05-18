@@ -59,7 +59,19 @@ import { applyDocumentChangeToLineAnnotations } from './editorLineAnnotations';
 import { EditorTokenizer, renderLineTokens } from './editorTokenzier';
 import { isPrimaryModifier } from './platform';
 
+export interface EditorOptions<LAnnotation> {
+  enabledQuickEdit?: boolean;
+  renderQuickEdit?: (context: {
+    selection: EditorSelection;
+    textDocument: TextDocument<LAnnotation>;
+    replaceSelectionText: (text: string) => void;
+    close: () => void;
+  }) => HTMLElement;
+}
+
 export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
+  options: EditorOptions<LAnnotation>;
+
   // event handlers
   #editorEventDisposes?: (() => void)[];
   #globalEventDisposes?: (() => void)[];
@@ -92,13 +104,19 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #lastGutterWidth = -1;
 
   // dom
-  #shadowRoot?: ShadowRoot;
+  #fileContainer?: HTMLElement;
   #contentElement?: HTMLElement;
   #styleElement?: HTMLStyleElement;
   #overlayElement?: HTMLElement;
   #searchPanelElement?: HTMLElement;
   #selectionElements?: Map<string, HTMLElement>;
   #primaryCaretElement?: HTMLElement;
+  #quickEdit?: [
+    line: number,
+    gutter: HTMLElement,
+    content: HTMLElement,
+    quickEditElement: HTMLElement,
+  ];
   #measureCtx?: CanvasRenderingContext2D;
   #contentResizeObserver?: ResizeObserver;
 
@@ -149,6 +167,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       }
     }
   };
+
+  constructor(options: EditorOptions<LAnnotation> = {}) {
+    this.options = options;
+  }
 
   edit(
     component: DiffsEditableComponent<LAnnotation>,
@@ -216,7 +238,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#lastContentWidth = -1;
     this.#lastGutterWidth = -1;
 
-    this.#shadowRoot = undefined;
+    this.#fileContainer = undefined;
     this.#contentElement?.removeAttribute('contentEditable');
     this.#contentElement = undefined;
     this.#styleElement?.remove();
@@ -227,6 +249,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#selectionElements?.forEach((el) => el.remove());
     this.#selectionElements?.clear();
     this.#selectionElements = undefined;
+    this.#primaryCaretElement = undefined;
+    this.#quickEdit?.forEach((el) => el instanceof HTMLElement && el.remove());
+    this.#quickEdit = undefined;
     this.#measureCtx = undefined;
     this.#contentResizeObserver?.disconnect();
     this.#contentResizeObserver = undefined;
@@ -261,14 +286,19 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
     this.#wrap = this.#component?.options.overflow === 'wrap';
 
-    if (this.#shadowRoot !== shadowRoot) {
-      this.#shadowRoot = shadowRoot;
-      if (this.#styleElement !== undefined) {
+    if (this.#fileContainer !== fileContainer) {
+      const shadowRoot = fileContainer.shadowRoot;
+      this.#fileContainer = fileContainer;
+      if (shadowRoot !== null && this.#styleElement !== undefined) {
         shadowRoot.appendChild(this.#styleElement);
       }
     }
 
     if (this.#contentElement !== contentEl) {
+      const targetIsContentElement = (e: Event) => {
+        const target = e.composedPath()[0];
+        return target === this.#contentElement;
+      };
       this.#contentElement = extend(contentEl, {
         contentEditable: 'true',
         role: 'textbox',
@@ -288,8 +318,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           contentEl,
           'keydown',
           (e) => {
-            this.#searchPanelElement?.remove();
-
+            if (!targetIsContentElement(e)) {
+              return;
+            }
             const command = resolveEditorCommandFromKeyboardEvent(e);
             if (command !== undefined) {
               e.preventDefault();
@@ -303,6 +334,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           contentEl,
           'copy',
           (e) => {
+            if (!targetIsContentElement(e)) {
+              return;
+            }
             e.preventDefault();
             e.clipboardData?.setData('text', this.#getSelectionText());
           },
@@ -313,6 +347,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           contentEl,
           'cut',
           (e) => {
+            if (!targetIsContentElement(e)) {
+              return;
+            }
             e.preventDefault();
             e.clipboardData?.setData('text', this.#getSelectionText());
             this.#replaceSelectionText('');
@@ -324,6 +361,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           contentEl,
           'paste',
           (e) => {
+            if (!targetIsContentElement(e)) {
+              return;
+            }
             e.preventDefault();
             const text = e.clipboardData?.getData('text');
             if (text !== undefined) {
@@ -339,6 +379,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           contentEl,
           'beforeinput',
           (e) => {
+            if (!targetIsContentElement(e)) {
+              return;
+            }
             e.preventDefault();
             this.#handleInput(e.inputType, e.data);
           },
@@ -348,7 +391,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         addEventListener(
           contentEl,
           'compositionstart',
-          () => {
+          (e) => {
+            if (!targetIsContentElement(e)) {
+              return;
+            }
             this.#shouldIgnoreSelectionChange = true;
           },
           { passive: true }
@@ -358,6 +404,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           contentEl,
           'compositionend',
           (e) => {
+            if (!targetIsContentElement(e)) {
+              return;
+            }
             this.#shouldIgnoreSelectionChange = false;
             this.#handleInput('insertText', e.data);
           },
@@ -471,6 +520,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         this.#focusSearchPanelInput();
       });
     }
+
+    if (this.#quickEdit !== undefined) {
+      this.#renderQuickEdit();
+    }
   }
 
   #getTheme(): {
@@ -505,16 +558,14 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         document,
         'selectionchange',
         () => {
-          if (
-            this.#shouldIgnoreSelectionChange ||
-            this.#shadowRoot === undefined
-          ) {
+          const shadowRoot = this.#fileContainer?.shadowRoot;
+          if (this.#shouldIgnoreSelectionChange || shadowRoot == null) {
             return;
           }
 
           const selectionRaw = document.getSelection();
           const composedRange = selectionRaw?.getComposedRanges({
-            shadowRoots: [this.#shadowRoot],
+            shadowRoots: [shadowRoot],
           })?.[0];
           if (
             composedRange === undefined ||
@@ -625,9 +676,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
           this.#isMouseDown = true;
           this.#selectionStart = undefined;
-          this.#searchPanelElement?.remove();
-          this.#searchPanelElement = undefined;
-          this.#retainSearchPanelFocus = false;
           if (e.button === 0 && isPrimaryModifier(e)) {
             this.#reservedSelections = this.#selections?.map((selection) => ({
               ...selection,
@@ -651,6 +699,11 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           this.#shiftKeyPressed = false;
           this.#selectionStart = undefined;
           this.#reservedSelections = undefined;
+          this.#selectionElements?.forEach((el, key) => {
+            if (key.startsWith('quickEditIcon-')) {
+              el.dataset.visible = 'true';
+            }
+          });
         },
         { passive: true }
       ),
@@ -1023,6 +1076,12 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       }
       this.#renderCaret(renderCtx, selection, selection === primarySelection);
     }
+    if (
+      this.options.enabledQuickEdit === true &&
+      !isCollapsedSelection(primarySelection)
+    ) {
+      this.#renderQuickEditIcon(renderCtx, primarySelection);
+    }
     this.#overlayElement?.appendChild(fragment);
     requestAnimationFrame(() => {
       this.#selectionElements?.forEach((el) => el.remove());
@@ -1374,12 +1433,168 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
   }
 
+  #renderQuickEditIcon(
+    renderCtx: {
+      fragment: DocumentFragment;
+      elements: Map<string, HTMLElement>;
+    },
+    primarySelection: EditorSelection
+  ) {
+    const line =
+      primarySelection.direction === DirectionBackward
+        ? primarySelection.start.line
+        : primarySelection.end.line;
+    if (!this.#isLineVisible(line)) {
+      return;
+    }
+
+    const [left, wrapLine] = this.#getCharX(line, 0);
+    const cacheKey = 'quickEditIcon-' + line + '(' + wrapLine + ')';
+    if (renderCtx.elements.has(cacheKey)) {
+      return;
+    }
+
+    const cleanUpQuickEdit = () => {
+      this.#quickEdit?.forEach(
+        (el) => el instanceof HTMLElement && el.remove()
+      );
+      this.#quickEdit = undefined;
+    };
+
+    const quickEditIcon = h(
+      'div',
+      {
+        dataset: { quickEditIcon: '', visible: 'false' },
+        title: 'Quick Edit',
+        style: {
+          transform: `translateY(${this.#getLineY(line) + wrapLine * this.#lineHeight}px) translateX(${left}px)`,
+        },
+        innerHTML: `<svg width="16" height="16" viewBox="0 0 20 20">
+        <polygon points="11 3 9 9 16 9 9 17 11 11 4 11 11 3" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" fill="currentColor"></polygon>
+        </svg>
+      `,
+        onclick: () => {
+          // remove the existing quick edit element
+          cleanUpQuickEdit();
+
+          const textDocument = this.#textDocument;
+          const renderQuickEdit = this.options.renderQuickEdit;
+          const fileContainer = this.#fileContainer;
+          if (
+            textDocument === undefined ||
+            renderQuickEdit === undefined ||
+            fileContainer == null
+          ) {
+            return;
+          }
+
+          const line = primarySelection.start.line;
+          const el = renderQuickEdit({
+            textDocument,
+            selection: primarySelection,
+            close: () => {
+              cleanUpQuickEdit();
+
+              // the line y cache is invalidated by the DOM change,
+              // clear the line y cache and rerender the selection
+              this.#lineYCache.clear();
+              if (this.#selections !== undefined) {
+                this.#updateSelections(this.#selections, true);
+              }
+            },
+            replaceSelectionText: (text: string) => {
+              this.#replaceSelectionText(text);
+            },
+          });
+          const slotName = 'quick-edit-' + line;
+          if (el instanceof HTMLElement) {
+            const lineText = textDocument.getText(primarySelection);
+            const leadingWhitespace = lineText.match(/^\s*/)?.[0] ?? '';
+            h(
+              'div',
+              {
+                dataset: 'quickEditSlot',
+                slot: slotName,
+                style: 'white-space: normal',
+                children: [el],
+              },
+              fileContainer
+            );
+            this.#quickEdit = [
+              line,
+              h('div', {
+                dataset: { gutterBuffer: 'quickEdit', bufferSize: '1' },
+                style: 'grid-row: span 1',
+              }),
+              h('div', {
+                dataset: { quickEdit: String(line) },
+                style: {
+                  paddingInlineStart: leadingWhitespace.length + 1 + 'ch',
+                },
+                contentEditable: 'false',
+                children: [h('slot', { name: slotName })],
+              }),
+              el,
+            ];
+            this.#renderQuickEdit();
+            requestAnimationFrame(() => {
+              this.#selectionElements?.delete(cacheKey);
+              quickEditIcon.remove();
+              this.#scrollToLine(line);
+            });
+          }
+        },
+      },
+      renderCtx.fragment
+    );
+    renderCtx.elements.set(cacheKey, quickEditIcon);
+  }
+
+  #renderQuickEdit() {
+    if (this.#quickEdit === undefined) {
+      return;
+    }
+
+    const [line, gutter, content] = this.#quickEdit;
+    if (this.#isLineVisible(line)) {
+      const contentElement = this.#contentElement;
+      const gutterElement = contentElement?.previousElementSibling;
+      const gutterLineElement = gutterElement?.querySelector<HTMLElement>(
+        `[data-column-number][data-line-index="${line}"]`
+      );
+      const contentLineElement = this.#getLineElement(line);
+      if (
+        gutterElement != null &&
+        gutterLineElement != null &&
+        contentElement !== undefined &&
+        contentLineElement !== undefined
+      ) {
+        gutterLineElement.before(gutter);
+        contentLineElement.before(content);
+
+        // the line y cache is invalidated by the DOM change,
+        // clear the line y cache and rerender the selection
+        this.#lineYCache.clear();
+        const primarySelection = this.#selections?.at(-1);
+        if (primarySelection !== undefined) {
+          this.#updateSelections([primarySelection], true);
+        }
+      }
+    }
+  }
+
   #renderSearchPanel() {
     this.#searchPanelElement?.remove();
 
     const textDocument = this.#textDocument;
     const selections = this.#selections;
-    if (textDocument === undefined || selections === undefined) {
+    const preElement =
+      this.#fileContainer?.shadowRoot?.querySelector<HTMLElement>('pre');
+    if (
+      textDocument === undefined ||
+      selections === undefined ||
+      preElement == null
+    ) {
       return;
     }
 
@@ -1506,7 +1721,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         }),
       ],
     });
-    this.#shadowRoot?.querySelector<HTMLElement>('pre')?.before(searchPanel);
+    preElement.before(searchPanel);
     this.#searchPanelElement = searchPanel;
     this.#retainSearchPanelFocus = false;
     requestAnimationFrame(() => {
