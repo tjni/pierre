@@ -54,19 +54,6 @@ const editor = new Editor<undefined>({
       outline: 'none',
       resize: 'none',
     });
-    input.placeholder = 'Ask AI...';
-    input.addEventListener('keyup', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        input.style.opacity = '0';
-        span.style.opacity = '1';
-        right.style.opacity = '0.5';
-        setTimeout(() => {
-          close();
-          replaceSelectionText('');
-        }, 1500);
-      }
-    });
     Object.assign(el.style, {
       boxSizing: 'border-box',
       width: '100%',
@@ -99,7 +86,6 @@ const editor = new Editor<undefined>({
       justifyContent: 'center',
       color: '#666',
     });
-    span.textContent = 'Thinking...';
     right.innerHTML = `
       <svg width="20" height="20" viewBox="0 0 20 20">
         <line x1="10" y1="14" x2="10" y2="6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></line>
@@ -109,11 +95,25 @@ const editor = new Editor<undefined>({
         <path d="m7,17h-1c-1.657,0-3-1.343-3-3v-1" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
       </svg>
     `;
-    left.append(input, span);
+    input.placeholder = 'Ask AI...';
+    span.textContent = 'Thinking...';
+    input.addEventListener('keyup', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        input.style.opacity = '0';
+        span.style.opacity = '1';
+        right.style.opacity = '0.5';
+        setTimeout(() => {
+          close();
+          replaceSelectionText('');
+        }, 2000);
+      }
+    });
+    left.append(span, input);
     el.append(left, right);
     setTimeout(() => {
       input.focus();
-    }, 0);
+    }, 100);
     return el;
   },
 });
