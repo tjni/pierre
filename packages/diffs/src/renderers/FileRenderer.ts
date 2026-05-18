@@ -196,12 +196,12 @@ export class FileRenderer<LAnnotation = undefined> {
     themeType: 'dark' | 'light',
     lines: Map<number, Array<HighlightedToken>>
   ): void {
-    const renderCache = this.renderCache;
-    if (renderCache == null || renderCache.result == null) {
+    const result = this.renderCache?.result;
+    if (result == null) {
       return;
     }
     for (const [line, tokens] of lines) {
-      renderCache.result.code[line] = {
+      result.code[line] = {
         type: 'element',
         tagName: 'div',
         properties: {
@@ -240,10 +240,33 @@ export class FileRenderer<LAnnotation = undefined> {
     newLineAnnotations?: LineAnnotation<LAnnotation>[]
   ): void {
     const renderCache = this.renderCache;
-    if (renderCache == null || renderCache.result == null) {
+    if (renderCache == null) {
       return undefined;
     }
     this.lineCountOverrides.set(renderCache.file, lineCount);
+    const result = renderCache.result;
+    if (result != null && result.code.length !== lineCount) {
+      for (let i = result.code.length; i < lineCount; i++) {
+        // prefill line with empty content
+        result.code.push({
+          type: 'element',
+          tagName: 'div',
+          properties: {
+            'data-line': i + 1,
+            'data-line-type': 'context',
+            'data-line-index': i,
+          },
+          children: [
+            {
+              type: 'element',
+              tagName: 'br',
+              properties: {},
+              children: [],
+            },
+          ],
+        });
+      }
+    }
     if (newLineAnnotations != null) {
       this.setLineAnnotations(newLineAnnotations);
     }

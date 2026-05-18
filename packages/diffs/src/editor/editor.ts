@@ -17,6 +17,7 @@ import {
   DirectionNone,
   expandCollapsedSelectionToWord,
   extendSelection,
+  extendSelections,
   findNexMatch,
   getDocumentBoundarySelection,
   getDocumentFullSelection,
@@ -108,6 +109,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #reservedSelections?: EditorSelection[];
   #selections?: EditorSelection[];
   #scrollingToLine?: number;
+  #scrollingForceFocus?: boolean;
   #retainSearchPanelFocus = false;
 
   #emitChange = debounce(
@@ -434,7 +436,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
 
     if (this.#scrollingToLine !== undefined) {
-      this.#scrollToLine(this.#scrollingToLine);
+      this.#scrollToLine(this.#scrollingToLine, this.#scrollingForceFocus);
     }
 
     if (this.#retainSearchPanelFocus) {
@@ -660,7 +662,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     ];
   }
 
-  // TODO(@ije): use command registry
+  // TODO(@ije): add command registry
   #runCommand(command: EditorCommand) {
     const textDocument = this.#textDocument;
     if (textDocument === undefined) {
@@ -751,6 +753,24 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
             true
           );
           this.#scrollToLine(atEnd ? textDocument.lineCount - 1 : 0);
+        }
+        break;
+
+      case 'expandSelectionDocStart':
+      case 'expandSelectionDocEnd':
+        {
+          const atEnd = command === 'expandSelectionDocEnd';
+          const selections = this.#selections;
+          if (selections !== undefined && selections.length > 0) {
+            this.#updateSelections(
+              extendSelections(
+                selections,
+                getDocumentBoundarySelection(textDocument, atEnd)
+              ),
+              true
+            );
+            this.#scrollToLine(atEnd ? textDocument.lineCount - 1 : 0, true);
+          }
         }
         break;
 
@@ -1072,11 +1092,16 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
   }
 
-  #scrollToLine(line: number) {
+  #scrollToLine(line: number, forceFocus = false) {
     const lineElement = this.#getLineElement(line);
     if (lineElement !== undefined) {
       const scrollToLine = () => {
         lineElement.scrollIntoView({ block: 'center', inline: 'start' });
+        if (forceFocus) {
+          requestAnimationFrame(() => {
+            this.#contentElement?.focus({ preventScroll: true });
+          });
+        }
       };
       if (this.#scrollingToLine !== undefined) {
         this.#scrollingToLine = undefined;
@@ -1105,6 +1130,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       });
       this.#contentElement?.getRootNode()?.appendChild(anchor);
       this.#scrollingToLine = line;
+      this.#scrollingForceFocus = forceFocus;
       anchor.scrollIntoView({ block: 'center', inline: 'start' });
       requestAnimationFrame(() => anchor.remove());
     }

@@ -9,7 +9,9 @@ export type EditorCommand =
   | 'findNextMatch'
   | 'showSearchPanel'
   | 'moveCursorToDocStart'
-  | 'moveCursorToDocEnd';
+  | 'moveCursorToDocEnd'
+  | 'expandSelectionDocStart'
+  | 'expandSelectionDocEnd';
 
 const SHORTCUTS: Partial<Record<string, EditorCommand>> = {
   a: 'selectAll',
@@ -46,10 +48,16 @@ export function resolveEditorCommandFromKeyboardEvent(
   }
 
   if (normalizedKey === 'Home' || (isMac && normalizedKey === 'ArrowUp')) {
+    if (shiftKey) {
+      return 'expandSelectionDocStart';
+    }
     return 'moveCursorToDocStart';
   }
 
   if (normalizedKey === 'End' || (isMac && normalizedKey === 'ArrowDown')) {
+    if (shiftKey) {
+      return 'expandSelectionDocEnd';
+    }
     return 'moveCursorToDocEnd';
   }
 

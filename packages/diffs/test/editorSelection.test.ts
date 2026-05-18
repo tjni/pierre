@@ -12,6 +12,7 @@ import {
   findNexMatch,
   mapCursorMove,
   mapSelectionShift,
+  mergeOverlappingSelections,
   selectionIntersects,
 } from '../src/editor/editorSelection';
 import {
@@ -364,6 +365,60 @@ describe('selectionIntersects', () => {
         editorSelection(0, 3, 0, 3)
       )
     ).toBe(false);
+  });
+});
+
+describe('mergeOverlappingSelections', () => {
+  test('sorts selections and merges overlapping ranges', () => {
+    expect(
+      mergeOverlappingSelections([
+        createSelection(2, 0, 2, 4, DirectionForward),
+        createSelection(0, 6, 0, 8, DirectionForward),
+        createSelection(0, 2, 0, 7, DirectionForward),
+      ])
+    ).toEqual([
+      createSelection(0, 2, 0, 8, DirectionForward),
+      createSelection(2, 0, 2, 4, DirectionForward),
+    ]);
+  });
+
+  test('keeps adjacent non-empty ranges separate', () => {
+    expect(
+      mergeOverlappingSelections([
+        createSelection(0, 2, 0, 6, DirectionForward),
+        createSelection(0, 6, 0, 8, DirectionForward),
+      ])
+    ).toEqual([
+      createSelection(0, 2, 0, 6, DirectionForward),
+      createSelection(0, 6, 0, 8, DirectionForward),
+    ]);
+  });
+
+  test('merges a caret on a range boundary', () => {
+    expect(
+      mergeOverlappingSelections([
+        createSelection(0, 2, 0, 6, DirectionForward),
+        createSelection(0, 6, 0, 6, DirectionNone),
+      ])
+    ).toEqual([createSelection(0, 2, 0, 6, DirectionForward)]);
+  });
+
+  test('preserves forward direction for ranges extended to the same end', () => {
+    expect(
+      mergeOverlappingSelections([
+        createSelection(1, 2, 3, 0, DirectionForward),
+        createSelection(2, 0, 3, 0, DirectionForward),
+      ])
+    ).toEqual([createSelection(1, 2, 3, 0, DirectionForward)]);
+  });
+
+  test('preserves backward direction for ranges extended to the same start', () => {
+    expect(
+      mergeOverlappingSelections([
+        createSelection(0, 0, 1, 4, DirectionBackward),
+        createSelection(0, 0, 2, 3, DirectionBackward),
+      ])
+    ).toEqual([createSelection(0, 0, 2, 3, DirectionBackward)]);
   });
 });
 
