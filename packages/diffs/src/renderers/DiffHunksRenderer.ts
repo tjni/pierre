@@ -1328,7 +1328,7 @@ export class DiffHunksRenderer<LAnnotation = undefined> {
 }
 
 function getModifiedLinesString(lines: number) {
-  return `${lines} unmodified line${lines > 1 ? 's' : ''}`;
+  return `${lines} unmodified line${lines === 1 ? '' : 's'}`;
 }
 
 function pushUnifiedInjectedRows(
