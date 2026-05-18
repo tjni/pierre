@@ -2,7 +2,6 @@ import {
   DEFAULT_THEMES,
   DIFFS_TAG_NAME,
   type DiffsThemeNames,
-  Editor,
   File,
   type FileContents,
   FileDiff,
@@ -22,6 +21,7 @@ import {
   VirtualizedFileDiff,
   Virtualizer,
 } from '@pierre/diffs';
+import { Editor } from '@pierre/diffs/editor';
 import type { WorkerPoolManager } from '@pierre/diffs/worker';
 
 import {

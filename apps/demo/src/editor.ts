@@ -1,10 +1,10 @@
 import {
   DEFAULT_THEMES,
-  Editor,
   type FileContents,
   VirtualizedFile,
   Virtualizer,
 } from '@pierre/diffs';
+import { Editor } from '@pierre/diffs/editor';
 import { FileTree, type GitStatusEntry } from '@pierre/trees';
 
 import { createWorkerAPI } from './utils/createWorkerAPI';
