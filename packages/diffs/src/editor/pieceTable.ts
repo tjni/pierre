@@ -1,6 +1,5 @@
 import type { DiffsEditorSearchParams } from '../types';
 import { computeLineOffsets } from '../utils/computeFileOffsets';
-import { DirectionBackward, type EditorSelection } from './editorSelection';
 import type { Position, Range, ResolvedTextEdit } from './textDocument';
 
 const MAX_FIND_MATCHES = 100000;
@@ -240,7 +239,7 @@ export class PieceTable {
 
   search(
     searchParams: DiffsEditorSearchParams,
-    selection?: EditorSelection | Range
+    range?: Range
   ): [start: number, end: number][] {
     if (searchParams.text.length === 0 || this.#length === 0) {
       return [];
@@ -268,12 +267,15 @@ export class PieceTable {
       return matches;
     }
 
-    const caretOffset = getSearchCaretOffset(selection, (p) =>
-      this.offsetAt(p)
-    );
+    const caretOffset =
+      range === undefined
+        ? 0
+        : action === 'findPrevious'
+          ? this.offsetAt(range?.start)
+          : this.offsetAt(range?.end);
 
     if (action === 'findPrevious') {
-      const refOffset = getSearchFindPreviousReferenceOffset(selection, (p) =>
+      const refOffset = getSearchFindPreviousReferenceOffset(range, (p) =>
         this.offsetAt(p)
       );
       let best: [number, number] | undefined;
@@ -981,22 +983,10 @@ function advancePastEmptyMatch(text: string, index: number): number {
   return index + 1;
 }
 
-function getSearchCaretOffset(
-  selection: EditorSelection | Range | undefined,
-  offsetAt: (p: Position) => number
-): number {
-  if (selection === undefined) {
-    return 0;
-  }
-  const focusAtStart =
-    'direction' in selection && selection.direction === DirectionBackward;
-  return focusAtStart ? offsetAt(selection.start) : offsetAt(selection.end);
-}
-
 // Returns the leftmost UTF-16 offset of the selection; used for find-previous
 // so we skip the current match.
 function getSearchFindPreviousReferenceOffset(
-  selection: EditorSelection | Range | undefined,
+  selection: Range | undefined,
   offsetAt: (p: Position) => number
 ): number {
   if (selection === undefined) {

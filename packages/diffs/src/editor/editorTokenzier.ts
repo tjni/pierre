@@ -6,7 +6,6 @@ import {
 } from 'shiki/textmate';
 
 import type { DiffsHighlighter, HighlightedToken, RenderRange } from '../types';
-import { TOKENIZE_MAX_LINE_LENGTH, TOKENIZE_TIME_LIMIT } from './constants';
 import { debounce } from './editorUtils';
 import type { TextDocument, TextDocumentChange } from './textDocument';
 
@@ -14,7 +13,7 @@ export interface EditorTokenizerProps {
   highlighter: DiffsHighlighter;
   theme: { name: string; type: 'dark' | 'light' };
   textDocument: TextDocument<unknown>;
-  linesPreTokenize?: number;
+  tokenizeMaxLineLength?: number;
   onDeferTokenize: (
     themeType: 'light' | 'dark',
     lines: Map<number, Array<HighlightedToken>>
@@ -23,11 +22,14 @@ export interface EditorTokenizerProps {
 
 /** Stoppable code tokenizer for the editor */
 export class EditorTokenizer {
+  static TOKENIZE_TIME_LIMIT = 500;
+
   #highlighter: DiffsHighlighter;
   #grammar: IGrammar | undefined;
   #themeType: 'light' | 'dark';
   #colorMap: string[];
   #textDocument: TextDocument<unknown>;
+  #tokenizeMaxLineLength: number;
   #onDeferTokenize: (
     themeType: 'light' | 'dark',
     lines: Map<number, Array<HighlightedToken>>
@@ -68,12 +70,14 @@ export class EditorTokenizer {
     highlighter,
     theme,
     textDocument,
+    tokenizeMaxLineLength,
     onDeferTokenize: onTokenize,
   }: EditorTokenizerProps) {
     this.#highlighter = highlighter;
     this.#themeType = theme.type;
     this.#colorMap = highlighter.setTheme(theme.name).colorMap;
     this.#textDocument = textDocument;
+    this.#tokenizeMaxLineLength = tokenizeMaxLineLength ?? 1000;
     this.#onDeferTokenize = onTokenize;
     if (highlighter.getLoadedLanguages().includes(textDocument.languageId)) {
       this.#grammar = highlighter.getLanguage(textDocument.languageId);
@@ -298,7 +302,7 @@ export class EditorTokenizer {
       throw new Error('Grammar not loaded');
     }
     const lineText = this.#textDocument.getLineText(line);
-    if (lineText.length > TOKENIZE_MAX_LINE_LENGTH) {
+    if (lineText.length > this.#tokenizeMaxLineLength) {
       console.warn(
         `[diffs] Line(${line}) too long to tokenize: ${lineText.length}`
       );
@@ -312,7 +316,7 @@ export class EditorTokenizer {
       this.#colorMap,
       lineText,
       state,
-      TOKENIZE_TIME_LIMIT
+      EditorTokenizer.TOKENIZE_TIME_LIMIT
     );
     return {
       resolvedTokens: result.resolvedTokens,
@@ -337,14 +341,14 @@ export class EditorTokenizer {
       this.#stateStackMap[line] = state;
       const lineText = this.#textDocument.getLineText(line);
       if (
-        lineText.length <= TOKENIZE_MAX_LINE_LENGTH &&
+        lineText.length <= this.#tokenizeMaxLineLength &&
         lineText !== '' &&
         lineText.trim() !== ''
       ) {
         state = this.#grammar.tokenizeLine2(
           lineText,
           state,
-          TOKENIZE_TIME_LIMIT
+          EditorTokenizer.TOKENIZE_TIME_LIMIT
         ).ruleStack;
       }
     }
@@ -378,7 +382,7 @@ export class EditorTokenizer {
           ? this.#stateStackMap[line + 1]
           : undefined;
       const lineText = this.#textDocument.getLineText(line);
-      if (lineText.length > TOKENIZE_MAX_LINE_LENGTH) {
+      if (lineText.length > this.#tokenizeMaxLineLength) {
         console.warn(
           `[diffs] Line(${line}) too long to tokenize: ${lineText.length}`
         );
@@ -391,7 +395,7 @@ export class EditorTokenizer {
           this.#colorMap,
           lineText,
           state,
-          TOKENIZE_TIME_LIMIT
+          EditorTokenizer.TOKENIZE_TIME_LIMIT
         );
         lines.set(line, ret.resolvedTokens);
         state = ret.ruleStack;

@@ -1,9 +1,6 @@
-export const TOKENIZE_TIME_LIMIT = 100;
-export const TOKENIZE_MAX_LINE_LENGTH = 10000;
-
 const DEBUG_SELECTION = false;
 
-export const EDITOR_CSS: string = /* CSS */ `
+export const editorCSS: string = /* CSS */ `
   ::selection {
     background-color: ${DEBUG_SELECTION ? 'rgba(255, 0, 0, 0.1)' : 'transparent'};
   }
@@ -90,6 +87,7 @@ export const EDITOR_CSS: string = /* CSS */ `
   [data-search-panel-row] input {
     font-size: 14px;
     line-height: 24px;
+    max-width: 50%;
     padding-inline: 4px;
     border: none;
     outline: none;

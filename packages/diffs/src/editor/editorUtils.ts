@@ -82,6 +82,7 @@ export function extend<T extends object>(obj: T, attrs: Partial<T>): T {
   return Object.assign(obj, attrs);
 }
 
+// oxlint-disable-next-line typescript/no-explicit-any
 export function debounce<T extends (...args: any[]) => void>(
   func: T,
   wait: number

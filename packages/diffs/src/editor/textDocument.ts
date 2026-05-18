@@ -205,7 +205,7 @@ export class TextDocument<LAnnotation> {
 
   search(
     searchParams: DiffsEditorSearchParams,
-    selection?: EditorSelection
+    selection?: Range
   ): [start: number, end: number][] {
     return this.#pieceTable.search(searchParams, selection);
   }
