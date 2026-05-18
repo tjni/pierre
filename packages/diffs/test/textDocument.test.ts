@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { EditorSelection } from '../src/editor/editorSelection';
-import { DirectionNone } from '../src/editor/editorSelection';
+import type { EditorSelection } from '../src/editor/selection';
+import { DirectionNone } from '../src/editor/selection';
 import { TextDocument, type TextEdit } from '../src/editor/textDocument';
 import type { LineAnnotation } from '../src/types';
 

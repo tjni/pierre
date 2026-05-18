@@ -14,11 +14,11 @@ import {
   mapSelectionShift,
   mergeOverlappingSelections,
   selectionIntersects,
-} from '../src/editor/editorSelection';
+} from '../src/editor/selection';
 import {
   DirectionBackward,
   type SelectionDirection,
-} from '../src/editor/editorSelection';
+} from '../src/editor/selection';
 import { TextDocument } from '../src/editor/textDocument';
 
 type MockNode = {

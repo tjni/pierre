@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { applyDocumentChangeToLineAnnotations } from '../src/editor/editorLineAnnotations';
+import { applyDocumentChangeToLineAnnotations } from '../src/editor/lineAnnotations';
 import { TextDocument } from '../src/editor/textDocument';
 import type { LineAnnotation } from '../src/types';
 

@@ -6,8 +6,8 @@ import {
 } from 'shiki/textmate';
 
 import type { DiffsHighlighter, HighlightedToken, RenderRange } from '../types';
-import { debounce, h } from './editorUtils';
 import type { TextDocument, TextDocumentChange } from './textDocument';
+import { debounce, h } from './utils';
 
 export interface EditorTokenizerProps {
   highlighter: DiffsHighlighter;

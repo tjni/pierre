@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import type { IGrammar, StateStack } from 'shiki/textmate';
 
-import { EditorTokenizer } from '../src/editor/editorTokenzier';
 import {
   TextDocument,
   type TextDocumentChange,
 } from '../src/editor/textDocument';
+import { EditorTokenizer } from '../src/editor/tokenzier';
 import type { DiffsHighlighter, HighlightedToken } from '../src/types';
 
 describe('EditorTokenizer', () => {

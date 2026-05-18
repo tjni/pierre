@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { EditorSelection } from '../src/editor/editorSelection';
+import { createEditStackEntry, EditStack } from '../src/editor/editStack';
+import type { EditorSelection } from '../src/editor/selection';
 import {
   DirectionNone,
   type SelectionDirection,
-} from '../src/editor/editorSelection';
-import { createEditStackEntry, EditStack } from '../src/editor/editStack';
+} from '../src/editor/selection';
 import { TextDocument } from '../src/editor/textDocument';
 
 function createSelection(

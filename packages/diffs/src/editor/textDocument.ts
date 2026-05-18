@@ -1,5 +1,4 @@
 import type { DiffsEditorSearchParams, LineAnnotation } from '../types';
-import { type EditorSelection } from './editorSelection';
 import {
   coalesceEditStackEntries,
   createEditStackEntry,
@@ -7,6 +6,7 @@ import {
   shouldCoalesceEditStackEntry,
 } from './editStack';
 import { PieceTable } from './pieceTable';
+import { type EditorSelection } from './selection';
 
 /**
  * Position in a text document expressed as zero-based line and character offset.

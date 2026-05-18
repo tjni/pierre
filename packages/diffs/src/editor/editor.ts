@@ -1,10 +1,32 @@
 import type { File } from '../components/File';
 import { DEFAULT_THEMES } from '../constants';
 import {
+  TextDocument,
+  type TextDocumentChange,
+  type TextEdit,
+} from '../editor/textDocument';
+import { getHighlighterIfLoaded } from '../highlighter/shared_highlighter';
+import { areThemesAttached } from '../highlighter/themes/areThemesAttached';
+import type {
+  DiffsEditableComponent,
+  DiffsEditor,
+  DiffsEditorSearchParams,
+  DiffsEditorSelection,
+  FileContents,
+  HighlightedToken,
+  LineAnnotation,
+  RenderRange,
+} from '../types';
+import { getFiletypeFromFileName } from '../utils/getFiletypeFromFileName';
+import {
   type EditorCommand,
   resolveEditorCommandFromKeyboardEvent,
-} from '../editor/editorCommand';
-import type { EditorSelection } from '../editor/editorSelection';
+} from './command';
+import { editorCSS } from './css';
+import { applyDocumentChangeToLineAnnotations } from './lineAnnotations';
+import { isPrimaryModifier } from './platform';
+import { QuickEdit } from './quickEdit';
+import type { EditorSelection } from './selection';
 import {
   applyTextChangeToSelections,
   applyTextReplaceToSelections,
@@ -28,36 +50,9 @@ import {
   mapSelectionShift,
   resolveIndentEdits,
   selectionIntersects,
-} from '../editor/editorSelection';
-import {
-  addEventListener,
-  debounce,
-  extend,
-  h,
-  round,
-} from '../editor/editorUtils';
-import {
-  TextDocument,
-  type TextDocumentChange,
-  type TextEdit,
-} from '../editor/textDocument';
-import { getHighlighterIfLoaded } from '../highlighter/shared_highlighter';
-import { areThemesAttached } from '../highlighter/themes/areThemesAttached';
-import type {
-  DiffsEditableComponent,
-  DiffsEditor,
-  DiffsEditorSearchParams,
-  DiffsEditorSelection,
-  FileContents,
-  HighlightedToken,
-  LineAnnotation,
-  RenderRange,
-} from '../types';
-import { getFiletypeFromFileName } from '../utils/getFiletypeFromFileName';
-import { editorCSS } from './css';
-import { applyDocumentChangeToLineAnnotations } from './editorLineAnnotations';
-import { EditorTokenizer, renderLineTokens } from './editorTokenzier';
-import { isPrimaryModifier } from './platform';
+} from './selection';
+import { EditorTokenizer, renderLineTokens } from './tokenzier';
+import { addEventListener, debounce, extend, h, round } from './utils';
 
 export interface EditorOptions<LAnnotation> {
   enabledQuickEdit?: boolean;
@@ -111,12 +106,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #searchPanelElement?: HTMLElement;
   #selectionElements?: Map<string, HTMLElement>;
   #primaryCaretElement?: HTMLElement;
-  #quickEdit?: [
-    line: number,
-    gutter: HTMLElement,
-    content: HTMLElement,
-    quickEditElement: HTMLElement,
-  ];
+  #quickEdit?: QuickEdit;
   #measureCtx?: CanvasRenderingContext2D;
   #contentResizeObserver?: ResizeObserver;
 
@@ -250,7 +240,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#selectionElements?.clear();
     this.#selectionElements = undefined;
     this.#primaryCaretElement = undefined;
-    this.#quickEdit?.forEach((el) => el instanceof HTMLElement && el.remove());
+    this.#quickEdit?.cleanup();
     this.#quickEdit = undefined;
     this.#measureCtx = undefined;
     this.#contentResizeObserver?.disconnect();
@@ -521,8 +511,12 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       });
     }
 
-    if (this.#quickEdit !== undefined) {
-      this.#renderQuickEdit();
+    if (
+      this.#quickEdit !== undefined &&
+      this.#isLineVisible(this.#quickEdit.line) &&
+      this.#contentElement !== undefined
+    ) {
+      this.#quickEdit.render(this.#contentElement);
     }
   }
 
@@ -1438,12 +1432,12 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       fragment: DocumentFragment;
       elements: Map<string, HTMLElement>;
     },
-    primarySelection: EditorSelection
+    selection: EditorSelection
   ) {
     const line =
-      primarySelection.direction === DirectionBackward
-        ? primarySelection.start.line
-        : primarySelection.end.line;
+      selection.direction === DirectionBackward
+        ? selection.start.line
+        : selection.end.line;
     if (!this.#isLineVisible(line)) {
       return;
     }
@@ -1453,13 +1447,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     if (renderCtx.elements.has(cacheKey)) {
       return;
     }
-
-    const cleanUpQuickEdit = () => {
-      this.#quickEdit?.forEach(
-        (el) => el instanceof HTMLElement && el.remove()
-      );
-      this.#quickEdit = undefined;
-    };
 
     const quickEditIcon = h(
       'div',
@@ -1474,6 +1461,20 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         </svg>
       `,
         onclick: () => {
+          const cleanUpQuickEdit = () => {
+            this.#quickEdit?.cleanup();
+            this.#quickEdit = undefined;
+          };
+
+          const handleResize = () => {
+            // the line y cache is invalidated by the DOM change,
+            // clear the line y cache and rerender the selection
+            this.#lineYCache.clear();
+            if (this.#selections !== undefined) {
+              this.#updateSelections(this.#selections, true);
+            }
+          };
+
           // remove the existing quick edit element
           cleanUpQuickEdit();
 
@@ -1488,99 +1489,46 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
             return;
           }
 
-          const line = primarySelection.start.line;
-          const el = renderQuickEdit({
+          const line = selection.start.line;
+          const lineText = textDocument.getLineText(line);
+          const renderQuickElement = renderQuickEdit({
             textDocument,
-            selection: primarySelection,
+            selection: selection,
             close: () => {
               cleanUpQuickEdit();
-
-              // the line y cache is invalidated by the DOM change,
-              // clear the line y cache and rerender the selection
-              this.#lineYCache.clear();
-              if (this.#selections !== undefined) {
-                this.#updateSelections(this.#selections, true);
-              }
+              handleResize();
             },
             replaceSelectionText: (text: string) => {
               this.#replaceSelectionText(text);
             },
           });
-          const slotName = 'quick-edit-' + line;
-          if (el instanceof HTMLElement) {
-            const lineText = textDocument.getText(primarySelection);
-            const leadingWhitespace = lineText.match(/^\s*/)?.[0] ?? '';
-            h(
-              'div',
-              {
-                dataset: 'quickEditSlot',
-                slot: slotName,
-                style: 'white-space: normal',
-                children: [el],
-              },
-              fileContainer
-            );
-            this.#quickEdit = [
-              line,
-              h('div', {
-                dataset: { gutterBuffer: 'quickEdit', bufferSize: '1' },
-                style: 'grid-row: span 1',
-              }),
-              h('div', {
-                dataset: { quickEdit: String(line) },
-                style: {
-                  paddingInlineStart: leadingWhitespace.length + 1 + 'ch',
-                },
-                contentEditable: 'false',
-                children: [h('slot', { name: slotName })],
-              }),
-              el,
-            ];
-            this.#renderQuickEdit();
-            requestAnimationFrame(() => {
-              this.#selectionElements?.delete(cacheKey);
-              quickEditIcon.remove();
-              this.#scrollToLine(line);
-            });
+          let leadingWhitespaces = 0;
+          for (let i = 0; i < lineText.length; i++) {
+            const charCode = lineText.charCodeAt(i);
+            if (charCode === /* space */ 32) {
+              leadingWhitespaces++;
+            } else if (charCode === /* tab */ 9) {
+              leadingWhitespaces += this.#tabSize;
+            } else {
+              break;
+            }
+          }
+          this.#selections = [selection];
+          this.#quickEdit = new QuickEdit(
+            line,
+            renderQuickElement,
+            fileContainer,
+            leadingWhitespaces,
+            handleResize
+          );
+          if (this.#isLineVisible(line) && this.#contentElement !== undefined) {
+            this.#quickEdit.render(this.#contentElement);
           }
         },
       },
       renderCtx.fragment
     );
     renderCtx.elements.set(cacheKey, quickEditIcon);
-  }
-
-  #renderQuickEdit() {
-    if (this.#quickEdit === undefined) {
-      return;
-    }
-
-    const [line, gutter, content] = this.#quickEdit;
-    if (this.#isLineVisible(line)) {
-      const contentElement = this.#contentElement;
-      const gutterElement = contentElement?.previousElementSibling;
-      const gutterLineElement = gutterElement?.querySelector<HTMLElement>(
-        `[data-column-number][data-line-index="${line}"]`
-      );
-      const contentLineElement = this.#getLineElement(line);
-      if (
-        gutterElement != null &&
-        gutterLineElement != null &&
-        contentElement !== undefined &&
-        contentLineElement !== undefined
-      ) {
-        gutterLineElement.before(gutter);
-        contentLineElement.before(content);
-
-        // the line y cache is invalidated by the DOM change,
-        // clear the line y cache and rerender the selection
-        this.#lineYCache.clear();
-        const primarySelection = this.#selections?.at(-1);
-        if (primarySelection !== undefined) {
-          this.#updateSelections([primarySelection], true);
-        }
-      }
-    }
   }
 
   #renderSearchPanel() {

@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   type EditorCommand,
   resolveEditorCommandFromKeyboardEvent,
-} from '../src/editor/editorCommand';
+} from '../src/editor/command';
 
 type ShortcutKeyboardEvent = Pick<
   KeyboardEvent,
