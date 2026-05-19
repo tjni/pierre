@@ -41,51 +41,11 @@ const editor = new Editor<undefined>({
     const span = document.createElement('span');
     const left = document.createElement('div');
     const right = document.createElement('div');
-    Object.assign(input.style, {
-      position: 'absolute',
-      top: '0',
-      left: '0',
-      width: '100%',
-      height: '24px',
-      padding: '0',
-      margin: '0',
-      lineHeight: '24px',
-      border: 'none',
-      outline: 'none',
-      resize: 'none',
-    });
-    Object.assign(el.style, {
-      boxSizing: 'border-box',
-      width: '100%',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      margin: '8px 0',
-      padding: '8px',
-      border: '1px solid rgba(128,128,128,0.5)',
-      borderRadius: '6px',
-    });
-    Object.assign(span.style, {
-      position: 'absolute',
-      top: '0',
-      left: '0',
-      lineHeight: '24px',
-      color: '#999',
-      opacity: '0',
-    });
-    Object.assign(left.style, {
-      position: 'relative',
-      flex: '1',
-      height: '24px',
-    });
-    Object.assign(right.style, {
-      width: '20px',
-      height: '20px',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      color: '#666',
-    });
+    el.className = 'quick-edit';
+    input.className = 'quick-edit-input';
+    span.className = 'quick-edit-status';
+    left.className = 'quick-edit-left';
+    right.className = 'quick-edit-right';
     right.innerHTML = `
       <svg width="20" height="20" viewBox="0 0 20 20">
         <line x1="10" y1="14" x2="10" y2="6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></line>
@@ -107,6 +67,9 @@ const editor = new Editor<undefined>({
           close();
           replaceSelectionText('');
         }, 2000);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        close();
       }
     });
     left.append(span, input);
