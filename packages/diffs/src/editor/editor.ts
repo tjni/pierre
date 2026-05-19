@@ -176,8 +176,11 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     if (component.options.useTokenTransformer !== true) {
       // Tell the component to use token transformer that adds
       // `data-char` attribute to the tokens
-      component.options.useTokenTransformer = true;
-      component.setOptions(component.options);
+      const options = {
+        ...component.options,
+        useTokenTransformer: true,
+      };
+      component.setOptions(options);
       component.rerender();
     }
     component.setEditor(this);
