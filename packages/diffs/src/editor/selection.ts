@@ -874,7 +874,7 @@ function expandCollapsedLineWord(
     }
     const lo = seg.index;
     const hi = lo + seg.segment.length;
-    // Only match when the cursor is inside the word or immediately touching
+    // Match when the cursor is inside the word or immediately touching
     // one of its boundaries — not when separated by non-word characters.
     if (character >= lo && character <= hi) {
       return { start: lo, end: hi };
