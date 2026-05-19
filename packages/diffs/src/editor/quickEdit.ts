@@ -1,18 +1,18 @@
 import { h } from './utils';
 
 export class QuickEdit {
-  #gutter: HTMLElement;
-  #content: HTMLElement;
+  #gutterBuffer: HTMLElement;
+  #quickEditContainer: HTMLElement;
   #slot: HTMLElement;
   #observer: ResizeObserver;
-  #onResize: () => void;
+  #handleResize: () => void;
 
   constructor(
     public line: number,
     quickEditElement: HTMLElement,
     fileContainer: HTMLElement,
     leadingWhitespaces = 0,
-    onResize: () => void
+    handleResize: () => void
   ) {
     const slotName = 'quick-edit-' + line;
     this.#slot = h(
@@ -25,11 +25,11 @@ export class QuickEdit {
       },
       fileContainer
     );
-    this.#gutter = h('div', {
+    this.#gutterBuffer = h('div', {
       dataset: { gutterBuffer: 'quickEdit', bufferSize: '1' },
       style: 'grid-row: span 1',
     });
-    this.#content = h('div', {
+    this.#quickEditContainer = h('div', {
       dataset: { quickEdit: String(line) },
       style: {
         paddingInlineStart: leadingWhitespaces + 1 + 'ch', // +1 align css `padding-inline`
@@ -37,13 +37,14 @@ export class QuickEdit {
       contentEditable: 'false',
       children: [h('slot', { name: slotName })],
     });
-    this.#observer = new ResizeObserver(onResize);
+    this.#observer = new ResizeObserver(handleResize);
     this.#observer.observe(this.#slot);
-    this.#onResize = onResize;
+    this.#handleResize = handleResize;
   }
 
   render(contentElement: HTMLElement): void {
-    const gutterElement = contentElement?.previousElementSibling;
+    const gutterElement =
+      contentElement.previousElementSibling as HTMLElement | null;
     const gutterLineElement = gutterElement?.querySelector<HTMLElement>(
       `[data-column-number][data-line-index="${this.line}"]`
     );
@@ -55,15 +56,26 @@ export class QuickEdit {
       gutterLineElement != null &&
       contentLineElement != null
     ) {
-      gutterLineElement.before(this.#gutter);
-      contentLineElement.before(this.#content);
-      this.#onResize();
+      gutterLineElement.before(this.#gutterBuffer);
+      contentLineElement.before(this.#quickEditContainer);
+      gutterElement.style.gridRow = 'span ' + gutterElement.children.length;
+      contentElement.style.gridRow = 'span ' + contentElement.children.length;
+      this.#handleResize();
     }
   }
 
   cleanup(): void {
-    this.#gutter.remove();
-    this.#content.remove();
+    const gutter = this.#gutterBuffer.parentElement;
+    const content = this.#quickEditContainer.parentElement;
+
+    this.#gutterBuffer.remove();
+    this.#quickEditContainer.remove();
+
+    if (gutter != null && content != null) {
+      gutter.style.gridRow = 'span ' + gutter.children.length;
+      content.style.gridRow = 'span ' + content.children.length;
+    }
+
     this.#slot.remove();
     this.#observer.disconnect();
   }
