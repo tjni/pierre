@@ -17,15 +17,15 @@ import {
   useState,
 } from 'react';
 
-import { CodeViewCommentsList } from './CodeViewCommentsList';
-import { CodeViewDiffStats } from './CodeViewDiffStats';
-import { CodeViewFileTree } from './CodeViewFileTree';
 import type {
   CodeViewDiffStats as CodeViewDiffStatsData,
   CodeViewFileTreeSource,
   CodeViewSavedCommentEntry,
   CodeViewSavedCommentItem,
-} from './types';
+} from '../_lib/types';
+import { CodeViewCommentsList } from './CodeViewCommentsList';
+import { CodeViewDiffStats } from './CodeViewDiffStats';
+import { CodeViewFileTree } from './CodeViewFileTree';
 import { WorkerPoolStatus } from './WorkerPoolStatus';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup, ButtonGroupItem } from '@/components/ui/button-group';

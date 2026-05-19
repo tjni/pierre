@@ -17,22 +17,22 @@ import {
 import { IconChevronSm } from '@pierre/icons';
 import { memo, type RefObject, useMemo, useRef, useState } from 'react';
 
-import type { AvatarName } from './annotation-shared';
-import { CODE_VIEW_CUSTOM_CSS, CODE_VIEW_LAYOUT } from './constants';
-import { DraftAnnotation } from './DraftAnnotation';
-import { ExampleAnnotation } from './ExampleAnnotation';
-import type {
-  CodeViewDeletedCommentEvent,
-  CodeViewSavedCommentEvent,
-  CommentMetadata,
-} from './types';
+import { CODE_VIEW_CUSTOM_CSS, CODE_VIEW_LAYOUT } from '../_lib/constants';
 import {
   classifyCommentLineType,
   isDiffItem,
   isDraftAnnotation,
   isDraftMetadata,
   isSavedAnnotation,
-} from './utils';
+} from '../_lib/diffItems';
+import type {
+  CodeViewDeletedCommentEvent,
+  CodeViewSavedCommentEvent,
+  CommentMetadata,
+} from '../_lib/types';
+import type { AvatarName } from './annotation-shared';
+import { DraftAnnotation } from './DraftAnnotation';
+import { ExampleAnnotation } from './ExampleAnnotation';
 import { cn } from '@/lib/utils';
 
 function getNextItemVersion(item: CodeViewItem<CommentMetadata>): number {

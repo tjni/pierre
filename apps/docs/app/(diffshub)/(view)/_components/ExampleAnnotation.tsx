@@ -2,8 +2,8 @@ import type { CodeViewLineSelection, DiffLineAnnotation } from '@pierre/diffs';
 import { IconX } from '@pierre/icons';
 import { memo } from 'react';
 
+import type { SavedCommentMetadata } from '../_lib/types';
 import { annotationCardBase, CommentAuthorAvatar } from './annotation-shared';
-import type { SavedCommentMetadata } from './types';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 

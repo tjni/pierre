@@ -2,13 +2,13 @@ import type { DiffLineAnnotation } from '@pierre/diffs';
 import { IconArrowRight } from '@pierre/icons';
 import { useEffect, useRef, useState } from 'react';
 
+import type { DraftCommentMetadata } from '../_lib/types';
 import {
   annotationCardBase,
   type AvatarName,
   CommentAuthorAvatar,
   getRandomPersona,
 } from './annotation-shared';
-import type { DraftCommentMetadata } from './types';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 

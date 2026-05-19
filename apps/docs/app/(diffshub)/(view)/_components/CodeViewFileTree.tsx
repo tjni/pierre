@@ -24,8 +24,8 @@ import {
   BASE_FILE_TREE_OPTIONS,
   CODE_VIEW_FILE_TREE_ITEM_HEIGHT,
   getInitialBatchSize,
-} from './constants';
-import type { CodeViewFileTreeSource } from './types';
+} from '../_lib/constants';
+import type { CodeViewFileTreeSource } from '../_lib/types';
 import { useTheme } from '@/components/theme-provider';
 
 // Computed once at module level so they're never re-derived on every render.

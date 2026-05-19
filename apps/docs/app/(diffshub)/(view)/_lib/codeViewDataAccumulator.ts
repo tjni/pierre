@@ -6,6 +6,7 @@ import {
 } from '@pierre/diffs';
 import type { GitStatusEntry } from '@pierre/trees';
 
+import { mapChangeTypeToGitStatus } from './changeTypeStatus';
 import { getPatchTreePathPrefix } from './gitPatchMetadata';
 import type {
   CodeViewCommentFileByItemId,
@@ -14,7 +15,6 @@ import type {
   CodeViewFileTreeSource,
   CommentMetadata,
 } from './types';
-import { mapChangeTypeToGitStatus } from './utils';
 
 export interface CodeViewDataAccumulator {
   diffStats: CodeViewDiffStats;

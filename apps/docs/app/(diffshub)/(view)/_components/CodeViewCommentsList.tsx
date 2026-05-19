@@ -4,12 +4,12 @@ import type { AnnotationSide } from '@pierre/diffs';
 import { IconConvoFill, IconPlus } from '@pierre/icons';
 import { memo, type MouseEvent } from 'react';
 
-import { CommentAuthorAvatar } from './annotation-shared';
 import type {
   CodeViewSavedCommentEntry,
   CodeViewSavedCommentItem,
   CommentLineType,
-} from './types';
+} from '../_lib/types';
+import { CommentAuthorAvatar } from './annotation-shared';
 import { cn } from '@/lib/utils';
 
 interface CodeViewCommentsListProps {

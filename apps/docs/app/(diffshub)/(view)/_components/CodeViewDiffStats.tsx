@@ -3,7 +3,7 @@
 import { IconSymbolDiffstatFill } from '@pierre/icons';
 import { memo, useEffect } from 'react';
 
-import type { CodeViewDiffStats as CodeViewDiffStatsData } from './types';
+import type { CodeViewDiffStats as CodeViewDiffStatsData } from '../_lib/types';
 import { StatItem, StatusRow } from './WorkerPoolStatus';
 
 interface CodeViewDiffStatsProps {

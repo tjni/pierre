@@ -7,12 +7,12 @@ import {
 import Link from 'next/link';
 
 import { DiffsHubLogo } from '../(view)/_components/DiffsHubLogo';
-import { getGitHubPath } from '../(view)/_components/utils';
+import { getGitHubPath } from '../(view)/_lib/viewerRoute';
+import { HomeFetchForm } from './HomeFetchForm';
 
 const DIFF_LINE_BADGE = 'inline-flex rounded-r py-0.25 pr-1.5 pl-1.5';
 const DIFF_LINE_DELETED_BADGE = `${DIFF_LINE_BADGE} bg-[#ff6762]/15 text-[#ff2e3f] dark:bg-[#ff6762]/10 dark:text-[#ff6762]`;
 const DIFF_LINE_ADDED_BADGE = `${DIFF_LINE_BADGE} bg-[#07c480]/15 text-[#18a46c] dark:bg-[#07c480]/10 dark:text-[#07c480]`;
-import { HomeFetchForm } from './HomeFetchForm';
 
 function Divider() {
   return <hr className="my-8 max-w-[80px] opacity-50" />;

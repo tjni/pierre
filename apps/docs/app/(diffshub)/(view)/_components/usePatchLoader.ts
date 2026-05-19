@@ -24,18 +24,18 @@ import {
   createCodeViewDataAccumulator,
   snapshotCodeViewTreeSource,
   takePendingCodeViewItems,
-} from './codeViewDataAccumulator';
-import { CODE_VIEW_BATCH_COUNT, getInitialBatchSize } from './constants';
-import { getPatchTreePathPrefix } from './gitPatchMetadata';
+} from '../_lib/codeViewDataAccumulator';
+import { CODE_VIEW_BATCH_COUNT, getInitialBatchSize } from '../_lib/constants';
+import { getPatchTreePathPrefix } from '../_lib/gitPatchMetadata';
 import {
   type CodeViewLineHashTarget,
   formatCodeViewLineHash,
   parseCodeViewLineHash,
-} from './lineHash';
+} from '../_lib/lineHash';
 import {
   getStreamedPatchMetadata,
   streamGitPatchFiles,
-} from './streamGitPatchFiles';
+} from '../_lib/streamGitPatchFiles';
 import type {
   CodeViewCommentFileByItemId,
   CodeViewDiffStats,
@@ -43,7 +43,7 @@ import type {
   CodeViewSavedCommentItem,
   CommentMetadata,
   ViewerLoadState,
-} from './types';
+} from '../_lib/types';
 
 const STREAM_PUBLISH_INTERVAL_MS = 100;
 const STREAM_INITIAL_PUBLISH_INTERVAL_MS = 500;

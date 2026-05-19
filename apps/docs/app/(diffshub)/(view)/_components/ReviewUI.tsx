@@ -10,22 +10,22 @@ import {
   useState,
 } from 'react';
 
-import { preloadAvatars } from './annotation-shared';
-import { CodeViewHeader } from './CodeViewHeader';
-import { CodeViewSidebar } from './CodeViewSidebar';
-import { CodeViewStatusPanel } from './CodeViewStatusPanel';
-import { CodeViewWrapper } from './CodeViewWrapper';
+import {
+  removeSavedCommentSidebarEntry,
+  upsertSavedCommentSidebarEntry,
+} from '../_lib/commentSidebar';
 import type {
   CodeViewDeletedCommentEvent,
   CodeViewSavedCommentEntry,
   CodeViewSavedCommentEvent,
   CommentMetadata,
-} from './types';
+} from '../_lib/types';
+import { preloadAvatars } from './annotation-shared';
+import { CodeViewHeader } from './CodeViewHeader';
+import { CodeViewSidebar } from './CodeViewSidebar';
+import { CodeViewStatusPanel } from './CodeViewStatusPanel';
+import { CodeViewWrapper } from './CodeViewWrapper';
 import { usePatchLoader } from './usePatchLoader';
-import {
-  removeSavedCommentSidebarEntry,
-  upsertSavedCommentSidebarEntry,
-} from './utils';
 
 interface ReviewUIProps {
   domain?: string;
