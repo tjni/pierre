@@ -485,6 +485,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       this.#selectionElements = undefined;
       this.#selections = undefined;
       this.#reservedSelections = undefined;
+      this.#searchPanel?.cleanup();
+      this.#searchPanel = undefined;
+      this.#quickEdit?.cleanup();
+      this.#quickEdit = undefined;
     }
 
     this.#lineYCache.clear();
