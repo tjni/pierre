@@ -237,7 +237,7 @@ export default defineConfig(() => {
           } catch (e) {
             res.writeHead(500, { 'Content-Type': 'text/plain' });
             res.end(
-              +'Error transforming HTML:' +
+              'Error transforming HTML:' +
                 (e instanceof Error ? e.message : String(e))
             );
           }
@@ -282,6 +282,11 @@ export default defineConfig(() => {
 
         if (pathname.startsWith('/fs/')) {
           const reqPath = pathname.slice(4);
+          if (reqPath.includes('..')) {
+            res.writeHead(403, { 'Content-Type': 'text/plain' });
+            res.end('Path contains forbidden characters');
+            return;
+          }
           try {
             const stat = fs.lstatSync(path.join(projectDir, reqPath));
             if (stat.isDirectory()) {

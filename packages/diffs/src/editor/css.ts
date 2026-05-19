@@ -74,7 +74,7 @@ export const editorCSS: string = /* CSS */ `
     align-items: center;
     justify-content: center;
     color: color-mix(in lab, var(--diffs-fg) 40%, var(--diffs-bg));
-    background-color: color-mix(in lab, var(--diffs-fg) 16% var(--diffs-bg));
+    background-color: color-mix(in lab, var(--diffs-fg) 16%, var(--diffs-bg));
     transition: background-color 0.1s ease-in-out, color 0.1s ease-in-out;
     cursor: pointer;
     visibility: hidden;
@@ -150,7 +150,7 @@ export const editorCSS: string = /* CSS */ `
     transition: background-color 0.1s ease-in-out, color 0.1s ease-in-out, opacity 0.1s ease-in-out;
   }
   [data-search-panel-row] [data-icon][data-disabled='true'] {
-    opacity: 0.5ZZ;
+    opacity: 0.5;
     pointer-events: none;
   }
   [data-search-panel-row] [data-icon]:not([data-icon='search']):hover {
