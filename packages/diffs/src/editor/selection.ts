@@ -874,32 +874,13 @@ function expandCollapsedLineWord(
     }
     const lo = seg.index;
     const hi = lo + seg.segment.length;
-    if (character >= lo && character < hi) {
+    // Only match when the cursor is inside the word or immediately touching
+    // one of its boundaries — not when separated by non-word characters.
+    if (character >= lo && character <= hi) {
       return { start: lo, end: hi };
     }
   }
-  for (const seg of segmenter.segment(lineText)) {
-    if (seg.isWordLike !== true) {
-      continue;
-    }
-    const lo = seg.index;
-    const hi = lo + seg.segment.length;
-    if (lo >= character) {
-      return { start: lo, end: hi };
-    }
-  }
-  let best: { start: number; end: number } | undefined;
-  for (const seg of segmenter.segment(lineText)) {
-    if (seg.isWordLike !== true) {
-      continue;
-    }
-    const lo = seg.index;
-    const hi = lo + seg.segment.length;
-    if (hi <= character) {
-      best = { start: lo, end: hi };
-    }
-  }
-  return best;
+  return undefined;
 }
 
 function getSelectionAnchorAndFocusOffsets(

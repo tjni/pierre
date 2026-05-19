@@ -8,6 +8,7 @@ import {
   DirectionForward,
   DirectionNone,
   type EditorSelection,
+  expandCollapsedSelectionToWord,
   extendSelection,
   findNexMatch,
   mapCursorMove,
@@ -916,6 +917,79 @@ describe('applyTextReplaceToSelections', () => {
       createSelection(1, 2, 1, 2),
       createSelection(2, 2, 2, 2),
     ]);
+  });
+});
+
+describe('expandCollapsedSelectionToWord', () => {
+  // Document content: "hello world!" (14 characters, quotes included)
+  // Segment positions:  hello → [1, 6),  world → [7, 12)
+  const doc = new TextDocument('inmemory://x', '"hello world!"');
+  const collapsed = (ch: number) => createSelection(0, ch, 0, ch);
+
+  test('expands when cursor is inside a word', () => {
+    // "h<cursor>ello world!"
+    expect(expandCollapsedSelectionToWord(doc, collapsed(3))).toEqual({
+      start: { line: 0, character: 1 },
+      end: { line: 0, character: 6 },
+      direction: DirectionForward,
+    });
+  });
+
+  test('expands when cursor is at the start of a word ("<cursor>hello)', () => {
+    // cursor immediately before 'h'
+    expect(expandCollapsedSelectionToWord(doc, collapsed(1))).toEqual({
+      start: { line: 0, character: 1 },
+      end: { line: 0, character: 6 },
+      direction: DirectionForward,
+    });
+  });
+
+  test('expands when cursor is at the end of a word (hello<cursor> )', () => {
+    // cursor immediately after 'o' of hello
+    expect(expandCollapsedSelectionToWord(doc, collapsed(6))).toEqual({
+      start: { line: 0, character: 1 },
+      end: { line: 0, character: 6 },
+      direction: DirectionForward,
+    });
+  });
+
+  test('expands when cursor is at the start of the second word ( <cursor>world)', () => {
+    // cursor immediately before 'w'
+    expect(expandCollapsedSelectionToWord(doc, collapsed(7))).toEqual({
+      start: { line: 0, character: 7 },
+      end: { line: 0, character: 12 },
+      direction: DirectionForward,
+    });
+  });
+
+  test('expands when cursor is at the end of the second word (world<cursor>!)', () => {
+    // cursor immediately after 'd' of world
+    expect(expandCollapsedSelectionToWord(doc, collapsed(12))).toEqual({
+      start: { line: 0, character: 7 },
+      end: { line: 0, character: 12 },
+      direction: DirectionForward,
+    });
+  });
+
+  test('does not expand when cursor is before the opening quote (<cursor>"hello)', () => {
+    // cursor before the first ", separated from any word
+    expect(expandCollapsedSelectionToWord(doc, collapsed(0))).toEqual(
+      collapsed(0)
+    );
+  });
+
+  test('does not expand when cursor is after the closing exclamation (world!<cursor>")', () => {
+    // cursor after '!', separated from the nearest word by '!'
+    expect(expandCollapsedSelectionToWord(doc, collapsed(13))).toEqual(
+      collapsed(13)
+    );
+  });
+
+  test('does not expand when cursor is after the closing quote ("hello world!"<cursor>)', () => {
+    // cursor past the last character
+    expect(expandCollapsedSelectionToWord(doc, collapsed(14))).toEqual(
+      collapsed(14)
+    );
   });
 });
 
