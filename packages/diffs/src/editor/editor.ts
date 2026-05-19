@@ -26,6 +26,7 @@ import { editorCSS } from './css';
 import { applyDocumentChangeToLineAnnotations } from './lineAnnotations';
 import { isPrimaryModifier } from './platform';
 import { QuickEdit } from './quickEdit';
+import { SearchPanel } from './searchPanel';
 import type { EditorSelection } from './selection';
 import {
   applyTextChangeToSelections,
@@ -103,10 +104,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #contentElement?: HTMLElement;
   #styleElement?: HTMLStyleElement;
   #overlayElement?: HTMLElement;
-  #searchPanelElement?: HTMLElement;
   #selectionElements?: Map<string, HTMLElement>;
   #primaryCaretElement?: HTMLElement;
   #quickEdit?: QuickEdit;
+  #searchPanel?: SearchPanel;
   #measureCtx?: CanvasRenderingContext2D;
   #contentResizeObserver?: ResizeObserver;
 
@@ -235,11 +236,12 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#styleElement = undefined;
     this.#overlayElement?.remove();
     this.#overlayElement = undefined;
-    this.#searchPanelElement = undefined;
     this.#selectionElements?.forEach((el) => el.remove());
     this.#selectionElements?.clear();
     this.#selectionElements = undefined;
     this.#primaryCaretElement = undefined;
+    this.#searchPanel?.cleanup();
+    this.#searchPanel = undefined;
     this.#quickEdit?.cleanup();
     this.#quickEdit = undefined;
     this.#measureCtx = undefined;
@@ -310,8 +312,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           (e) => {
             if (e.key === 'Escape') {
               e.preventDefault();
-              this.#searchPanelElement?.remove();
-              this.#searchPanelElement = undefined;
+              this.#searchPanel?.cleanup();
+              this.#searchPanel = undefined;
               this.#retainSearchPanelFocus = false;
               this.#quickEdit?.cleanup();
               this.#quickEdit = undefined;
@@ -516,7 +518,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     if (this.#retainSearchPanelFocus) {
       this.#retainSearchPanelFocus = false;
       requestAnimationFrame(() => {
-        this.#focusSearchPanelInput();
+        this.#searchPanel?.focus();
       });
     }
 
@@ -1531,7 +1533,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   }
 
   #renderSearchPanel() {
-    this.#searchPanelElement?.remove();
+    // cleanup the existing search panel
+    this.#searchPanel?.cleanup();
 
     const textDocument = this.#textDocument;
     const selections = this.#selections;
@@ -1557,138 +1560,27 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       primarySelection = expanded;
     }
     const selectionText = textDocument.getText(primarySelection);
-
     const defaultQuery = !selectionText.includes('\n') ? selectionText : '';
-    const searchParams: DiffsEditorSearchParams = {
-      text: defaultQuery,
-      replaceText: '',
-      caseSensitive: false,
-      wholeWord: true,
-      regex: false,
-      action: 'findNext',
-    };
-    let allMatches: [number, number][] = [];
-    const updateAllMatches = () => {
-      allMatches =
-        searchParams.text !== ''
-          ? textDocument.search({ ...searchParams, action: 'findAll' })
-          : [];
-      searchPanel
-        .querySelectorAll<HTMLElement>('[data-disabled]')
-        .forEach((element) => {
-          element.dataset.disabled = String(allMatches.length === 0);
-        });
-    };
-    const inputElement = h('input', {
-      type: 'text',
-      placeholder: 'Search',
-      dataset: 'search',
-      value: defaultQuery,
-      oninput: (e: Event) => {
-        searchParams.text = (e.target as HTMLInputElement).value;
-        updateAllMatches();
-        this.#updateSearchMatches(allMatches, searchParams.text);
-      },
-      onkeydown: (e: KeyboardEvent) => {
-        if (e.key === 'Escape') {
-          e.preventDefault();
-          this.#searchPanelElement?.remove();
-          this.#searchPanelElement = undefined;
-          this.#retainSearchPanelFocus = false;
-        } else if (e.key === 'Enter') {
-          e.preventDefault();
-          searchParams.action = 'findNext';
-          const match = this.#search(searchParams, true);
-          this.#updateSearchMatches(allMatches, searchParams.text, match);
-        } else if (e.key === 'f' && isPrimaryModifier(e)) {
-          // prevent the default browser search panel open behavior
-          e.preventDefault();
-        }
-      },
-    });
-    const matchesElement = h('div', {
-      dataset: 'matches',
-    });
-    const searchPanel = h('div', {
-      dataset: 'searchPanel',
-      children: [
-        h('div', {
-          dataset: 'searchPanelRow',
-          children: [
-            h('div', {
-              dataset: { icon: 'search' },
-              innerHTML: `<svg width="16" height="16" viewBox="0 0 20 20">
-                <line x1="16.5" y1="16.5" x2="12.0355" y2="12.0355" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></line>
-                <circle cx="8.5" cy="8.5" r="5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></circle>
-                </svg>
-              `,
-            }),
-            inputElement,
-            matchesElement,
-            h('div', {
-              dataset: { icon: 'arrow-up', disabled: 'false' },
-              title: 'Previous',
-              innerHTML: `<svg width="16" height="16" viewBox="0 0 20 20">
-                <line x1="10" y1="17" x2="10" y2="3" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></line>
-                <polyline points="15 8 10 3 5 8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></polyline>
-                </svg>
-              `,
-              onclick: () => {
-                searchParams.action = 'findPrevious';
-                const match = this.#search(searchParams);
-                this.#updateSearchMatches(allMatches, searchParams.text, match);
-              },
-            }),
-            h('div', {
-              dataset: { icon: 'arrow-down', disabled: 'false' },
-              title: 'Next',
-              innerHTML: `<svg width="16" height="16" viewBox="0 0 20 20">
-                  <line x1="10" y1="3" x2="10" y2="17" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></line>
-                  <polyline points="5 12 10 17 15 12" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></polyline>
-                  </svg>
-                `,
-              onclick: () => {
-                searchParams.action = 'findNext';
-                const match = this.#search(searchParams);
-                this.#updateSearchMatches(allMatches, searchParams.text, match);
-              },
-            }),
-            h('div', {
-              dataset: 'spacer',
-            }),
-            h('div', {
-              dataset: { icon: 'close' },
-              title: 'Close',
-              innerHTML: `<svg width="16" height="16" viewBox="0 0 20 20">
-                <line x1="5" y1="5" x2="15" y2="15" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></line>
-                <line x1="5" y1="15" x2="15" y2="5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></line>
-                </svg>
-              `,
-              onclick: () => {
-                this.#searchPanelElement?.remove();
-                this.#searchPanelElement = undefined;
-                this.#retainSearchPanelFocus = false;
-              },
-            }),
-          ],
-        }),
-      ],
-    });
-    preElement.before(searchPanel);
-    this.#searchPanelElement = searchPanel;
-    this.#retainSearchPanelFocus = false;
-    requestAnimationFrame(() => {
-      if (defaultQuery !== '') {
-        updateAllMatches();
-        const startOffset = textDocument.offsetAt(primarySelection.start);
-        const endOffset = textDocument.offsetAt(primarySelection.end);
-        this.#updateSearchMatches(allMatches, searchParams.text, [
-          startOffset,
-          endOffset,
-        ]);
+    const initialMatch: [number, number] | undefined =
+      defaultQuery !== ''
+        ? [
+            textDocument.offsetAt(primarySelection.start),
+            textDocument.offsetAt(primarySelection.end),
+          ]
+        : undefined;
+
+    this.#searchPanel = new SearchPanel(
+      preElement,
+      defaultQuery,
+      initialMatch,
+      (params, retainFocus) => this.#search(params, retainFocus),
+      (params) => textDocument.search(params),
+      () => {
+        this.#searchPanel = undefined;
+        this.#retainSearchPanelFocus = false;
       }
-      inputElement.select();
-    });
+    );
+    this.#retainSearchPanelFocus = false;
   }
 
   #search(
@@ -1724,7 +1616,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       if (retainSearchPanelFocus) {
         this.#retainSearchPanelFocus = true;
         requestAnimationFrame(() => {
-          this.#focusSearchPanelInput();
+          this.#searchPanel?.focus();
         });
       }
       return [startOffset, endOffset];
@@ -1732,47 +1624,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       this.#scrollToLine(startPosition.line);
     }
     return undefined;
-  }
-
-  #updateSearchMatches(
-    allMatches: [number, number][],
-    searchText: string,
-    currentMatch: [number, number] = allMatches[0]
-  ) {
-    const matchesElement =
-      this.#searchPanelElement?.querySelector<HTMLElement>('[data-matches]');
-    if (matchesElement == null) return;
-
-    if (searchText === '') {
-      matchesElement.textContent = '';
-      delete matchesElement.dataset.noMatches;
-      return;
-    }
-
-    if (allMatches.length === 0) {
-      matchesElement.textContent = 'No results';
-      matchesElement.dataset.noMatches = '';
-    } else {
-      delete matchesElement.dataset.noMatches;
-      const index = allMatches.findIndex(
-        (m) => m[0] === currentMatch[0] && m[1] === currentMatch[1]
-      );
-      matchesElement.textContent =
-        index !== -1 ? `${index + 1} of ${allMatches.length}` : 'No results';
-    }
-  }
-
-  #focusSearchPanelInput() {
-    const rowElements = this.#searchPanelElement?.firstElementChild?.children;
-    if (rowElements === undefined) {
-      return;
-    }
-    for (const rowElement of rowElements) {
-      if (rowElement instanceof HTMLInputElement) {
-        rowElement.select();
-        break;
-      }
-    }
   }
 
   #getSelectionText() {
