@@ -308,6 +308,15 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           contentEl,
           'keydown',
           (e) => {
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              this.#searchPanelElement?.remove();
+              this.#searchPanelElement = undefined;
+              this.#retainSearchPanelFocus = false;
+              this.#quickEdit?.cleanup();
+              this.#quickEdit = undefined;
+              return;
+            }
             if (!targetIsContentElement(e)) {
               return;
             }
@@ -743,7 +752,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
 
     switch (command) {
-      case 'showSearchPanel':
+      case 'openSearchPanel':
         this.#renderSearchPanel();
         break;
 
@@ -1448,85 +1457,75 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       return;
     }
 
-    const quickEditIcon = h(
-      'div',
-      {
-        dataset: { quickEditIcon: '', visible: 'false' },
-        title: 'Quick Edit',
-        style: {
-          transform: `translateY(${this.#getLineY(line) + wrapLine * this.#lineHeight}px) translateX(${left}px)`,
-        },
-        innerHTML: `<svg width="16" height="16" viewBox="0 0 20 20">
-        <polygon points="11 3 9 9 16 9 9 17 11 11 4 11 11 3" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" fill="currentColor"></polygon>
-        </svg>
-      `,
-        onclick: () => {
-          const cleanUpQuickEdit = () => {
-            this.#quickEdit?.cleanup();
-            this.#quickEdit = undefined;
-          };
+    const quickEditIcon = QuickEdit.renderIcon(
+      left,
+      this.#getLineY(line) + wrapLine * this.#lineHeight,
+      renderCtx.fragment,
+      () => {
+        const cleanUpQuickEdit = () => {
+          this.#quickEdit?.cleanup();
+          this.#quickEdit = undefined;
+        };
 
-          const handleResize = () => {
-            // the line y cache is invalidated by the DOM change,
-            // clear the line y cache and rerender the selection
-            this.#lineYCache.clear();
-            if (this.#selections !== undefined) {
-              this.#updateSelections(this.#selections, true);
-            }
-          };
-
-          // remove the existing quick edit element
-          cleanUpQuickEdit();
-
-          const textDocument = this.#textDocument;
-          const renderQuickEdit = this.options.renderQuickEdit;
-          const fileContainer = this.#fileContainer;
-          if (
-            textDocument === undefined ||
-            renderQuickEdit === undefined ||
-            fileContainer == null
-          ) {
-            return;
+        const handleResize = () => {
+          // the line y cache is invalidated by the DOM change,
+          // clear the line y cache and rerender the selection
+          this.#lineYCache.clear();
+          if (this.#selections !== undefined) {
+            this.#updateSelections(this.#selections, true);
           }
+        };
 
-          const line = selection.start.line;
-          const lineText = textDocument.getLineText(line);
-          const renderQuickElement = renderQuickEdit({
-            textDocument,
-            selection: selection,
-            close: () => {
-              cleanUpQuickEdit();
-              handleResize();
-            },
-            replaceSelectionText: (text: string) => {
-              this.#replaceSelectionText(text);
-            },
-          });
-          let leadingWhitespaces = 0;
-          for (let i = 0; i < lineText.length; i++) {
-            const charCode = lineText.charCodeAt(i);
-            if (charCode === /* space */ 32) {
-              leadingWhitespaces++;
-            } else if (charCode === /* tab */ 9) {
-              leadingWhitespaces += this.#tabSize;
-            } else {
-              break;
-            }
+        // remove the existing quick edit element
+        cleanUpQuickEdit();
+
+        const textDocument = this.#textDocument;
+        const renderQuickEdit = this.options.renderQuickEdit;
+        const fileContainer = this.#fileContainer;
+        if (
+          textDocument === undefined ||
+          renderQuickEdit === undefined ||
+          fileContainer == null
+        ) {
+          return;
+        }
+
+        const line = selection.start.line;
+        const lineText = textDocument.getLineText(line);
+        const quickEditElement = renderQuickEdit({
+          textDocument,
+          selection: selection,
+          close: () => {
+            cleanUpQuickEdit();
+            handleResize();
+          },
+          replaceSelectionText: (text: string) => {
+            this.#replaceSelectionText(text);
+          },
+        });
+        let leadingWhitespaces = 0;
+        for (let i = 0; i < lineText.length; i++) {
+          const charCode = lineText.charCodeAt(i);
+          if (charCode === /* space */ 32) {
+            leadingWhitespaces++;
+          } else if (charCode === /* tab */ 9) {
+            leadingWhitespaces += this.#tabSize;
+          } else {
+            break;
           }
-          this.#selections = [selection];
-          this.#quickEdit = new QuickEdit(
-            line,
-            renderQuickElement,
-            fileContainer,
-            leadingWhitespaces,
-            handleResize
-          );
-          if (this.#isLineVisible(line) && this.#contentElement !== undefined) {
-            this.#quickEdit.render(this.#contentElement);
-          }
-        },
-      },
-      renderCtx.fragment
+        }
+        this.#selections = [selection];
+        this.#quickEdit = new QuickEdit(
+          line,
+          quickEditElement,
+          fileContainer,
+          leadingWhitespaces,
+          handleResize
+        );
+        if (this.#isLineVisible(line) && this.#contentElement !== undefined) {
+          this.#quickEdit.render(this.#contentElement);
+        }
+      }
     );
     renderCtx.elements.set(cacheKey, quickEditIcon);
   }
@@ -1591,12 +1590,18 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         this.#updateSearchMatches(allMatches, searchParams.text);
       },
       onkeydown: (e: KeyboardEvent) => {
-        if (e.key === 'Enter') {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          this.#searchPanelElement?.remove();
+          this.#searchPanelElement = undefined;
+          this.#retainSearchPanelFocus = false;
+        } else if (e.key === 'Enter') {
           e.preventDefault();
           searchParams.action = 'findNext';
           const match = this.#search(searchParams, true);
           this.#updateSearchMatches(allMatches, searchParams.text, match);
         } else if (e.key === 'f' && isPrimaryModifier(e)) {
+          // prevent the default browser search panel open behavior
           e.preventDefault();
         }
       },

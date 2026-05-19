@@ -7,7 +7,7 @@ export type EditorCommand =
   | 'redo'
   | 'selectAll'
   | 'findNextMatch'
-  | 'showSearchPanel'
+  | 'openSearchPanel'
   | 'moveCursorToDocStart'
   | 'moveCursorToDocEnd'
   | 'expandSelectionDocStart'
@@ -16,7 +16,7 @@ export type EditorCommand =
 const SHORTCUTS: Partial<Record<string, EditorCommand>> = {
   a: 'selectAll',
   d: 'findNextMatch',
-  f: 'showSearchPanel',
+  f: 'openSearchPanel',
 };
 
 export function resolveEditorCommandFromKeyboardEvent(

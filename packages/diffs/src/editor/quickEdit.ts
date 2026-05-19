@@ -1,6 +1,30 @@
 import { h } from './utils';
 
 export class QuickEdit {
+  static renderIcon(
+    x: number,
+    y: number,
+    container: HTMLElement | DocumentFragment,
+    onclick: () => void
+  ): HTMLElement {
+    return h(
+      'div',
+      {
+        dataset: { quickEditIcon: '', visible: 'false' },
+        title: 'Quick Edit',
+        style: {
+          transform: `translateY(${y}px) translateX(${x}px)`,
+        },
+        innerHTML: `<svg width="16" height="16" viewBox="0 0 20 20">
+          <polygon points="11 3 9 9 16 9 9 17 11 11 4 11 11 3" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" fill="currentColor"></polygon>
+          </svg>
+        `,
+        onclick,
+      },
+      container
+    );
+  }
+
   #gutterBuffer: HTMLElement;
   #quickEditContainer: HTMLElement;
   #slot: HTMLElement;
