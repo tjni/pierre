@@ -29,14 +29,14 @@ export class QuickEdit {
   #quickEditContainer: HTMLElement;
   #slot: HTMLElement;
   #observer: ResizeObserver;
-  #handleResize: () => void;
+  #handleDomResize: () => void;
 
   constructor(
     public line: number,
     quickEditElement: HTMLElement,
     fileContainer: HTMLElement,
     leadingWhitespaces = 0,
-    handleResize: () => void
+    handleDomResize: () => void
   ) {
     const slotName = 'quick-edit-' + line;
     this.#slot = h(
@@ -61,9 +61,9 @@ export class QuickEdit {
       contentEditable: 'false',
       children: [h('slot', { name: slotName })],
     });
-    this.#observer = new ResizeObserver(handleResize);
+    this.#observer = new ResizeObserver(handleDomResize);
     this.#observer.observe(this.#slot);
-    this.#handleResize = handleResize;
+    this.#handleDomResize = handleDomResize;
   }
 
   render(contentElement: HTMLElement): void {
@@ -84,7 +84,7 @@ export class QuickEdit {
       contentLineElement.before(this.#quickEditContainer);
       gutterElement.style.gridRow = 'span ' + gutterElement.children.length;
       contentElement.style.gridRow = 'span ' + contentElement.children.length;
-      this.#handleResize();
+      this.#handleDomResize();
     }
   }
 
@@ -99,6 +99,7 @@ export class QuickEdit {
       gutter.style.gridRow = 'span ' + gutter.children.length;
       content.style.gridRow = 'span ' + content.children.length;
     }
+    this.#handleDomResize();
 
     this.#slot.remove();
     this.#observer.disconnect();
