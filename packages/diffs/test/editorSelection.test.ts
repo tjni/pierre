@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  applyDeleteHardLineForwardToSelections,
   applyTextChangeToSelections,
   applyTextReplaceToSelections,
   convertSelection,
@@ -893,6 +894,78 @@ describe('mapSelectionRangeMove', () => {
     expect(mapSelectionShift(textDocument, selections, shift)).toEqual([
       createSelection(0, 0, 0, 2, DirectionBackward),
       createSelection(1, 0, 1, 2, DirectionBackward),
+    ]);
+  });
+});
+
+describe('applyDeleteHardLineForwardToSelections', () => {
+  test('deletes from the caret to the end of the line', () => {
+    const textDocument = new TextDocument('inmemory://1', 'hello world');
+    const selections = [createSelection(0, 5, 0, 5)];
+    const { nextSelections, change } = applyDeleteHardLineForwardToSelections(
+      textDocument,
+      selections
+    );
+
+    expect(change).toBeDefined();
+    expect(textDocument.getText()).toBe('hello');
+    expect(nextSelections).toEqual([createSelection(0, 5, 0, 5)]);
+  });
+
+  test('deletes the newline when the caret is at the end of a line', () => {
+    const textDocument = new TextDocument('inmemory://1', 'hello\nworld');
+    const selections = [createSelection(0, 5, 0, 5)];
+    const { nextSelections } = applyDeleteHardLineForwardToSelections(
+      textDocument,
+      selections
+    );
+
+    expect(textDocument.getText()).toBe('helloworld');
+    expect(nextSelections).toEqual([createSelection(0, 5, 0, 5)]);
+  });
+
+  test('is a no-op at the end of the final line', () => {
+    const textDocument = new TextDocument('inmemory://1', 'hello');
+    const selections = [createSelection(0, 5, 0, 5)];
+    const { nextSelections, change } = applyDeleteHardLineForwardToSelections(
+      textDocument,
+      selections
+    );
+
+    expect(change).toBeUndefined();
+    expect(textDocument.getText()).toBe('hello');
+    expect(nextSelections).toEqual([createSelection(0, 5, 0, 5)]);
+  });
+
+  test('deletes an explicit selection instead of the rest of the line', () => {
+    const textDocument = new TextDocument('inmemory://1', 'hello world');
+    const selections = [createSelection(0, 0, 0, 5, DirectionForward)];
+    const { nextSelections } = applyDeleteHardLineForwardToSelections(
+      textDocument,
+      selections
+    );
+
+    expect(textDocument.getText()).toBe(' world');
+    expect(nextSelections).toEqual([createSelection(0, 0, 0, 0)]);
+  });
+
+  test('applies independently across multiple carets', () => {
+    const textDocument = new TextDocument('inmemory://1', 'ax\nby\ncz');
+    const selections = [
+      createSelection(0, 1, 0, 1),
+      createSelection(1, 1, 1, 1),
+      createSelection(2, 1, 2, 1),
+    ];
+    const { nextSelections } = applyDeleteHardLineForwardToSelections(
+      textDocument,
+      selections
+    );
+
+    expect(textDocument.getText()).toBe('a\nb\nc');
+    expect(nextSelections).toEqual([
+      createSelection(0, 1, 0, 1),
+      createSelection(1, 1, 1, 1),
+      createSelection(2, 1, 2, 1),
     ]);
   });
 });

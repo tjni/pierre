@@ -1,6 +1,7 @@
 import type { File } from '../components/File';
 import { DEFAULT_THEMES } from '../constants';
 import {
+  type ResolvedTextEdit,
   TextDocument,
   type TextDocumentChange,
   type TextEdit,
@@ -29,6 +30,7 @@ import { QuickEditWidget } from './quickEdit';
 import { SearchPanelWidget } from './searchPanel';
 import type { EditorSelection } from './selection';
 import {
+  applyDeleteHardLineForwardToSelections,
   applyTextChangeToSelections,
   applyTextReplaceToSelections,
   comparePosition,
@@ -1056,15 +1058,18 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       case 'insertText':
         this.#replaceSelectionText(data ?? '');
         break;
+      case 'insertParagraph':
+        // TODO(@ije): use document.EOF instead of '\n'
+        this.#replaceSelectionText('\n');
+        break;
       case 'deleteContentBackward':
         this.#deleteSelectionText();
         break;
       case 'deleteContentForward':
         this.#deleteSelectionText(true);
         break;
-      case 'insertParagraph':
-        // TODO(@ije): use document.EOF instead of '\n'
-        this.#replaceSelectionText('\n');
+      case 'deleteHardLineForward':
+        this.#deleteHardLineForward();
         break;
       default:
         console.warn(`[diffs] Unknown input type: ${inputType}`);
@@ -1729,6 +1734,36 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           text: '',
         };
 
+    this.#applyResolvedTextEdit(edit);
+  }
+
+  #deleteHardLineForward() {
+    const selections = this.#selections;
+    const textDocument = this.#textDocument;
+    if (selections === undefined || textDocument === undefined) {
+      return;
+    }
+    const { nextSelections, change } =
+      applyDeleteHardLineForwardToSelections<LAnnotation>(
+        textDocument,
+        selections,
+        this.#lineAnnotations
+      );
+    if (change !== undefined) {
+      this.#applyChange(
+        change,
+        nextSelections,
+        this.#applyChangeToLineAnnotations(change)
+      );
+    }
+  }
+
+  #applyResolvedTextEdit(edit: ResolvedTextEdit) {
+    const selections = this.#selections;
+    const textDocument = this.#textDocument;
+    if (selections === undefined || textDocument === undefined) {
+      return;
+    }
     const { nextSelections, change } = applyTextChangeToSelections<LAnnotation>(
       textDocument,
       selections,
@@ -1736,7 +1771,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       this.#lineAnnotations,
       this.#tabSize
     );
-
     if (change !== undefined) {
       this.#applyChange(
         change,

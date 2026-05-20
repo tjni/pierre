@@ -459,6 +459,42 @@ export function applyTextReplaceToSelections<LAnnotation>(
 }
 
 /**
+ * Deletes from each selection to the end of its line, including the line break
+ * when the caret is already at the end of a non-final line. Non-collapsed
+ * selections delete their selected text instead.
+ */
+export function applyDeleteHardLineForwardToSelections<LAnnotation>(
+  textDocument: TextDocument<LAnnotation>,
+  selections: EditorSelection[],
+  lineAnnotations?: LineAnnotation<LAnnotation>[]
+): {
+  nextSelections: EditorSelection[];
+  change?: TextDocumentChange;
+} {
+  const deleteSelections: EditorSelection[] = selections.map((selection) => {
+    const range = resolveDeleteHardLineForwardRange(textDocument, selection);
+    const deleteSelection: EditorSelection = {
+      start: range.start,
+      end: range.end,
+      direction: DirectionNone,
+    };
+    return deleteSelection;
+  });
+  const hasEffect = deleteSelections.some(
+    (selection) => comparePosition(selection.start, selection.end) !== 0
+  );
+  if (!hasEffect) {
+    return { nextSelections: selections };
+  }
+  return applyTextReplaceToSelections(
+    textDocument,
+    deleteSelections,
+    deleteSelections.map(() => ''),
+    lineAnnotations
+  );
+}
+
+/**
  * Checks if a selection is collapsed.
  */
 export function isCollapsedSelection(selection: EditorSelection): boolean {
@@ -892,6 +928,35 @@ function getSelectionAnchorAndFocusOffsets(
     textDocument.offsetAt(isBackward ? selection.end : selection.start),
     textDocument.offsetAt(isBackward ? selection.start : selection.end),
   ];
+}
+
+// Resolves the range removed by deleteHardLineForward for one selection.
+function resolveDeleteHardLineForwardRange(
+  textDocument: TextDocument<unknown>,
+  selection: EditorSelection
+): Range {
+  if (!isCollapsedSelection(selection)) {
+    return { start: selection.start, end: selection.end };
+  }
+  const { line, character } = selection.start;
+  const lineText = textDocument.getLineText(line);
+  const lineLength = lineText.length;
+  if (character < lineLength) {
+    return {
+      start: { line, character },
+      end: { line, character: lineLength },
+    };
+  }
+  if (line < textDocument.lineCount - 1) {
+    return {
+      start: { line, character },
+      end: { line: line + 1, character: 0 },
+    };
+  }
+  return {
+    start: { line, character },
+    end: { line, character },
+  };
 }
 
 // When the user inserts a lone line break, copy the current line's indentation onto the new line.
