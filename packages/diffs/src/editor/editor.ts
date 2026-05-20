@@ -514,7 +514,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
     if (renderRange !== undefined) {
       const { startingLine, totalLines } = renderRange;
-      console.log(
+      console.debug(
         '[diffs/editor] render file:',
         fileContents.name,
         'RenderRange:',
@@ -915,7 +915,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
   #rerender(
     change: TextDocumentChange,
-    nextLineAnnotations?: LineAnnotation<LAnnotation>[] | undefined
+    nextLineAnnotations?: LineAnnotation<LAnnotation>[],
+    renderRange = this.#renderRange
   ) {
     const tokenizer = this.#tokenizer;
     const component = this.#component;
@@ -939,13 +940,13 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     // cancel existing background tokenzier task
     tokenizer.stopBackgroundTokenize();
 
-    const dirtyLines = tokenizer.tokenize(change, this.#renderRange);
+    const dirtyLines = tokenizer.tokenize(change, renderRange);
     const t = performance.now();
 
     if (dirtyLines.size > 0) {
       const children = contentEl.children;
       const dirtyLineIndexes = new Set<number>(dirtyLines.keys());
-      const startingLine = this.#renderRange?.startingLine ?? 0;
+      const startingLine = renderRange?.startingLine ?? 0;
 
       // update line elements that have been changed in the document
       for (let i = change.startLine - startingLine; i < children.length; i++) {
@@ -1036,7 +1037,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       component.emitLineCountChange(textDocument, nextLineAnnotations);
     }
 
-    console.log(
+    console.debug(
       `[diffs/editor] re-render time: ${Math.round((performance.now() - t) * 1000) / 1000}ms`,
       'lastChange:',
       change,
@@ -1783,8 +1784,26 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
     this.#lastCharX = undefined;
 
-    this.#selections = selections;
-    this.#rerender(change, lineAnnotations);
+    let renderRange = this.#renderRange;
+    if (
+      renderRange !== undefined &&
+      selections !== undefined &&
+      selections.length > 0
+    ) {
+      const primarySelection = selections.at(-1)!;
+      // when typing new line at the end of the file,
+      // extend the render range +1 to trigger the re-render of the new line
+      if (
+        primarySelection.end.line ===
+        renderRange.startingLine + renderRange.totalLines
+      ) {
+        renderRange = {
+          ...renderRange,
+          totalLines: renderRange.totalLines + 1,
+        };
+      }
+    }
+    this.#rerender(change, lineAnnotations, renderRange);
 
     if (selections !== undefined) {
       // since we prevent the default input event,

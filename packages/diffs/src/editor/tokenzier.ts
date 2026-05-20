@@ -263,7 +263,7 @@ export class EditorTokenizer {
       );
     }
 
-    console.log(
+    console.debug(
       `[diffs/editor] tokenize time: ${Math.round((performance.now() - t) * 1000) / 1000}ms`
     );
 
