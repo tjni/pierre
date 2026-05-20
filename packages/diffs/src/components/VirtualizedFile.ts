@@ -418,7 +418,7 @@ export class VirtualizedFile<
       overflow = 'scroll',
     } = this.options;
     const { lineHeight } = this.metrics;
-    const lineCount = this.getLineCount(this.file);
+    const lineCount = this.fileRenderer.getLineCount(this.file);
     const headerRegion = getVirtualFileHeaderRegion(
       this.metrics,
       disableFileHeader
@@ -487,7 +487,8 @@ export class VirtualizedFile<
 
   override emitLineCountChange(
     textDocument: DiffsTextDocument,
-    newLineAnnotations?: LineAnnotation<LAnnotation>[]
+    newLineAnnotations?: LineAnnotation<LAnnotation>[],
+    shouldUpdateBuffer = false
   ): void {
     const previousRenderRange = this.renderRange;
     super.emitLineCountChange(textDocument, newLineAnnotations);
@@ -496,21 +497,18 @@ export class VirtualizedFile<
     // Update the buffers caused by the line-count change to ensure the editor
     // scrolls to the correct position before re-rendering
     if (
+      shouldUpdateBuffer &&
       previousRenderRange !== undefined &&
-      previousRenderRange.totalLines !== Infinity &&
       this.file !== undefined
     ) {
-      const { startingLine, totalLines } = previousRenderRange;
-      if (textDocument.lineCount > startingLine + totalLines) {
-        const windowSpecs = this.virtualizer.getWindowSpecs();
-        const renderRange = this.computeRenderRangeFromWindow(
-          this.file,
-          this.top ?? 0,
-          windowSpecs
-        );
-        if (renderRange.bufferAfter !== previousRenderRange.bufferAfter) {
-          this.updateBuffers(renderRange);
-        }
+      const windowSpecs = this.virtualizer.getWindowSpecs();
+      const renderRange = this.computeRenderRangeFromWindow(
+        this.file,
+        this.top ?? 0,
+        windowSpecs
+      );
+      if (renderRange.bufferAfter !== previousRenderRange.bufferAfter) {
+        this.updateBuffers(renderRange);
       }
     }
   }
@@ -706,7 +704,7 @@ export class VirtualizedFile<
   ): RenderRange {
     const { disableFileHeader = false, overflow = 'scroll' } = this.options;
     const { hunkLineCount, lineHeight } = this.metrics;
-    const lineCount = this.getLineCount(file);
+    const lineCount = this.fileRenderer.getLineCount(file);
     const fileHeight = this.height;
     const headerRegion = getVirtualFileHeaderRegion(
       this.metrics,

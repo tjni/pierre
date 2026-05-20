@@ -174,7 +174,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#onChange = onChange;
     this.#initialize();
     if (component.options.useTokenTransformer !== true) {
-      // Tell the component to use token transformer that adds
+      // Ensure the component uses token transformer that adds
       // `data-char` attribute to the tokens
       const options = {
         ...component.options,
@@ -850,7 +850,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
             [getDocumentBoundarySelection(textDocument, atEnd)],
             true
           );
-          this.#scrollToLine(atEnd ? textDocument.lineCount - 1 : 0);
+          this.#scrollToLine(atEnd ? textDocument.lineCount - 1 : 0, true);
         }
         break;
 
@@ -916,7 +916,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #rerender(
     change: TextDocumentChange,
     nextLineAnnotations?: LineAnnotation<LAnnotation>[],
-    renderRange = this.#renderRange
+    renderRange = this.#renderRange,
+    shouldUpdateBuffer?: boolean
   ) {
     const tokenizer = this.#tokenizer;
     const component = this.#component;
@@ -1034,7 +1035,11 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     if (change.lineDelta !== 0) {
       gutterEl.style.gridRow = 'span ' + gutterEl.children.length;
       contentEl.style.gridRow = 'span ' + gutterEl.children.length;
-      component.emitLineCountChange(textDocument, nextLineAnnotations);
+      component.emitLineCountChange(
+        textDocument,
+        nextLineAnnotations,
+        shouldUpdateBuffer
+      );
     }
 
     console.debug(
@@ -1175,7 +1180,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #scrollToLine(line: number, forceFocus = false) {
     const lineElement = this.#getLineElement(line);
     if (lineElement !== undefined) {
-      const scrollToLine = () => {
+      const scrollAndFoucus = () => {
         lineElement.scrollIntoView({ block: 'center', inline: 'start' });
         if (forceFocus) {
           requestAnimationFrame(() => {
@@ -1185,9 +1190,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       };
       if (this.#scrollingToLine !== undefined) {
         this.#scrollingToLine = undefined;
-        requestAnimationFrame(scrollToLine);
+        this.#scrollingForceFocus = undefined;
+        requestAnimationFrame(scrollAndFoucus);
       } else {
-        scrollToLine();
+        scrollAndFoucus();
       }
     }
     // if the line is not rendered yet(virtualized),
@@ -1208,7 +1214,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           height: '1px',
         },
       });
-      this.#contentElement?.getRootNode()?.appendChild(anchor);
+      this.#fileContainer?.shadowRoot?.appendChild(anchor);
       this.#scrollingToLine = line;
       this.#scrollingForceFocus = forceFocus;
       anchor.scrollIntoView({ block: 'center', inline: 'start' });
@@ -1785,25 +1791,27 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#lastCharX = undefined;
 
     let renderRange = this.#renderRange;
+    let shouldUpdateBuffer: boolean | undefined;
     if (
       renderRange !== undefined &&
       selections !== undefined &&
       selections.length > 0
     ) {
       const primarySelection = selections.at(-1)!;
+      const renderRangeEndLine =
+        renderRange.startingLine + renderRange.totalLines;
       // when typing new line at the end of the file,
       // extend the render range +1 to trigger the re-render of the new line
-      if (
-        primarySelection.end.line ===
-        renderRange.startingLine + renderRange.totalLines
-      ) {
+      if (primarySelection.end.line === renderRangeEndLine) {
         renderRange = {
           ...renderRange,
           totalLines: renderRange.totalLines + 1,
         };
+      } else if (primarySelection.end.line > renderRangeEndLine) {
+        shouldUpdateBuffer = true;
       }
     }
-    this.#rerender(change, lineAnnotations, renderRange);
+    this.#rerender(change, lineAnnotations, renderRange, shouldUpdateBuffer);
 
     if (selections !== undefined) {
       // since we prevent the default input event,

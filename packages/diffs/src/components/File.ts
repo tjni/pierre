@@ -439,20 +439,16 @@ export class File<
     this.flushManagers();
   }
 
-  protected getLineCount(file: FileContents | undefined = this.file): number {
-    return file != null ? this.fileRenderer.getLineCount(file) : 0;
+  protected getOrCreateLineOffSets(
+    file: FileContents | undefined = this.file
+  ): number[] {
+    return file != null ? this.fileRenderer.getOrCreateLineOffsets(file) : [0]; // empty string
   }
 
   protected updateBuffers(renderRange: RenderRange): void {
     if (this.pre != null) {
       this.applyBuffers(this.pre, renderRange);
     }
-  }
-
-  protected getOrCreateLineOffSets(
-    file: FileContents | undefined = this.file
-  ): number[] {
-    return file != null ? this.fileRenderer.getOrCreateLineOffsets(file) : [0]; // empty string
   }
 
   public emitTokenize(
@@ -467,7 +463,10 @@ export class File<
     newLineAnnotations?: LineAnnotation<LAnnotation>[]
   ): void {
     this.fileRenderer.emitLineCountChange(textDocument, newLineAnnotations);
-    if (newLineAnnotations != null) {
+    if (
+      newLineAnnotations != null &&
+      newLineAnnotations !== this.lineAnnotations
+    ) {
       this.annotationCache.forEach(({ element }) => element.remove());
       this.annotationCache.clear();
       this.lineAnnotations = newLineAnnotations;

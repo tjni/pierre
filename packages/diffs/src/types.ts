@@ -899,7 +899,8 @@ export interface DiffsEditableComponent<LAnnotation> {
   ) => void;
   emitLineCountChange: (
     textDocument: DiffsTextDocument,
-    newLineAnnotations?: LineAnnotation<LAnnotation>[]
+    newLineAnnotations?: LineAnnotation<LAnnotation>[],
+    shouldUpdateBuffer?: boolean
   ) => void;
   removeEditor(): void;
   rerender(): void;
