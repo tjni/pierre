@@ -489,21 +489,28 @@ export class VirtualizedFile<
     textDocument: DiffsTextDocument,
     newLineAnnotations?: LineAnnotation<LAnnotation>[]
   ): void {
+    const previousRenderRange = this.renderRange;
     super.emitLineCountChange(textDocument, newLineAnnotations);
     this.getSimpleVirtualizer()?.markDOMDirty();
     this.resetLayoutCache(true);
-    // we need to update the buffers caused by the line count change
-    // to make the editor scroll to the correct position before re-rendering
-    const previousRenderRange = this.renderRange;
-    if (previousRenderRange != null && this.file != null) {
-      const windowSpecs = this.virtualizer.getWindowSpecs();
-      const renderRange = this.computeRenderRangeFromWindow(
-        this.file,
-        this.top ?? 0,
-        windowSpecs
-      );
-      if (renderRange.bufferAfter !== previousRenderRange.bufferAfter) {
-        this.updateBuffers(renderRange);
+    // Update the buffers caused by the line-count change to ensure the editor
+    // scrolls to the correct position before re-rendering
+    if (
+      previousRenderRange !== undefined &&
+      previousRenderRange.totalLines !== Infinity &&
+      this.file !== undefined
+    ) {
+      const { startingLine, totalLines } = previousRenderRange;
+      if (textDocument.lineCount > startingLine + totalLines) {
+        const windowSpecs = this.virtualizer.getWindowSpecs();
+        const renderRange = this.computeRenderRangeFromWindow(
+          this.file,
+          this.top ?? 0,
+          windowSpecs
+        );
+        if (renderRange.bufferAfter !== previousRenderRange.bufferAfter) {
+          this.updateBuffers(renderRange);
+        }
       }
     }
   }
