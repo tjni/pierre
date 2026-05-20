@@ -25,8 +25,8 @@ import {
 import { editorCSS } from './css';
 import { applyDocumentChangeToLineAnnotations } from './lineAnnotations';
 import { isPrimaryModifier } from './platform';
-import { QuickEdit } from './quickEdit';
-import { SearchPanel } from './searchPanel';
+import { QuickEditWidget } from './quickEdit';
+import { SearchPanelWidget } from './searchPanel';
 import type { EditorSelection } from './selection';
 import {
   applyTextChangeToSelections,
@@ -106,8 +106,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #overlayElement?: HTMLElement;
   #selectionElements?: Map<string, HTMLElement>;
   #primaryCaretElement?: HTMLElement;
-  #quickEdit?: QuickEdit;
-  #searchPanel?: SearchPanel;
+  #quickEdit?: QuickEditWidget;
+  #searchPanel?: SearchPanelWidget;
   #measureCtx?: CanvasRenderingContext2D;
   #contentResizeObserver?: ResizeObserver;
 
@@ -1143,15 +1143,18 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       ];
     }
     this.#shouldIgnoreSelectionChange = true;
-    winSelection.setBaseAndExtent(
-      anchorNode,
-      anchorOffset,
-      focusNode,
-      focusOffset
-    );
-    setTimeout(() => {
-      this.#shouldIgnoreSelectionChange = false;
-    }, 0);
+    try {
+      winSelection.setBaseAndExtent(
+        anchorNode,
+        anchorOffset,
+        focusNode,
+        focusOffset
+      );
+    } finally {
+      setTimeout(() => {
+        this.#shouldIgnoreSelectionChange = false;
+      }, 0);
+    }
   }
 
   #scrollToPrimaryCaret() {
@@ -1473,7 +1476,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       return;
     }
 
-    const quickEditIcon = QuickEdit.renderIcon(
+    const quickEditIcon = QuickEditWidget.renderIcon(
       left,
       this.#getLineY(line) + wrapLine * this.#lineHeight,
       renderCtx.fragment,
@@ -1531,7 +1534,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           }
         }
         this.#selections = [selection];
-        this.#quickEdit = new QuickEdit(
+        this.#quickEdit = new QuickEditWidget(
           line,
           quickEditElement,
           fileContainer,
@@ -1583,7 +1586,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           ]
         : undefined;
 
-    this.#searchPanel = new SearchPanel(
+    this.#searchPanel = new SearchPanelWidget(
       preElement,
       defaultQuery,
       initialMatch,

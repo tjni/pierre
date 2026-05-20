@@ -2,7 +2,7 @@ import type { DiffsEditorSearchParams } from '../types';
 import { isPrimaryModifier } from './platform';
 import { h } from './utils';
 
-export class SearchPanel {
+export class SearchPanelWidget {
   #container: HTMLDivElement;
   #inputElement: HTMLInputElement;
   #matchesElement: HTMLDivElement;

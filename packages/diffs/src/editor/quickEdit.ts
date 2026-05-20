@@ -1,6 +1,6 @@
 import { h } from './utils';
 
-export class QuickEdit {
+export class QuickEditWidget {
   static renderIcon(
     x: number,
     y: number,
