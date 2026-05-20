@@ -12,16 +12,14 @@ import {
   UnresolvedFile as UnresolvedFileClass,
   type UnresolvedFileOptions,
 } from '../../components/UnresolvedFile';
-import type {
-  GetHoveredLineResult,
-  SelectedLineRange,
-} from '../../managers/InteractionManager';
+import type { GetHoveredLineResult } from '../../managers/InteractionManager';
 import type {
   DiffLineAnnotation,
   FileContents,
   FileDiffMetadata,
   MergeConflictActionPayload,
   MergeConflictMarkerRow,
+  SelectedLineRange,
 } from '../../types';
 import { areOptionsEqual } from '../../utils/areOptionsEqual';
 import {
@@ -98,6 +96,7 @@ export function useUnresolvedFileInstance<LAnnotation>({
       });
     }
   );
+  const controlledSelection = selectedLines !== undefined;
   const poolManager = useContext(WorkerPoolContext);
   const instanceRef = useRef<UnresolvedFileClass<LAnnotation> | null>(null);
   const ref = useStableCallback((fileContainer: HTMLElement | null) => {
@@ -109,6 +108,7 @@ export function useUnresolvedFileInstance<LAnnotation>({
       }
       instanceRef.current = new UnresolvedFileClass(
         mergeUnresolvedOptions({
+          controlledSelection,
           hasConflictUtility,
           hasCustomHeader,
           hasGutterRenderUtility,
@@ -141,6 +141,7 @@ export function useUnresolvedFileInstance<LAnnotation>({
     if (instanceRef.current == null) return;
     const instance = instanceRef.current;
     const newOptions = mergeUnresolvedOptions({
+      controlledSelection,
       hasConflictUtility,
       hasCustomHeader,
       hasGutterRenderUtility,
@@ -176,6 +177,7 @@ export function useUnresolvedFileInstance<LAnnotation>({
 
 interface MergeUnresolvedOptionsProps<LAnnotation> {
   options: UnresolvedFileReactOptions<LAnnotation> | undefined;
+  controlledSelection: boolean;
   onMergeConflictAction: UnresolvedFileOptions<LAnnotation>['onMergeConflictAction'];
   hasConflictUtility: boolean;
   hasGutterRenderUtility: boolean;
@@ -184,6 +186,7 @@ interface MergeUnresolvedOptionsProps<LAnnotation> {
 
 function mergeUnresolvedOptions<LAnnotation>({
   options,
+  controlledSelection,
   onMergeConflictAction,
   hasConflictUtility,
   hasCustomHeader,
@@ -191,6 +194,7 @@ function mergeUnresolvedOptions<LAnnotation>({
 }: MergeUnresolvedOptionsProps<LAnnotation>): UnresolvedFileOptions<LAnnotation> {
   return {
     ...options,
+    controlledSelection,
     onMergeConflictAction,
     hunkSeparators:
       options?.hunkSeparators === 'custom'

@@ -2,6 +2,7 @@
 
 import type {
   AnnotationSide,
+  DiffIndicators,
   DiffLineAnnotation,
   SelectedLineRange,
 } from '@pierre/diffs';
@@ -46,6 +47,7 @@ import { Switch } from '@/components/ui/switch';
 
 const LIGHT_THEMES = [
   'pierre-light',
+  'pierre-light-soft',
   'catppuccin-latte',
   'github-light',
   'one-light',
@@ -54,6 +56,7 @@ const LIGHT_THEMES = [
 
 const DARK_THEMES = [
   'pierre-dark',
+  'pierre-dark-soft',
   'catppuccin-mocha',
   'dracula',
   'github-dark',
@@ -91,7 +94,7 @@ const DEFAULTS = {
   lineNumbers: true,
   wrap: true,
   lineSelection: true,
-  hoverButton: true,
+  gutterButton: true,
   interactionMode: 'comment' as const,
   annotations: true,
 } as const;
@@ -109,8 +112,8 @@ interface PlaygroundControlsContentProps {
   setSelectedLightTheme: (v: (typeof LIGHT_THEMES)[number]) => void;
   selectedDarkTheme: (typeof DARK_THEMES)[number];
   setSelectedDarkTheme: (v: (typeof DARK_THEMES)[number]) => void;
-  diffIndicators: 'bars' | 'classic' | 'none';
-  setDiffIndicators: (v: 'bars' | 'classic' | 'none') => void;
+  diffIndicators: DiffIndicators;
+  setDiffIndicators: (v: DiffIndicators) => void;
   lineDiffType: 'word-alt' | 'word' | 'char' | 'none';
   setLineDiffType: (v: 'word-alt' | 'word' | 'char' | 'none') => void;
   hunkSeparators: HunkSeparatorValue;
@@ -123,8 +126,8 @@ interface PlaygroundControlsContentProps {
   setOverflow: (v: 'wrap' | 'scroll') => void;
   enableLineSelection: boolean;
   setEnableLineSelection: (v: boolean) => void;
-  enableHoverUtility: boolean;
-  setEnableHoverUtility: (v: boolean) => void;
+  enableGutterUtility: boolean;
+  setEnableGutterUtility: (v: boolean) => void;
   showAnnotations: boolean;
   setShowAnnotations: (v: boolean) => void;
   selectedRange: SelectedLineRange | null;
@@ -156,8 +159,8 @@ function PlaygroundControlsContent({
   setOverflow,
   enableLineSelection,
   setEnableLineSelection,
-  enableHoverUtility,
-  setEnableHoverUtility,
+  enableGutterUtility,
+  setEnableGutterUtility,
   showAnnotations,
   setShowAnnotations,
   selectedRange,
@@ -165,7 +168,7 @@ function PlaygroundControlsContent({
   handleCopyLink,
   hideShare = false,
 }: PlaygroundControlsContentProps) {
-  const interactionMode: 'select' | 'comment' | 'none' = enableHoverUtility
+  const interactionMode: 'select' | 'comment' | 'none' = enableGutterUtility
     ? 'comment'
     : enableLineSelection
       ? 'select'
@@ -178,17 +181,17 @@ function PlaygroundControlsContent({
 
   const setInteractionMode = (mode: 'select' | 'comment' | 'none') => {
     if (mode === 'comment') {
-      setEnableHoverUtility(true);
+      setEnableGutterUtility(true);
       setEnableLineSelection(false);
       return;
     }
     if (mode === 'select') {
       setEnableLineSelection(true);
-      setEnableHoverUtility(false);
+      setEnableGutterUtility(false);
       return;
     }
     setEnableLineSelection(false);
-    setEnableHoverUtility(false);
+    setEnableGutterUtility(false);
   };
 
   return (
@@ -283,9 +286,7 @@ function PlaygroundControlsContent({
 
         <ButtonGroup
           value={diffIndicators}
-          onValueChange={(value) =>
-            setDiffIndicators(value as 'bars' | 'classic' | 'none')
-          }
+          onValueChange={(value) => setDiffIndicators(value as DiffIndicators)}
         >
           <ButtonGroupItem value="bars">
             <IconCodeStyleBars />
@@ -495,13 +496,8 @@ export function PlaygroundClient({ prerenderedDiff }: PlaygroundClientProps) {
     (typeof DARK_THEMES)[number]
   >(getParam('dark', DEFAULTS.darkTheme) as (typeof DARK_THEMES)[number]);
 
-  const [diffIndicators, setDiffIndicators] = useState<
-    'bars' | 'classic' | 'none'
-  >(
-    getParam('indicators', DEFAULTS.diffIndicators) as
-      | 'bars'
-      | 'classic'
-      | 'none'
+  const [diffIndicators, setDiffIndicators] = useState<DiffIndicators>(
+    getParam('indicators', DEFAULTS.diffIndicators) as DiffIndicators
   );
 
   const [lineDiffType, setLineDiffType] = useState<
@@ -538,14 +534,14 @@ export function PlaygroundClient({ prerenderedDiff }: PlaygroundClientProps) {
           ? false
           : getBoolParam('select', DEFAULTS.lineSelection)
   );
-  const [enableHoverUtility, setEnableHoverUtility] = useState(
+  const [enableGutterUtility, setEnableGutterUtility] = useState(
     initialLineMode === 'comment'
       ? true
       : initialLineMode === 'select'
         ? false
         : initialLineMode === 'none'
           ? false
-          : getBoolParam('hover', DEFAULTS.hoverButton)
+          : getBoolParam('gutter', DEFAULTS.gutterButton)
   );
   const [showAnnotations, setShowAnnotations] = useState(
     getBoolParam('annot', DEFAULTS.annotations)
@@ -575,7 +571,7 @@ export function PlaygroundClient({ prerenderedDiff }: PlaygroundClientProps) {
     DiffLineAnnotation<PlaygroundAnnotationMetadata>[]
   >(prerenderedDiff.annotations ?? []);
 
-  const interactionMode: 'select' | 'comment' | 'none' = enableHoverUtility
+  const interactionMode: 'select' | 'comment' | 'none' = enableGutterUtility
     ? 'comment'
     : enableLineSelection
       ? 'select'
@@ -608,8 +604,8 @@ export function PlaygroundClient({ prerenderedDiff }: PlaygroundClientProps) {
       params.set('lineMode', interactionMode);
     if (enableLineSelection !== DEFAULTS.lineSelection)
       params.set('select', enableLineSelection ? '1' : '0');
-    if (enableHoverUtility !== DEFAULTS.hoverButton)
-      params.set('hover', enableHoverUtility ? '1' : '0');
+    if (enableGutterUtility !== DEFAULTS.gutterButton)
+      params.set('gutter', enableGutterUtility ? '1' : '0');
     if (showAnnotations !== DEFAULTS.annotations)
       params.set('annot', showAnnotations ? '1' : '0');
 
@@ -639,7 +635,7 @@ export function PlaygroundClient({ prerenderedDiff }: PlaygroundClientProps) {
     overflow,
     interactionMode,
     enableLineSelection,
-    enableHoverUtility,
+    enableGutterUtility,
     showAnnotations,
     selectedRange,
   ]);
@@ -703,11 +699,11 @@ export function PlaygroundClient({ prerenderedDiff }: PlaygroundClientProps) {
     (ann) => ann.metadata.isThread !== true
   );
 
-  // Hover comments and line selection conflict on click targets.
-  // Give hover comments precedence when both toggles are on.
-  const canUseHoverComments = enableHoverUtility && !hasOpenCommentForm;
+  // Gutter comments and line selection conflict on click targets.
+  // Give gutter comments precedence when both toggles are on.
+  const canUseGutterComments = enableGutterUtility && !hasOpenCommentForm;
   const canSelectLines =
-    enableLineSelection && !enableHoverUtility && !hasOpenCommentForm;
+    enableLineSelection && !enableGutterUtility && !hasOpenCommentForm;
 
   const [isControlsOpen, setIsControlsOpen] = useState(false);
   const closeControls = useCallback(() => setIsControlsOpen(false), []);
@@ -744,8 +740,8 @@ export function PlaygroundClient({ prerenderedDiff }: PlaygroundClientProps) {
     setOverflow,
     enableLineSelection,
     setEnableLineSelection,
-    enableHoverUtility,
-    setEnableHoverUtility,
+    enableGutterUtility,
+    setEnableGutterUtility,
     showAnnotations,
     setShowAnnotations,
     selectedRange,
@@ -822,9 +818,9 @@ export function PlaygroundClient({ prerenderedDiff }: PlaygroundClientProps) {
           themeType,
           theme: { dark: selectedDarkTheme, light: selectedLightTheme },
           enableLineSelection: canSelectLines,
-          enableGutterUtility: canUseHoverComments,
+          enableGutterUtility: canUseGutterComments,
           onLineSelectionEnd: handleLineSelectionEnd,
-          onGutterUtilityClick: canUseHoverComments
+          onGutterUtilityClick: canUseGutterComments
             ? (range) => {
                 if (range.side != null) {
                   addCommentAtLine(range.side, range.start);

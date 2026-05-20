@@ -5,7 +5,7 @@ import { createWindowFromScrollPosition } from '../utils/createWindowFromScrollP
 
 interface SubscribedInstance {
   onRender(dirty: boolean): boolean;
-  reconcileHeights(): void;
+  reconcileHeights(): boolean;
   setVisibility(visible: boolean): void;
 }
 
@@ -24,8 +24,11 @@ const INTERSECTION_OBSERVER_MARGIN = DEFAULT_OVERSCROLL_SIZE * 4;
 const INTERSECTION_OBSERVER_THRESHOLD = [0, 0.000001, 0.99999, 1];
 
 export interface VirtualizerConfig {
+  /** Extra pixels rendered above and below the viewport to reduce blanking during fast scrolls. */
   overscrollSize: number;
+  /** Margin used by IntersectionObserver to decide when items should be considered visible. */
   intersectionObserverMargin: number;
+  /** Enables noisy resize logs to help tune metrics and investigate scroll jitter. */
   resizeDebugging: boolean;
 }
 
@@ -45,7 +48,7 @@ export class Virtualizer {
 
   public readonly __id: string = `virtualizer-${++instance}`;
   public readonly config: VirtualizerConfig;
-  public type = 'basic';
+  public type = 'simple' as const;
   private intersectionObserver: IntersectionObserver | undefined;
   private scrollTop: number = 0;
   private height: number = 0;
@@ -113,9 +116,11 @@ export class Virtualizer {
     queueRender(this.computeRenderRangeAndEmit);
   }
 
-  instanceChanged(instance: SubscribedInstance): void {
+  instanceChanged(instance: SubscribedInstance, domDirty: boolean): void {
     this.instancesChanged.add(instance);
-    this.markDOMDirty();
+    if (domDirty) {
+      this.markDOMDirty();
+    }
     queueRender(this.computeRenderRangeAndEmit);
   }
 
@@ -125,7 +130,6 @@ export class Virtualizer {
         scrollTop: this.getScrollTop(),
         height: this.getHeight(),
         scrollHeight: this.getScrollHeight(),
-        fitPerfectly: false,
         overscrollSize: this.config.overscrollSize,
       });
     }
@@ -330,7 +334,6 @@ export class Virtualizer {
         scrollTop: this.getScrollTop(),
         height: this.getHeight(),
         scrollHeight: this.getScrollHeight(),
-        fitPerfectly: false,
         overscrollSize: this.config.overscrollSize,
       });
       if (
@@ -548,10 +551,10 @@ export class Virtualizer {
         );
       }
       const instance = this.observers.get(target);
+      // IntersectionObserver delivers entries asynchronously, so an entry can
+      // arrive after the target was unobserved via disconnect() or releaseElement().
       if (instance == null) {
-        throw new Error(
-          'Virtualizer.handleIntersectionChange: no instance for target'
-        );
+        continue;
       }
       if (isIntersecting && !this.visibleInstances.has(target)) {
         instance.setVisibility(true);
@@ -635,7 +638,7 @@ export class Virtualizer {
     return this.height;
   }
 
-  public markDOMDirty(): void {
+  markDOMDirty(): void {
     this.scrollDirty = true;
     this.scrollHeightDirty = true;
     this.heightDirty = true;

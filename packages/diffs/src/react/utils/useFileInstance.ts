@@ -8,13 +8,11 @@ import {
 
 import { File, type FileOptions } from '../../components/File';
 import { VirtualizedFile } from '../../components/VirtualizedFile';
-import type {
-  GetHoveredLineResult,
-  SelectedLineRange,
-} from '../../managers/InteractionManager';
+import type { GetHoveredLineResult } from '../../managers/InteractionManager';
 import type {
   FileContents,
   LineAnnotation,
+  SelectedLineRange,
   VirtualFileMetrics,
 } from '../../types';
 import { areOptionsEqual } from '../../utils/areOptionsEqual';
@@ -37,7 +35,7 @@ interface UseFileInstanceProps<LAnnotation> {
   hasGutterRenderUtility: boolean;
   hasCustomHeader: boolean;
   disableWorkerPool: boolean;
-  editable: boolean;
+  contentEditable: boolean;
   onChange?: (
     file: FileContents,
     lineAnnotations?: LineAnnotation<LAnnotation>[]
@@ -59,10 +57,11 @@ export function useFileInstance<LAnnotation>({
   hasGutterRenderUtility,
   hasCustomHeader,
   disableWorkerPool,
-  editable,
+  contentEditable,
   onChange,
 }: UseFileInstanceProps<LAnnotation>): UseFileInstanceReturn {
   const simpleVirtualizer = useVirtualizer();
+  const controlledSelection = selectedLines !== undefined;
   const poolManager = useContext(WorkerPoolContext);
   const editor = useEditor<LAnnotation>();
   const instanceRef = useRef<
@@ -78,6 +77,7 @@ export function useFileInstance<LAnnotation>({
       if (simpleVirtualizer != null) {
         instanceRef.current = new VirtualizedFile(
           mergeFileOptions({
+            controlledSelection,
             hasCustomHeader,
             hasGutterRenderUtility,
             options,
@@ -90,6 +90,7 @@ export function useFileInstance<LAnnotation>({
       } else {
         instanceRef.current = new File(
           mergeFileOptions({
+            controlledSelection,
             hasCustomHeader,
             hasGutterRenderUtility,
             options,
@@ -116,6 +117,7 @@ export function useFileInstance<LAnnotation>({
   useIsometricEffect(() => {
     if (instanceRef.current == null) return;
     const newOptions = mergeFileOptions({
+      controlledSelection,
       hasCustomHeader,
       hasGutterRenderUtility,
       options,
@@ -132,11 +134,15 @@ export function useFileInstance<LAnnotation>({
   });
 
   useIsometricEffect(() => {
-    if (editable && editor != null && instanceRef.current != null) {
+    if (
+      contentEditable &&
+      editor !== undefined &&
+      instanceRef.current != null
+    ) {
       return editor.edit(instanceRef.current, onChange);
     }
     return undefined;
-  }, [editable, editor, onChange]);
+  }, [contentEditable, editor, onChange]);
 
   const getHoveredLine = useCallback(():
     | GetHoveredLineResult<'file'>
@@ -148,21 +154,28 @@ export function useFileInstance<LAnnotation>({
 
 interface MergeFileOptionsProps<LAnnotation> {
   options: FileOptions<LAnnotation> | undefined;
+  controlledSelection: boolean;
   hasGutterRenderUtility: boolean;
   hasCustomHeader: boolean;
 }
 
 function mergeFileOptions<LAnnotation>({
   options,
+  controlledSelection,
   hasCustomHeader,
   hasGutterRenderUtility,
 }: MergeFileOptionsProps<LAnnotation>): FileOptions<LAnnotation> | undefined {
-  if (hasGutterRenderUtility || hasCustomHeader) {
-    return {
-      ...options,
-      renderCustomHeader: hasCustomHeader ? noopRender : undefined,
-      renderGutterUtility: hasGutterRenderUtility ? noopRender : undefined,
-    };
+  if (!controlledSelection && !hasGutterRenderUtility && !hasCustomHeader) {
+    return options;
   }
-  return options;
+  return {
+    ...options,
+    controlledSelection,
+    renderCustomHeader: hasCustomHeader
+      ? noopRender
+      : options?.renderCustomHeader,
+    renderGutterUtility: hasGutterRenderUtility
+      ? noopRender
+      : options?.renderGutterUtility,
+  };
 }

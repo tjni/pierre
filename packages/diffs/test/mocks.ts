@@ -58,8 +58,7 @@ export function areThemesEqual(
     return themeA === themeB;
   }
   return themeA.dark === themeB.dark && themeA.light === themeB.light;
-}
-`,
+}`,
   },
   file2: {
     name: 'file2.js',
@@ -70,8 +69,7 @@ export function areThemesEqual(
   return total;
 }
 
-export default calculateTotal;
-`,
+export default calculateTotal;`,
   },
 };
 

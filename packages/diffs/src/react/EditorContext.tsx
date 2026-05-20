@@ -3,15 +3,15 @@
 import type { Context, PropsWithChildren } from 'react';
 import { createContext, useContext, useEffect } from 'react';
 
-import { Editor as VanillaEditor } from '../editor';
+import { Editor } from '../editor';
 
-export const EditorContext: Context<VanillaEditor<unknown> | undefined> =
-  createContext<VanillaEditor<unknown> | undefined>(undefined);
+export const EditorContext: Context<Editor<unknown> | undefined> =
+  createContext<Editor<unknown> | undefined>(undefined);
 
 export function EditorProvider({
   children,
   editor,
-}: PropsWithChildren<{ editor: VanillaEditor<unknown> }>): React.JSX.Element {
+}: PropsWithChildren<{ editor: Editor<unknown> }>): React.JSX.Element {
   useEffect(() => {
     return () => {
       editor.cleanUp();
@@ -22,8 +22,6 @@ export function EditorProvider({
   );
 }
 
-export function useEditor<LAnnotation>():
-  | VanillaEditor<LAnnotation>
-  | undefined {
-  return useContext(EditorContext) as VanillaEditor<LAnnotation> | undefined;
+export function useEditor<LAnnotation>(): Editor<LAnnotation> | undefined {
+  return useContext(EditorContext) as Editor<LAnnotation> | undefined;
 }

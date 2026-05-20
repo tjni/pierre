@@ -1,6 +1,6 @@
 {
   "name": "@pierre/diffs",
-  "version": "1.1.22",
+  "version": "1.2.0-beta.6",
   "license": "apache-2.0",
   "files": [
     "dist",
@@ -57,6 +57,10 @@
       "import": "./dist/worker/worker-portable.js"
     }
   },
+  "publishConfig": {
+    "access": "public",
+    "tag": "beta"
+  },
   "scripts": {
     "build": "tsdown --clean",
     "dev": "echo 'Watching for changes…' && tsdown --watch --log-level error",
@@ -76,9 +80,11 @@
   "devDependencies": {
     "@arethetypeswrong/core": "catalog:",
     "@types/hast": "catalog:",
+    "@types/jsdom": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "autoprefixer": "catalog:",
+    "jsdom": "catalog:",
     "lightningcss": "catalog:",
     "postcss": "catalog:",
     "postcss-calc": "catalog:",

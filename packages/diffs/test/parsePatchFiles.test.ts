@@ -1,5 +1,6 @@
-import { describe, expect, spyOn, test } from 'bun:test';
+import { afterAll, describe, expect, spyOn, test } from 'bun:test';
 
+import { disposeHighlighter } from '../src/highlighter/shared_highlighter';
 import { DiffHunksRenderer } from '../src/renderers/DiffHunksRenderer';
 import { parsePatchFiles } from '../src/utils/parsePatchFiles';
 import {
@@ -14,6 +15,10 @@ import {
   countSplitRows,
   verifyPatchHunkValues,
 } from './testUtils';
+
+afterAll(async () => {
+  await disposeHighlighter();
+});
 
 describe('parsePatchFiles', () => {
   const result = parsePatchFiles(diffPatch);
@@ -74,6 +79,24 @@ describe('parsePatchFiles', () => {
     } finally {
       consoleError.mockRestore();
     }
+  });
+
+  test('preserves leading BOM characters in parsed hunk lines', () => {
+    const result = parsePatchFiles(
+      [
+        'diff --git a/bom.txt b/bom.txt\n',
+        'index 1111111..2222222 100644\n',
+        '--- a/bom.txt\n',
+        '+++ b/bom.txt\n',
+        '@@ -1 +1 @@\n',
+        '-\uFEFFold\n',
+        '+\uFEFFnew\n',
+      ].join('')
+    );
+
+    const file = result[0]?.files[0];
+    expect(file?.deletionLines[0]).toBe('\uFEFFold\n');
+    expect(file?.additionLines[0]).toBe('\uFEFFnew\n');
   });
 
   test(

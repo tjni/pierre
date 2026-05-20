@@ -8,13 +8,11 @@ import {
 
 import { FileDiff, type FileDiffOptions } from '../../components/FileDiff';
 import { VirtualizedFileDiff } from '../../components/VirtualizedFileDiff';
-import type {
-  GetHoveredLineResult,
-  SelectedLineRange,
-} from '../../managers/InteractionManager';
+import type { GetHoveredLineResult } from '../../managers/InteractionManager';
 import type {
   DiffLineAnnotation,
   FileDiffMetadata,
+  SelectedLineRange,
   VirtualFileMetrics,
 } from '../../types';
 import { areOptionsEqual } from '../../utils/areOptionsEqual';
@@ -55,6 +53,7 @@ export function useFileDiffInstance<LAnnotation>({
   disableWorkerPool,
 }: UseFileDiffInstanceProps<LAnnotation>): UseFileDiffInstanceReturn {
   const simpleVirtualizer = useVirtualizer();
+  const controlledSelection = selectedLines !== undefined;
   const poolManager = useContext(WorkerPoolContext);
   const instanceRef = useRef<
     FileDiff<LAnnotation> | VirtualizedFileDiff<LAnnotation> | null
@@ -69,6 +68,7 @@ export function useFileDiffInstance<LAnnotation>({
       if (simpleVirtualizer != null) {
         instanceRef.current = new VirtualizedFileDiff(
           mergeFileDiffOptions({
+            controlledSelection,
             hasCustomHeader,
             hasGutterRenderUtility,
             options,
@@ -81,6 +81,7 @@ export function useFileDiffInstance<LAnnotation>({
       } else {
         instanceRef.current = new FileDiff(
           mergeFileDiffOptions({
+            controlledSelection,
             hasCustomHeader,
             hasGutterRenderUtility,
             options,
@@ -110,6 +111,7 @@ export function useFileDiffInstance<LAnnotation>({
     const { current: instance } = instanceRef;
     if (instance == null) return;
     const newOptions = mergeFileDiffOptions({
+      controlledSelection,
       hasCustomHeader,
       hasGutterRenderUtility,
       options,
@@ -136,6 +138,7 @@ export function useFileDiffInstance<LAnnotation>({
 }
 
 interface MergeFileDiffOptionsProps<LAnnotation> {
+  controlledSelection: boolean;
   hasCustomHeader: boolean;
   hasGutterRenderUtility: boolean;
   options: FileDiffOptions<LAnnotation> | undefined;
@@ -143,17 +146,23 @@ interface MergeFileDiffOptionsProps<LAnnotation> {
 
 function mergeFileDiffOptions<LAnnotation>({
   options,
+  controlledSelection,
   hasCustomHeader,
   hasGutterRenderUtility,
 }: MergeFileDiffOptionsProps<LAnnotation>):
   | FileDiffOptions<LAnnotation>
   | undefined {
-  if (hasGutterRenderUtility || hasCustomHeader) {
-    return {
-      ...options,
-      renderCustomHeader: hasCustomHeader ? noopRender : undefined,
-      renderGutterUtility: hasGutterRenderUtility ? noopRender : undefined,
-    };
+  if (!controlledSelection && !hasGutterRenderUtility && !hasCustomHeader) {
+    return options;
   }
-  return options;
+  return {
+    ...options,
+    controlledSelection,
+    renderCustomHeader: hasCustomHeader
+      ? noopRender
+      : options?.renderCustomHeader,
+    renderGutterUtility: hasGutterRenderUtility
+      ? noopRender
+      : options?.renderGutterUtility,
+  };
 }

@@ -2,9 +2,7 @@ const LINE_FEED = 10; // \n
 const CARRIAGE_RETURN = 13; // \r
 
 /**
- * Computes line start offsets plus a final end offset for slicing line text.
- * `lineCount` excludes the final newline-only parser row, except for files
- * that contain only that row.
+ * Computes line start offsets for a string.
  */
 export function computeLineOffsets(contents: string): number[] {
   const offsets: number[] = [0];

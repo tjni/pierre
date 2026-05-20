@@ -1,8 +1,8 @@
 export function cleanLastNewline(contents: string): string {
   let end = contents.length;
-  if (contents.charAt(end - 1) === '\n') {
+  if (contents.charCodeAt(end - 1) === /* \n */ 10) {
     end--;
-    if (contents.charAt(end - 1) === '\r') {
+    if (contents.charCodeAt(end - 1) === /* \r */ 13) {
       end--;
     }
   }

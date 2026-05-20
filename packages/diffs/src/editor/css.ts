@@ -15,6 +15,10 @@ export const editorCSS: string = /* CSS */ `
   {
     position: relative;
   }
+  [data-code] {
+    padding-bottom: 0;
+    overflow: auto;
+  }
   [data-content] {
     background-color: transparent;
     caret-color: var(--diffs-bg-caret);
@@ -22,7 +26,7 @@ export const editorCSS: string = /* CSS */ `
   }
   @media (min-width: 480px) {
     [data-content] {
-      caret-color: ${DEBUG_SELECTION ? 'red' : 'transparent'};
+      caret-color: ${DEBUG_SELECTION ? 'blue' : 'transparent'};
     }
     [data-quick-edit] {
       caret-color: currentColor;
@@ -62,6 +66,7 @@ export const editorCSS: string = /* CSS */ `
       visibility: visible;
     }
   }
+
   [data-quick-edit-icon] {
     position: absolute;
     top: 0;
@@ -74,7 +79,6 @@ export const editorCSS: string = /* CSS */ `
     align-items: center;
     justify-content: center;
     color: color-mix(in lab, var(--diffs-fg) 40%, var(--diffs-bg));
-    background-color: color-mix(in lab, var(--diffs-fg) 16%, var(--diffs-bg));
     transition: background-color 0.1s ease-in-out, color 0.1s ease-in-out;
     cursor: pointer;
     visibility: hidden;
@@ -83,7 +87,7 @@ export const editorCSS: string = /* CSS */ `
     visibility: visible;
   }
   [data-quick-edit-icon]:hover {
-    background-color: color-mix(in lab, var(--diffs-fg) 5%, var(--diffs-bg));
+    background-color: color-mix(in lab, var(--diffs-fg) 8%, var(--diffs-bg));
     color: var(--diffs-fg);
   }
   [data-quick-edit] {

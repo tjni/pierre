@@ -2,15 +2,13 @@ import { type CSSProperties, type ReactNode } from 'react';
 
 import type { FileOptions } from '../components/File';
 import type { FileDiffOptions } from '../components/FileDiff';
-import type {
-  GetHoveredLineResult,
-  SelectedLineRange,
-} from '../managers/InteractionManager';
+import type { GetHoveredLineResult } from '../managers/InteractionManager';
 import type {
   DiffLineAnnotation,
   FileContents,
   FileDiffMetadata,
   LineAnnotation,
+  SelectedLineRange,
   VirtualFileMetrics,
 } from '../types';
 
@@ -24,12 +22,6 @@ export interface DiffBasePropsReact<LAnnotation> {
   renderHeaderPrefix?(fileDiff: FileDiffMetadata): ReactNode;
   renderHeaderMetadata?(fileDiff: FileDiffMetadata): ReactNode;
   renderGutterUtility?(
-    getHoveredLine: () => GetHoveredLineResult<'diff'> | undefined
-  ): ReactNode;
-  /**
-   * @deprecated Use `renderGutterUtility` instead.
-   */
-  renderHoverUtility?(
     getHoveredLine: () => GetHoveredLineResult<'diff'> | undefined
   ): ReactNode;
   className?: string;
@@ -50,17 +42,11 @@ export interface FileProps<LAnnotation> {
   renderGutterUtility?(
     getHoveredLine: () => GetHoveredLineResult<'file'> | undefined
   ): ReactNode;
-  /**
-   * @deprecated Use `renderGutterUtility` instead.
-   */
-  renderHoverUtility?(
-    getHoveredLine: () => GetHoveredLineResult<'file'> | undefined
-  ): ReactNode;
   className?: string;
   style?: CSSProperties;
   prerenderedHTML?: string;
   disableWorkerPool?: boolean;
-  editable?: boolean;
+  contentEditable?: boolean;
   onChange?: (
     file: FileContents,
     lineAnnotations?: LineAnnotation<LAnnotation>[]

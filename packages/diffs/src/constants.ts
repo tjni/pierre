@@ -1,11 +1,23 @@
 import type {
+  CodeViewLayout,
   HunkExpansionRegion,
   RenderRange,
+  SmoothScrollSettings,
   ThemesType,
   VirtualFileMetrics,
 } from './types';
 
 export const DIFFS_TAG_NAME = 'diffs-container' as const;
+
+// Keep this as a NODE_ENV read so app builds can hard-disable development-only
+// checks unless they are explicitly built for development.
+export const DIFFS_DEVELOPMENT_BUILD: boolean = (() => {
+  try {
+    return process.env.NODE_ENV === 'development';
+  } catch {
+    return false;
+  }
+})();
 
 // Misc patch/content parsing regexes
 export const COMMIT_METADATA_SPLIT: RegExp = /(?=^From [a-f0-9]+ .+$)/m;
@@ -45,12 +57,29 @@ export const DIFFS_SCROLLBAR_GUTTER_MEASURED_PROPERTY =
   '--diffs-scrollbar-gutter-measured';
 
 export const DEFAULT_COLLAPSED_CONTEXT_THRESHOLD = 1;
+export const DEFAULT_TOKENIZE_MAX_LENGTH = 100_000;
 export const DEFAULT_VIRTUAL_FILE_METRICS: VirtualFileMetrics = {
   hunkLineCount: 50,
   lineHeight: 20,
   diffHeaderHeight: 44,
-  hunkSeparatorHeight: 32,
-  fileGap: 8,
+  spacing: 8,
+};
+
+export const DEFAULT_CODE_VIEW_FILE_METRICS: VirtualFileMetrics = {
+  ...DEFAULT_VIRTUAL_FILE_METRICS,
+  hunkLineCount: 1,
+};
+
+export const DEFAULT_CODE_VIEW_LAYOUT: CodeViewLayout = {
+  paddingTop: 8,
+  paddingBottom: 8,
+  gap: 8,
+};
+
+export const DEFAULT_SMOOTH_SCROLL_SETTINGS: SmoothScrollSettings = {
+  omega: 0.015,
+  positionEpsilon: 0.5,
+  velocityEpsilon: 0.05,
 };
 
 export const DEFAULT_EXPANDED_REGION: HunkExpansionRegion = Object.freeze({

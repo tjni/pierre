@@ -26,6 +26,7 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-border: var(--border);
+  --color-border-opaque: var(--border-opaque);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-chart-1: var(--chart-1);
@@ -62,6 +63,11 @@
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
   --border: oklch(0.922 0 0);
+  --border-opaque: color-mix(
+    in oklch,
+    var(--border) 100%,
+    var(--diffshub-sidebar-bg) 0%
+  );
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
   --chart-1: oklch(0.646 0.222 41.116);
@@ -77,6 +83,9 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  --diffshub-sidebar-bg: #f7f7f7;
+
   color-scheme: light;
 }
 
@@ -97,6 +106,11 @@
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 10%);
+  --border-opaque: color-mix(
+    in oklch,
+    var(--diffshub-sidebar-bg) 90%,
+    oklch(1 0 0)
+  );
   --color-border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
@@ -113,6 +127,7 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+  --diffshub-sidebar-bg: #101010;
   color-scheme: dark;
 }
 
@@ -134,6 +149,11 @@
     --accent-foreground: oklch(0.985 0 0);
     --destructive: oklch(0.704 0.191 22.216);
     --border: oklch(1 0 0 / 10%);
+    --border-opaque: color-mix(
+      in oklch,
+      var(--diffshub-sidebar-bg) 90%,
+      oklch(1 0 0)
+    );
     --color-border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
     --ring: oklch(0.556 0 0);
@@ -156,6 +176,10 @@
 
 :root {
   --diffs-font-family: var(--font-berkeley-mono);
+  --cv-gutter-vertical: 0px;
+  --cv-gutter-horizontal: 0px;
+  --cv-mini-gutter-vertical: 0px;
+  --cv-mini-gutter-horizontal: 0px;
   color-scheme: light;
   -webkit-font-smoothing: antialiased;
 }
@@ -175,7 +199,7 @@
     font-size: 95%;
     font-weight: 500;
     color: var(--color-primary);
-    letter-spacing: -0.02em;
+    letter-spacing: -0.025em;
   }
 
   h2,
@@ -216,7 +240,7 @@
   }
 
   .inline-link {
-    @apply text-foreground hover:text-foreground decoration-muted-foreground hover:decoration-foreground underline decoration-[1px] underline-offset-3 transition-colors;
+    @apply text-foreground hover:text-foreground decoration-muted-foreground hover:decoration-foreground underline decoration-[1px] underline-offset-3 transition-[color,text-decoration-color,text-underline-offset];
   }
 
   .no-scrollbar::-webkit-scrollbar {
@@ -243,6 +267,70 @@
   @apply overflow-hidden rounded-lg border border-transparent dark:border-neutral-800;
 }
 
+.cv-scrollbar {
+  --cv-scrollbar-thumb-bg: light-dark(
+    color-mix(in lab, var(--background) 85%, black),
+    color-mix(in lab, var(--background) 80%, white)
+  );
+  scrollbar-gutter: stable;
+}
+
+.cv-scrollbar::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+.cv-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+  border-left: 1px solid var(--color-border-opaque);
+  margin-top: -1px;
+}
+
+.cv-scrollbar::-webkit-scrollbar-thumb {
+  background-color: var(--cv-scrollbar-thumb-bg);
+  background-clip: content-box;
+  border: 2px solid transparent;
+  border-radius: 6px;
+}
+
+.cv-mini-scrollbar {
+  --cv-mini-scrollbar-thumb-bg: transparent;
+  scrollbar-gutter: stable;
+}
+
+.cv-mini-scrollbar::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.cv-mini-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.cv-mini-scrollbar:hover {
+  --cv-mini-scrollbar-thumb-bg: light-dark(
+    color-mix(in lab, var(--background) 85%, black),
+    color-mix(in lab, var(--background) 80%, white)
+  );
+}
+
+.cv-mini-scrollbar::-webkit-scrollbar-thumb {
+  background-color: var(--cv-mini-scrollbar-thumb-bg);
+  background-clip: content-box;
+  border: 3px solid transparent;
+  border-radius: 5px;
+}
+
+@supports (-moz-appearance: none) {
+  .cv-scrollbar {
+    scrollbar-color: var(--cv-scrollbar-thumb-bg) transparent;
+  }
+  .cv-mini-scrollbar {
+    scrollbar-color: var(--cv-mini-scrollbar-thumb-bg) transparent;
+    scrollbar-width: thin;
+  }
+}
+
 [data-slot='header'] {
   @apply border-b border-transparent transition-[border-color] duration-200;
 }
@@ -255,7 +343,7 @@
   @apply bg-background fixed top-16 right-4 left-4 z-[60];
   @apply max-h-[80dvh] overflow-y-auto;
   @apply -translate-y-2;
-  @apply rounded-xl border border-[rgb(0_0_0_/_0.15)] dark:border-[rgb(255_255_255_/_0.1)] bg-clip-padding p-4;
+  @apply rounded-xl border border-[rgb(0_0_0_/_0.15)] bg-clip-padding p-4 dark:border-[rgb(255_255_255_/_0.1)];
   @apply opacity-0 shadow-2xl;
   @apply pointer-events-none transition-all duration-200 ease-out;
   @apply [scrollbar-color:transparent_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin];
@@ -264,6 +352,48 @@
   &.is-open {
     @apply pointer-events-auto translate-y-0 opacity-100;
   }
+}
+
+/* FAQ accordion: animate expand/collapse using the ::details-content pseudo-element
+   (Chrome 131+, Firefox 143+, Safari 18.4+). In older browsers the items still
+   work — they just open instantly. height animates to `auto` via interpolate-size
+   when supported; falls back to a fixed cap with scroll otherwise. */
+@supports selector(::details-content) {
+  .faq-item {
+    interpolate-size: allow-keywords;
+  }
+
+  .faq-item::details-content {
+    block-size: 0;
+    overflow-y: clip;
+    transition:
+      content-visibility 0.2s ease allow-discrete,
+      block-size 0.2s;
+  }
+
+  .faq-item[open]::details-content {
+    block-size: auto;
+  }
+}
+
+.diffshub-border-deleted {
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.diffshub-border-deleted::before {
+  display: block;
+  content: '';
+  width: 4px;
+  height: 24px;
+  background-image: linear-gradient(
+    0deg,
+    light-dark(#ff2e3f, #ff6762) 50%,
+    light-dark(#ffdbd6, #3e1715) 50%
+  );
+  background-repeat: repeat;
+  background-size: 2px 2px;
+  background-size: calc(1lh / round(1lh / 2px)) calc(1lh / round(1lh / 2px));
 }
 
 /* Docs sidebar: shares mobile popover styles, adds desktop sticky overrides */

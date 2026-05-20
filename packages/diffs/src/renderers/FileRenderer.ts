@@ -1,7 +1,11 @@
 import type { ElementContent, Element as HASTElement } from 'hast';
 import { toHtml } from 'hast-util-to-html';
 
-import { DEFAULT_RENDER_RANGE, DEFAULT_THEMES } from '../constants';
+import {
+  DEFAULT_RENDER_RANGE,
+  DEFAULT_THEMES,
+  DEFAULT_TOKENIZE_MAX_LENGTH,
+} from '../constants';
 import { areLanguagesAttached } from '../highlighter/languages/areLanguagesAttached';
 import {
   getHighlighterIfLoaded,
@@ -24,8 +28,9 @@ import type {
   SupportedLanguages,
   ThemedFileResult,
 } from '../types';
+import { areFileRenderOptionsEqual } from '../utils/areFileRenderOptionsEqual';
+import { areFilesEqual } from '../utils/areFilesEqual';
 import { areRenderRangesEqual } from '../utils/areRenderRangesEqual';
-import { areThemesEqual } from '../utils/areThemesEqual';
 import { computeLineOffsets } from '../utils/computeFileOffsets';
 import { createAnnotationElement } from '../utils/createAnnotationElement';
 import { createContentColumn } from '../utils/createContentColumn';
@@ -53,7 +58,7 @@ type AnnotationLineMap<LAnnotation> = Record<
 
 interface GetRenderOptionsReturn {
   options: RenderFileOptions;
-  forceRender: boolean;
+  forceHighlight: boolean;
 }
 
 export interface FileRenderResult {
@@ -83,7 +88,10 @@ export class FileRenderer<LAnnotation = undefined> {
   private renderCache: RenderedFileASTCache | undefined;
   private computedLang: SupportedLanguages = 'text';
   private lineAnnotations: AnnotationLineMap<LAnnotation> = {};
-  private lineOffsetsCache = new WeakMap<FileContents, number[]>();
+  private lineOffsetsCache = new WeakMap<
+    FileContents,
+    { offsets: number[]; cacheKey?: string }
+  >();
   private textDoucmentCache = new WeakMap<FileContents, DiffsTextDocument>();
 
   constructor(
@@ -118,28 +126,38 @@ export class FileRenderer<LAnnotation = undefined> {
   }
 
   public cleanUp(): void {
-    this.renderCache = undefined;
-    this.highlighter = undefined;
+    this.recycle();
     this.workerManager = undefined;
     this.onRenderUpdate = undefined;
   }
 
+  public recycle(): void {
+    this.renderCache = undefined;
+    this.highlighter = undefined;
+    this.workerManager?.cleanUpTasks(this);
+  }
+
   public hydrate(file: FileContents): void {
     const { options } = this.getRenderOptions(file);
+    const lines = this.getOrCreateLineOffsets(file);
+    const massiveFile = isFileMassive(
+      lines.length,
+      this.getTokenizeMaxLength()
+    );
     let cache = this.workerManager?.getFileResultCache(file);
-    if (cache != null && !areRenderOptionsEqual(options, cache.options)) {
+    if (cache != null && !areFileRenderOptionsEqual(options, cache.options)) {
       cache = undefined;
     }
     this.renderCache ??= {
       file,
       options,
-      highlighted: !isFilePlainText(file),
-      result: cache?.result,
+      highlighted: !massiveFile && !isFilePlainText(file),
+      result: massiveFile ? undefined : cache?.result,
       // FIXME(amadeus): Add support for renderRanges
       renderRange: undefined,
     };
     if (this.workerManager?.isWorkingPool() === true) {
-      if (this.renderCache.result == null) {
+      if (this.renderCache.result == null && !massiveFile) {
         // We should only kick off a preload of the AST if we have a WorkerPool
         this.workerManager.highlightFileAST(this, file);
       }
@@ -166,26 +184,30 @@ export class FileRenderer<LAnnotation = undefined> {
     })();
     const { renderCache } = this;
     if (renderCache?.result == null) {
-      return { options, forceRender: true };
+      return { options, forceHighlight: true };
     }
     if (
-      file !== renderCache.file ||
-      !areRenderOptionsEqual(options, renderCache.options)
+      !areFilesEqual(file, renderCache.file) ||
+      !areFileRenderOptionsEqual(options, renderCache.options)
     ) {
-      return { options, forceRender: true };
+      return { options, forceHighlight: true };
     }
-    return { options, forceRender: false };
+    return { options, forceHighlight: false };
   }
 
   public getOrCreateLineOffsets(file: FileContents): number[] {
-    let offsets = this.lineOffsetsCache.get(file);
-    if (offsets == null) {
-      offsets = computeLineOffsets(file.contents);
-      this.lineOffsetsCache.set(file, offsets);
+    const cacheKey = file.cacheKey;
+    const cached = this.lineOffsetsCache.get(file);
+    if (cached === undefined || cached.cacheKey !== cacheKey) {
+      const offsets = computeLineOffsets(file.contents);
+      this.lineOffsetsCache.set(file, { offsets, cacheKey });
+      return offsets;
     }
-    return offsets;
+    return cached.offsets;
   }
 
+  // when a emitLineCountChange is called,
+  // calculate the line count using the cached text document
   public getLineCount(file: FileContents): number {
     return (
       this.textDoucmentCache.get(file)?.lineCount ??
@@ -287,16 +309,22 @@ export class FileRenderer<LAnnotation = undefined> {
     if (file == null) {
       return undefined;
     }
-    const cache = this.workerManager?.getFileResultCache(file);
-    if (cache != null && this.renderCache == null) {
+    let { options, forceHighlight } = this.getRenderOptions(file);
+    const cache = this.getMatchingWorkerResultCache(file, options);
+    if (cache != null && !this.hasHighlightedRenderCache(file, options)) {
       this.renderCache = {
         file,
         highlighted: true,
         renderRange: undefined,
         ...cache,
       };
+      forceHighlight = false;
     }
-    const { options, forceRender } = this.getRenderOptions(file);
+    const lineOffsets = this.getOrCreateLineOffsets(file);
+    const forcePlainText = isFileMassive(
+      lineOffsets.length,
+      this.getTokenizeMaxLength()
+    );
     this.renderCache ??= {
       file,
       highlighted: false,
@@ -308,16 +336,19 @@ export class FileRenderer<LAnnotation = undefined> {
       // Cache invalidation based on renderRange comparison
       if (
         this.renderCache.result == null ||
+        forcePlainText ||
         (!this.renderCache.highlighted &&
-          (file !== this.renderCache.file ||
+          (!areFilesEqual(file, this.renderCache.file) ||
             !areRenderRangesEqual(this.renderCache.renderRange, renderRange)))
       ) {
         this.renderCache.file = file;
+        this.renderCache.options = options;
+        this.renderCache.highlighted = false;
         this.renderCache.result = this.workerManager.getPlainFileAST(
           file,
           renderRange.startingLine,
           renderRange.totalLines,
-          this.getOrCreateLineOffsets(file)
+          lineOffsets
         );
         this.renderCache.renderRange = renderRange;
       }
@@ -326,7 +357,8 @@ export class FileRenderer<LAnnotation = undefined> {
         // We should only attempt to kick off the worker highlighter if there
         // are lines to render
         renderRange.totalLines > 0 &&
-        (!this.renderCache.highlighted || forceRender)
+        !forcePlainText &&
+        (!this.renderCache.highlighted || forceHighlight)
       ) {
         this.workerManager.highlightFileAST(this, file);
       }
@@ -336,6 +368,7 @@ export class FileRenderer<LAnnotation = undefined> {
         this.highlighter != null && areThemesAttached(options.theme);
       const hasLangs =
         this.highlighter != null && areLanguagesAttached(this.computedLang);
+      const canHighlight = !forcePlainText && hasLangs;
 
       // If we have any semblance of a highlighter with the correct theme(s)
       // attached, we can kick off some form of rendering.  If we don't have
@@ -344,19 +377,20 @@ export class FileRenderer<LAnnotation = undefined> {
       if (
         this.highlighter != null &&
         hasThemes &&
-        (forceRender ||
-          (!this.renderCache.highlighted && hasLangs) ||
+        (forceHighlight ||
+          forcePlainText ||
+          (!this.renderCache.highlighted && canHighlight) ||
           this.renderCache.result == null)
       ) {
         const { result, options } = this.renderFileWithHighlighter(
           file,
           this.highlighter,
-          !hasLangs
+          forcePlainText || !hasLangs
         );
         this.renderCache = {
           file,
           options,
-          highlighted: hasLangs,
+          highlighted: canHighlight,
           result,
           renderRange: undefined,
         };
@@ -365,14 +399,14 @@ export class FileRenderer<LAnnotation = undefined> {
       // If we get in here it means we'll have to kick off an async highlight
       // process which will involve initializing the highlighter with new themes
       // and languages
-      if (!hasThemes || !hasLangs) {
+      if (!hasThemes || (!forcePlainText && !hasLangs)) {
         void this.asyncHighlight(file).then(({ result, options }) => {
           // In this case we need to force a re-render, so we can do that by
           // reaching into renderCache
           if (this.renderCache != null) {
             this.renderCache.highlighted = false;
           }
-          this.onHighlightSuccess(file, result, options);
+          this.onHighlightSuccess(file, result, options, !forcePlainText);
         });
       }
     }
@@ -395,18 +429,30 @@ export class FileRenderer<LAnnotation = undefined> {
   }
 
   private async asyncHighlight(file: FileContents): Promise<RenderFileResult> {
-    this.computedLang = file.lang ?? getFiletypeFromFileName(file.name);
+    const lineOffsets = this.getOrCreateLineOffsets(file);
+    const forcePlainText = isFileMassive(
+      lineOffsets.length,
+      this.getTokenizeMaxLength()
+    );
+    this.computedLang = forcePlainText
+      ? 'text'
+      : (file.lang ?? getFiletypeFromFileName(file.name));
     const hasThemes =
       this.highlighter != null &&
       hasResolvedThemes(getThemes(this.options.theme));
     const hasLangs =
-      this.highlighter != null && areLanguagesAttached(this.computedLang);
+      forcePlainText ||
+      (this.highlighter != null && areLanguagesAttached(this.computedLang));
     // If we don't have the required langs or themes, then we need to
     // initialize the highlighter to load the appropriate languages and themes
     if (this.highlighter == null || !hasThemes || !hasLangs) {
       this.highlighter = await this.initializeHighlighter();
     }
-    return this.renderFileWithHighlighter(file, this.highlighter);
+    return this.renderFileWithHighlighter(
+      file,
+      this.highlighter,
+      forcePlainText
+    );
   }
 
   private renderFileWithHighlighter(
@@ -487,7 +533,7 @@ export class FileRenderer<LAnnotation = undefined> {
       contentAST: contentArray,
       preAST: this.createPreElement(totalLines),
       headerAST: !disableFileHeader ? this.renderHeader(file) : undefined,
-      totalLines,
+      totalLines: totalLines,
       rowCount,
       themeStyles: themeStyles,
       baseThemeType,
@@ -498,10 +544,11 @@ export class FileRenderer<LAnnotation = undefined> {
   }
 
   private renderHeader(file: FileContents) {
-    const { headerRenderMode = 'default' } = this.options;
+    const { headerRenderMode = 'default', stickyHeader = false } = this.options;
     return createFileHeaderElement({
       fileOrDiff: file,
       mode: headerRenderMode,
+      stickyHeader,
     });
   }
 
@@ -560,20 +607,21 @@ export class FileRenderer<LAnnotation = undefined> {
   public onHighlightSuccess(
     file: FileContents,
     result: ThemedFileResult,
-    options: RenderFileOptions
+    options: RenderFileOptions,
+    highlighted = true
   ): void {
     if (this.renderCache == null) {
       return;
     }
     const triggerRenderUpdate =
-      this.renderCache.file !== file ||
+      !areFilesEqual(file, this.renderCache.file) ||
       !this.renderCache.highlighted ||
-      !areRenderOptionsEqual(options, this.renderCache.options);
+      !areFileRenderOptionsEqual(options, this.renderCache.options);
 
     this.renderCache = {
       file,
       options,
-      highlighted: true,
+      highlighted,
       result,
       renderRange: undefined,
     };
@@ -583,8 +631,36 @@ export class FileRenderer<LAnnotation = undefined> {
     }
   }
 
+  private getMatchingWorkerResultCache(
+    file: FileContents,
+    options: RenderFileOptions
+  ): RenderFileResult | undefined {
+    const cache = this.workerManager?.getFileResultCache(file);
+    if (cache == null || !areFileRenderOptionsEqual(options, cache.options)) {
+      return undefined;
+    }
+    return cache;
+  }
+
+  private hasHighlightedRenderCache(
+    file: FileContents,
+    options: RenderFileOptions
+  ): boolean {
+    const { renderCache } = this;
+    return (
+      renderCache?.result != null &&
+      renderCache.highlighted &&
+      areFilesEqual(file, renderCache.file) &&
+      areFileRenderOptionsEqual(options, renderCache.options)
+    );
+  }
+
   public onHighlightError(error: unknown): void {
     console.error(error);
+  }
+
+  private getTokenizeMaxLength(): number {
+    return this.options.tokenizeMaxLength ?? DEFAULT_TOKENIZE_MAX_LENGTH;
   }
 
   private createPreElement(totalLines: number): HASTElement {
@@ -601,13 +677,6 @@ export class FileRenderer<LAnnotation = undefined> {
   }
 }
 
-function areRenderOptionsEqual(
-  optionsA: RenderFileOptions,
-  optionsB: RenderFileOptions
-): boolean {
-  return (
-    areThemesEqual(optionsA.theme, optionsB.theme) &&
-    optionsA.useTokenTransformer === optionsB.useTokenTransformer &&
-    optionsA.tokenizeMaxLineLength === optionsB.tokenizeMaxLineLength
-  );
+function isFileMassive(lineCount: number, tokenizeMaxLength: number): boolean {
+  return lineCount > tokenizeMaxLength;
 }

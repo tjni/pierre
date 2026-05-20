@@ -3,6 +3,7 @@ import {
   createCssVariablesTheme as createCSSVariablesTheme,
 } from 'shiki';
 
+export * from './components/CodeView';
 export * from './components/File';
 export * from './components/FileDiff';
 export * from './components/FileStream';
@@ -43,6 +44,8 @@ export * from './shiki-stream';
 export * from './sprite';
 export * from './utils/areDiffLineAnnotationsEqual';
 export * from './utils/areDiffRenderOptionsEqual';
+export * from './utils/areDiffTargetsEqual';
+export * from './utils/areFileRenderOptionsEqual';
 export * from './utils/areFilesEqual';
 export * from './utils/areHunkDataEqual';
 export * from './utils/areLineAnnotationsEqual';
@@ -92,6 +95,7 @@ export * from './utils/parseDiffDecorations';
 export * from './utils/parseDiffFromFile';
 export * from './utils/parseLineType';
 export * from './utils/parsePatchFiles';
+export * from './utils/prefersReducedMotion';
 export * from './utils/prerenderHTMLIfNecessary';
 export * from './utils/processLine';
 export * from './utils/renderDiffWithHighlighter';

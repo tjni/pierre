@@ -276,7 +276,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       contentEl === undefined ||
       highlighter === undefined
     ) {
-      throw new Error('Could not edit the file.');
+      console.error('Could not edit the file.');
+      return;
     }
 
     this.#wrap = this.#component?.options.overflow === 'wrap';
@@ -291,8 +292,14 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
     if (this.#contentElement !== contentEl) {
       const targetIsContentElement = (e: Event) => {
-        const target = e.composedPath()[0];
-        return target === this.#contentElement;
+        const target = e.composedPath()[0] as HTMLElement;
+        if (this.#contentElement === undefined) {
+          return false;
+        }
+        return (
+          target === this.#contentElement ||
+          this.#contentElement.contains(target)
+        );
       };
       this.#contentElement = extend(contentEl, {
         contentEditable: 'true',

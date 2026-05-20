@@ -20,6 +20,8 @@ if (
 
 const site = process.env.NEXT_PUBLIC_SITE ?? 'diffs';
 const isTrees = site === 'trees';
+const isDiffshub = site === 'diffshub';
+const isDiffs = !isTrees && !isDiffshub;
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -29,6 +31,9 @@ const nextConfig = {
   ...(process.env.NODE_ENV === 'development' && {
     distDir: `.next/${site}`,
   }),
+  // Lets just disable strict mode in the diffshub project to avoid github
+  // request thrash in dev...
+  reactStrictMode: !isDiffshub,
   reactCompiler: true,
   devIndicators: false,
   experimental: {
@@ -67,20 +72,27 @@ const nextConfig = {
         { source: '/new', destination: '/', permanent: true },
       ];
     }
-    // On the diffs site, anything that used to live under `/trees` belongs to
-    // the trees site now hosted on a separate domain.
-    return [
-      {
-        source: '/trees/:path*',
-        destination: 'https://trees.software/:path*',
-        permanent: false,
-      },
-      {
-        source: '/trees',
-        destination: 'https://trees.software',
-        permanent: false,
-      },
-    ];
+    if (isDiffshub) {
+      // DiffsHub is a focused stub microsite; no legacy URLs to bounce yet.
+      return [];
+    }
+    if (isDiffs) {
+      // On the diffs site, anything that used to live under `/trees` belongs
+      // to the trees site now hosted on a separate domain.
+      return [
+        {
+          source: '/trees/:path*',
+          destination: 'https://trees.software/:path*',
+          permanent: false,
+        },
+        {
+          source: '/trees',
+          destination: 'https://trees.software',
+          permanent: false,
+        },
+      ];
+    }
+    return [];
   },
   turbopack: {
     resolveAlias: {
