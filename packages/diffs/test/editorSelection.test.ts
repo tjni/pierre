@@ -4,6 +4,7 @@ import {
   applyDeleteHardLineForwardToSelections,
   applyTextChangeToSelections,
   applyTextReplaceToSelections,
+  applyTransposeToSelections,
   convertSelection,
   createSelectionFrom,
   DirectionForward,
@@ -966,6 +967,97 @@ describe('applyDeleteHardLineForwardToSelections', () => {
       createSelection(0, 1, 0, 1),
       createSelection(1, 1, 1, 1),
       createSelection(2, 1, 2, 1),
+    ]);
+  });
+});
+
+describe('applyTransposeToSelections', () => {
+  test('swaps the characters on either side of a collapsed caret', () => {
+    const textDocument = new TextDocument('inmemory://1', 'abc');
+    const selections = [createSelection(0, 1, 0, 1)];
+    const { nextSelections, change } = applyTransposeToSelections(
+      textDocument,
+      selections
+    );
+
+    expect(change).toBeDefined();
+    expect(textDocument.getText()).toBe('bac');
+    expect(nextSelections).toEqual([createSelection(0, 2, 0, 2)]);
+  });
+
+  test('swaps the last two characters when the caret is at end-of-line', () => {
+    const textDocument = new TextDocument('inmemory://1', 'abc');
+    const selections = [createSelection(0, 3, 0, 3)];
+    const { nextSelections } = applyTransposeToSelections(
+      textDocument,
+      selections
+    );
+
+    expect(textDocument.getText()).toBe('acb');
+    expect(nextSelections).toEqual([createSelection(0, 3, 0, 3)]);
+  });
+
+  test('swaps across a line boundary when the caret is at start-of-line', () => {
+    const textDocument = new TextDocument('inmemory://1', 'abc\ndef');
+    const selections = [createSelection(1, 0, 1, 0)];
+    const { nextSelections } = applyTransposeToSelections(
+      textDocument,
+      selections
+    );
+
+    expect(textDocument.getText()).toBe('abd\ncef');
+    expect(nextSelections).toEqual([createSelection(1, 1, 1, 1)]);
+  });
+
+  test('is a no-op when transpose is not possible', () => {
+    const textDocument = new TextDocument('inmemory://1', 'a');
+    const selections = [createSelection(0, 0, 0, 0)];
+    const { nextSelections, change } = applyTransposeToSelections(
+      textDocument,
+      selections
+    );
+
+    expect(change).toBeUndefined();
+    expect(textDocument.getText()).toBe('a');
+    expect(nextSelections).toEqual([createSelection(0, 0, 0, 0)]);
+  });
+
+  test('skips non-collapsed selections', () => {
+    const textDocument = new TextDocument('inmemory://1', 'abc');
+    const selections = [
+      createSelection(0, 0, 0, 2, DirectionForward),
+      createSelection(0, 2, 0, 2),
+    ];
+    const { nextSelections, change } = applyTransposeToSelections(
+      textDocument,
+      selections
+    );
+
+    expect(change).toBeDefined();
+    expect(textDocument.getText()).toBe('acb');
+    expect(nextSelections).toEqual([
+      createSelection(0, 0, 0, 2, DirectionForward),
+      createSelection(0, 3, 0, 3),
+    ]);
+  });
+
+  test('applies independently across multiple carets', () => {
+    const textDocument = new TextDocument('inmemory://1', 'ax\nby\ncz');
+    const selections = [
+      createSelection(0, 1, 0, 1),
+      createSelection(1, 1, 1, 1),
+      createSelection(2, 1, 2, 1),
+    ];
+    const { nextSelections } = applyTransposeToSelections(
+      textDocument,
+      selections
+    );
+
+    expect(textDocument.getText()).toBe('xa\nyb\nzc');
+    expect(nextSelections).toEqual([
+      createSelection(0, 2, 0, 2),
+      createSelection(1, 2, 1, 2),
+      createSelection(2, 2, 2, 2),
     ]);
   });
 });

@@ -459,6 +459,102 @@ export function applyTextReplaceToSelections<LAnnotation>(
 }
 
 /**
+ * Swaps the two characters adjacent to a collapsed selection, matching browser
+ * insertTranspose (Ctrl+T) behavior.
+ */
+export function applyTransposeToSelections<LAnnotation>(
+  textDocument: TextDocument<LAnnotation>,
+  selections: EditorSelection[],
+  lineAnnotations?: LineAnnotation<LAnnotation>[]
+): {
+  nextSelections: EditorSelection[];
+  change?: TextDocumentChange;
+} {
+  const text = textDocument.getText();
+  const edits: ResolvedTextEdit[] = [];
+  const nextOffsetPairs: Array<[number, number]> = [];
+
+  for (const selection of selections) {
+    const [anchor, focus] = getSelectionAnchorAndFocusOffsets(
+      textDocument,
+      selection
+    );
+    if (!isCollapsedSelection(selection)) {
+      nextOffsetPairs.push([anchor, focus]);
+      continue;
+    }
+
+    const { line, character } = selection.start;
+    const offset = anchor;
+    const lineLength = textDocument.getLineText(line).length;
+    let edit: ResolvedTextEdit | undefined;
+
+    if (character > 0 && character < lineLength) {
+      edit = {
+        start: offset - 1,
+        end: offset + 1,
+        text: text[offset] + text[offset - 1],
+      };
+      nextOffsetPairs.push([offset + 1, offset + 1]);
+    } else if (character === lineLength && lineLength >= 2) {
+      edit = {
+        start: offset - 2,
+        end: offset,
+        text: text[offset - 1] + text[offset - 2],
+      };
+      nextOffsetPairs.push([offset, offset]);
+    } else if (character === 0 && line > 0 && lineLength > 0) {
+      const prevLine = line - 1;
+      const prevLength = textDocument.getLineText(prevLine).length;
+      const prevEnd = textDocument.offsetAt({
+        line: prevLine,
+        character: prevLength,
+      });
+      const prevStart = prevLength > 0 ? prevEnd - 1 : prevEnd;
+      edit = {
+        start: prevStart,
+        end: offset + 1,
+        text:
+          text[offset] +
+          text.slice(prevEnd, offset) +
+          text.slice(prevStart, prevEnd),
+      };
+      nextOffsetPairs.push([offset + 1, offset + 1]);
+    } else {
+      nextOffsetPairs.push([anchor, focus]);
+      continue;
+    }
+
+    edits.push(edit);
+  }
+
+  if (edits.length === 0) {
+    return { nextSelections: selections };
+  }
+
+  edits.sort((a, b) => a.start - b.start);
+  for (let index = 1; index < edits.length; index++) {
+    if (edits[index].start < edits[index - 1].end) {
+      throw new Error('Overlapping multi-selection edits are not supported');
+    }
+  }
+
+  const change = textDocument.applyResolvedEdits(
+    edits,
+    true,
+    selections,
+    undefined,
+    lineAnnotations
+  );
+  const nextSelections = createSelectionsFromOffsetPairs(
+    textDocument,
+    nextOffsetPairs
+  );
+  textDocument.setLastUndoSelectionsAfter(nextSelections);
+  return { nextSelections, change };
+}
+
+/**
  * Deletes from each selection to the end of its line, including the line break
  * when the caret is already at the end of a non-final line. Non-collapsed
  * selections delete their selected text instead.

@@ -33,6 +33,7 @@ import {
   applyDeleteHardLineForwardToSelections,
   applyTextChangeToSelections,
   applyTextReplaceToSelections,
+  applyTransposeToSelections,
   comparePosition,
   convertSelection,
   createSelectionFrom,
@@ -1071,6 +1072,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       case 'deleteHardLineForward':
         this.#deleteHardLineForward();
         break;
+      case 'insertTranspose':
+        this.#insertTranspose();
+        break;
       default:
         console.warn(`[diffs] Unknown input type: ${inputType}`);
         break;
@@ -1749,6 +1753,26 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         selections,
         this.#lineAnnotations
       );
+    if (change !== undefined) {
+      this.#applyChange(
+        change,
+        nextSelections,
+        this.#applyChangeToLineAnnotations(change)
+      );
+    }
+  }
+
+  #insertTranspose() {
+    const selections = this.#selections;
+    const textDocument = this.#textDocument;
+    if (selections === undefined || textDocument === undefined) {
+      return;
+    }
+    const { nextSelections, change } = applyTransposeToSelections<LAnnotation>(
+      textDocument,
+      selections,
+      this.#lineAnnotations
+    );
     if (change !== undefined) {
       this.#applyChange(
         change,
