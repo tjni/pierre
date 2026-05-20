@@ -70,8 +70,8 @@ export const editorCSS: string = /* CSS */ `
   [data-quick-edit-icon] {
     position: absolute;
     top: 0;
-    left: -1lh;
-    z-index: 100;
+    left: calc(-1lh + 2px);
+    z-index: 10;
     width: 1lh;
     height: 1lh;
     border-radius: 4px;
