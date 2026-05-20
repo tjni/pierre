@@ -761,6 +761,9 @@ if (renderFileButton != null) {
         }, 100);
         return el;
       },
+      onChange: (file, lineAnnotations) => {
+        console.log('change', file, lineAnnotations);
+      },
     });
     const fileContainer = document.createElement(DIFFS_TAG_NAME);
     wrapper.appendChild(fileContainer);
@@ -793,9 +796,7 @@ if (renderFileButton != null) {
           (checked) => {
             if (checked) {
               isEditing = true;
-              editor.edit(instance, (file, lineAnnotations) => {
-                console.log('change', file, lineAnnotations);
-              });
+              editor.edit(instance);
               editor.setSelections([
                 {
                   start: {

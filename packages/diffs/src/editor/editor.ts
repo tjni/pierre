@@ -1,4 +1,3 @@
-import type { File } from '../components/File';
 import { DEFAULT_THEMES } from '../constants';
 import {
   type ResolvedTextEdit,
@@ -66,18 +65,18 @@ export interface EditorOptions<LAnnotation> {
     replaceSelectionText: (text: string) => void;
     close: () => void;
   }) => HTMLElement;
+  onChange?: (
+    file: FileContents,
+    lineAnnotations?: LineAnnotation<LAnnotation>[]
+  ) => void;
 }
 
 export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
-  options: EditorOptions<LAnnotation>;
+  #options: EditorOptions<LAnnotation>;
 
   // event handlers
   #editorEventDisposes?: (() => void)[];
   #globalEventDisposes?: (() => void)[];
-  #onChange?: (
-    file: FileContents,
-    lineAnnotations?: LineAnnotation<LAnnotation>[]
-  ) => void;
 
   // metrics
   #charWidth = -1;
@@ -130,7 +129,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       fileContents: FileContents,
       lineAnnotations?: LineAnnotation<LAnnotation>[]
     ) => {
-      this.#onChange?.(fileContents, lineAnnotations);
+      this.#options.onChange?.(fileContents, lineAnnotations);
     },
     500
   );
@@ -163,18 +162,11 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   };
 
   constructor(options: EditorOptions<LAnnotation> = {}) {
-    this.options = options;
+    this.#options = options;
   }
 
-  edit(
-    component: DiffsEditableComponent<LAnnotation>,
-    onChange?: (
-      file: FileContents,
-      lineAnnotations?: LineAnnotation<LAnnotation>[]
-    ) => void
-  ): () => void {
+  edit(component: DiffsEditableComponent<LAnnotation>): () => void {
     this.#component = component;
-    this.#onChange = onChange;
     this.#initialize();
     if (component.options.useTokenTransformer !== true) {
       // Ensure the component uses token transformer that adds
@@ -216,7 +208,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#globalEventDisposes = undefined;
     this.#editorEventDisposes?.forEach((dispose) => dispose());
     this.#editorEventDisposes = undefined;
-    this.#onChange = undefined;
 
     this.#component?.setSelectedLines(null);
     this.#component?.removeEditor();
@@ -1111,7 +1102,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       this.#renderCaret(renderCtx, selection, selection === primarySelection);
     }
     if (
-      this.options.enabledQuickEdit === true &&
+      this.#options.enabledQuickEdit === true &&
       !isCollapsedSelection(primarySelection)
     ) {
       this.#renderQuickEditIcon(renderCtx, primarySelection);
@@ -1123,6 +1114,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       this.#selectionElements = renderCtx.elements;
       if (updateWindowSelection) {
         this.#updateWindowSelection(primarySelection);
+        this.#contentElement?.focus({ preventScroll: true });
       }
     });
   }
@@ -1515,7 +1507,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         cleanUpQuickEdit();
 
         const textDocument = this.#textDocument;
-        const renderQuickEdit = this.options.renderQuickEdit;
+        const renderQuickEdit = this.#options.renderQuickEdit;
         const fileContainer = this.#fileContainer;
         if (
           textDocument === undefined ||
@@ -1811,7 +1803,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   ) {
     const fileContents = this.#fileContents;
     const textDocument = this.#textDocument;
-    const onChange = this.#onChange;
+    const onChange = this.#options.onChange;
     if (
       fileContents !== undefined &&
       textDocument !== undefined &&
@@ -2183,15 +2175,4 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
     return line < startingLine + totalLines;
   }
-}
-
-export function edit<LAnnotation>(
-  file: File<LAnnotation>,
-  onChange?: (
-    file: FileContents,
-    lineAnnotations?: LineAnnotation<LAnnotation>[]
-  ) => void
-): void {
-  const editor = new Editor<LAnnotation>();
-  editor.edit(file, onChange);
 }

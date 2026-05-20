@@ -58,7 +58,6 @@ export function useFileInstance<LAnnotation>({
   hasCustomHeader,
   disableWorkerPool,
   contentEditable,
-  onChange,
 }: UseFileInstanceProps<LAnnotation>): UseFileInstanceReturn {
   const simpleVirtualizer = useVirtualizer();
   const controlledSelection = selectedLines !== undefined;
@@ -139,10 +138,10 @@ export function useFileInstance<LAnnotation>({
       editor !== undefined &&
       instanceRef.current != null
     ) {
-      return editor.edit(instanceRef.current, onChange);
+      return editor.edit(instanceRef.current);
     }
     return undefined;
-  }, [contentEditable, editor, onChange]);
+  }, [contentEditable, editor]);
 
   const getHoveredLine = useCallback(():
     | GetHoveredLineResult<'file'>

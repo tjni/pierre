@@ -79,6 +79,12 @@ const editor = new Editor<undefined>({
     }, 100);
     return el;
   },
+  onChange: (file) => {
+    const gs = gitStatus.filter((e) => e.path !== file.name);
+    gs.push({ path: file.name, status: 'modified' });
+    fileTree.setGitStatus(gs);
+    console.log('writeFile', file.name);
+  },
 });
 const virtualizer = new Virtualizer();
 const poolManager = createWorkerAPI({
@@ -124,17 +130,10 @@ async function openDocument(filename: string) {
   editorContainer.scrollTo({ left: 0, top: 0 });
 }
 
-function onFileChange(file: FileContents) {
-  const gs = gitStatus.filter((e) => e.path !== file.name);
-  gs.push({ path: file.name, status: 'modified' });
-  fileTree.setGitStatus(gs);
-  console.log('writeFile', file.name);
-}
-
 void poolManager.initialize().then(() => {
   console.log('WorkerPoolManager initialized, with:', poolManager.getStats());
 });
 virtualizer.setup(editorContainer);
 fileTree.setSearch('editor');
 fileTree.render({ fileTreeContainer });
-editor.edit(fileInstance, (file) => void onFileChange(file));
+editor.edit(fileInstance);
