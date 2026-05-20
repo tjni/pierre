@@ -64,6 +64,7 @@ import { getLineAnnotationName } from '../utils/getLineAnnotationName';
 import { getOrCreateCodeNode } from '../utils/getOrCreateCodeNode';
 import { upsertHostThemeStyle } from '../utils/hostTheme';
 import { isDiffPlainText } from '../utils/isDiffPlainText';
+import { isStyleNode } from '../utils/isStyleNode';
 import { parseDiffFromFile } from '../utils/parseDiffFromFile';
 import { prerenderHTMLIfNecessary } from '../utils/prerenderHTMLIfNecessary';
 import { getMeasuredScrollbarGutter } from '../utils/scrollbarGutter';
@@ -183,6 +184,7 @@ export class FileDiff<LAnnotation = undefined> {
   protected bufferAfter: HTMLElement | undefined;
   protected themeCSSStyle: HTMLStyleElement | undefined;
   protected appliedThemeCSS: AppliedThemeStyleCache | undefined;
+  protected hasAdoptedThemeCSS = false;
   protected unsafeCSSStyle: HTMLStyleElement | undefined;
   protected appliedUnsafeCSS: string | undefined;
   protected gutterUtilityContent: HTMLElement | undefined;
@@ -211,6 +213,7 @@ export class FileDiff<LAnnotation = undefined> {
   protected renderRange: RenderRange | undefined;
   protected appliedPreAttributes: PrePropertiesConfig | undefined;
   protected lastRenderedHeaderHTML: string | undefined;
+  protected cachedHeaderHTML: string | undefined;
   protected lastRowCount: number | undefined;
 
   protected enabled = true;
@@ -356,6 +359,7 @@ export class FileDiff<LAnnotation = undefined> {
   public setOptions(options: FileDiffOptions<LAnnotation> | undefined): void {
     if (options == null) return;
     this.options = options;
+    this.cachedHeaderHTML = undefined;
     this.hunksRenderer.setOptions(this.getHunksRendererOptions(options));
     this.interactionManager.setOptions(
       pluckInteractionOptions(
@@ -496,11 +500,15 @@ export class FileDiff<LAnnotation = undefined> {
     this.headerCustom = undefined;
     this.placeHolder = undefined;
     this.lastRenderedHeaderHTML = undefined;
+    if (!recycle) {
+      this.cachedHeaderHTML = undefined;
+    }
     this.errorWrapper = undefined;
     this.spriteSVG = undefined;
     this.lastRowCount = undefined;
     this.themeCSSStyle = undefined;
     this.appliedThemeCSS = undefined;
+    this.hasAdoptedThemeCSS = false;
     this.unsafeCSSStyle = undefined;
     this.appliedUnsafeCSS = undefined;
 
@@ -757,6 +765,9 @@ export class FileDiff<LAnnotation = undefined> {
         newFile,
         this.options.parseDiffOptions
       );
+    }
+    if (diffDidChange) {
+      this.cachedHeaderHTML = undefined;
     }
 
     if (lineAnnotations != null) {
@@ -1019,6 +1030,7 @@ export class FileDiff<LAnnotation = undefined> {
     this.spriteSVG = undefined;
     this.themeCSSStyle = undefined;
     this.appliedThemeCSS = undefined;
+    this.hasAdoptedThemeCSS = false;
     this.unsafeCSSStyle = undefined;
     this.appliedUnsafeCSS = undefined;
 
@@ -1138,29 +1150,67 @@ export class FileDiff<LAnnotation = undefined> {
       fileContainer ??
       this.fileContainer ??
       document.createElement(DIFFS_TAG_NAME);
-    // NOTE(amadeus): If the container changes, we should reset the rendered
-    // HTML
-    if (previousContainer != null && previousContainer !== this.fileContainer) {
+    const containerChanged = previousContainer !== this.fileContainer;
+    if (previousContainer != null && containerChanged) {
       this.lastRenderedHeaderHTML = undefined;
       this.headerElement = undefined;
     }
     if (parentNode != null && this.fileContainer.parentNode !== parentNode) {
       parentNode.appendChild(this.fileContainer);
     }
+    if (containerChanged) {
+      this.adoptReusableShellElements(this.fileContainer);
+    }
+    this.ensureSpriteSVG(this.fileContainer);
+    return this.fileContainer;
+  }
+
+  // NOTE(amadeus): Technically this method is not safe for use outside of
+  // the CodeView component, however I don't think in practice it really
+  // should matter, but maybe there's some system we need in place to prevent
+  // this from running outside of that environment?
+  //
+  // It's making very specific assumptions that all the elements will have the
+  // correct content based on CodeView global options
+  private adoptReusableShellElements(fileContainer: HTMLElement): void {
+    const { shadowRoot } = fileContainer;
+    if (shadowRoot == null) {
+      return;
+    }
+
+    for (const element of shadowRoot.children) {
+      if (element instanceof SVGElement) {
+        this.spriteSVG ??= element;
+      } else if (
+        isStyleNode(element) &&
+        element.hasAttribute(THEME_CSS_ATTRIBUTE)
+      ) {
+        this.themeCSSStyle ??= element;
+        this.hasAdoptedThemeCSS = true;
+      } else if (
+        isStyleNode(element) &&
+        element.hasAttribute(UNSAFE_CSS_ATTRIBUTE)
+      ) {
+        this.unsafeCSSStyle ??= element;
+        this.appliedUnsafeCSS ??= this.options.unsafeCSS ?? undefined;
+      }
+    }
+  }
+
+  private ensureSpriteSVG(fileContainer: HTMLElement): void {
+    const shadowRoot =
+      fileContainer.shadowRoot ?? fileContainer.attachShadow({ mode: 'open' });
     if (this.spriteSVG == null) {
       const fragment = document.createElement('div');
       fragment.innerHTML = SVGSpriteSheet;
       const firstChild = fragment.firstChild;
       if (firstChild instanceof SVGElement) {
         this.spriteSVG = firstChild;
-        this.fileContainer.shadowRoot?.appendChild(this.spriteSVG);
       }
     }
-    return this.fileContainer;
-  }
-
-  protected getFileContainer(): HTMLElement | undefined {
-    return this.fileContainer;
+    if (this.spriteSVG != null && this.spriteSVG.parentNode !== shadowRoot) {
+      shadowRoot.appendChild(this.spriteSVG);
+    }
   }
 
   private getOrCreatePreNode(container: HTMLElement): HTMLPreElement {
@@ -1214,7 +1264,8 @@ export class FileDiff<LAnnotation = undefined> {
     this.placeHolder?.remove();
     this.placeHolder = undefined;
     const { fileDiff } = this;
-    const headerHTML = toHtml(headerAST);
+    const headerHTML = this.cachedHeaderHTML ?? toHtml(headerAST);
+    this.cachedHeaderHTML = headerHTML;
     if (headerHTML !== this.lastRenderedHeaderHTML) {
       const tempDiv = document.createElement('div');
       tempDiv.innerHTML = headerHTML;
@@ -1370,6 +1421,20 @@ export class FileDiff<LAnnotation = undefined> {
       this.appliedThemeCSS.scrollbarGutter === scrollbarGutter
     ) {
       this.appliedThemeCSS.theme = theme;
+      return;
+    }
+    if (
+      this.hasAdoptedThemeCSS &&
+      this.themeCSSStyle?.parentNode === shadowRoot
+    ) {
+      this.hasAdoptedThemeCSS = false;
+      this.appliedThemeCSS = {
+        theme,
+        themeStyles,
+        themeType: effectiveThemeType,
+        baseThemeType,
+        scrollbarGutter,
+      };
       return;
     }
     this.themeCSSStyle = upsertHostThemeStyle({
