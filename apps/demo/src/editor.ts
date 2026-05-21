@@ -94,7 +94,18 @@ const poolManager = createWorkerAPI({
   useTokenTransformer: true,
 });
 const fileInstance = new VirtualizedFile<undefined>(
-  {},
+  {
+    stickyHeader: true,
+    renderCustomHeader: (file) => {
+      const el = document.createElement('div');
+      el.className = 'editor-tab';
+      const parts = file.name.split('/');
+      const filename = parts.at(-1) ?? file.name;
+      const dir = parts.slice(0, -1).join('/');
+      el.innerHTML = `${dir.length > 0 ? `<span class="editor-tab-dir">${dir}/</span>` : ''}<span class="editor-tab-name">${filename}</span>`;
+      return el;
+    },
+  },
   virtualizer,
   undefined,
   poolManager
@@ -106,6 +117,7 @@ const [paths, gitStatus] = await Promise.all([
 const fileTree = new FileTree({
   paths,
   gitStatus,
+  density: 'compact',
   search: true,
   searchBlurBehavior: 'retain',
   onSelectionChange: (selectedPaths) => {
@@ -137,3 +149,11 @@ virtualizer.setup(editorContainer);
 fileTree.setSearch('editor');
 fileTree.render({ fileTreeContainer });
 editor.edit(fileInstance);
+
+const splash = document.getElementById('splash');
+if (splash !== null) {
+  splash.classList.add('hidden');
+  splash.addEventListener('transitionend', () => splash.remove(), {
+    once: true,
+  });
+}

@@ -4,6 +4,7 @@ export const editorCSS: string = /* CSS */ `
   ::selection {
     background-color: ${DEBUG_SELECTION ? 'rgba(255, 0, 0, 0.1)' : 'transparent'};
   }
+
   @keyframes blinking {
     0% { opacity: 1; }
     50% { opacity: 0; }
@@ -20,7 +21,8 @@ export const editorCSS: string = /* CSS */ `
     caret-color: var(--diffs-bg-caret);
     outline: none;
   }
-  @media (min-width: 480px) {
+
+  @media (width >= 480px) {
     [data-content] {
       caret-color: ${DEBUG_SELECTION ? 'red' : 'transparent'};
     }
@@ -57,7 +59,8 @@ export const editorCSS: string = /* CSS */ `
   [data-editor-overlay] {
     display: contents;
   }
-  @media (min-width: 480px) {
+
+  @media (width >= 480px) {
     [data-content]:focus ~ [data-editor-overlay] [data-caret] {
       visibility: visible;
     }
@@ -91,98 +94,94 @@ export const editorCSS: string = /* CSS */ `
   }
 
   [data-search-panel] {
-    position: sticky;
-    top: 8px;
-    left: 0;
+    --editor-panel-shadow-color: light-dark(rgb(0 0 0 / 0.075), rgb(0 0 0 / 0.15));
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    min-width: 300px;
+    max-width: 100%;
+    margin-inline: 8px;
     z-index: 100;
     display: flex;
-    flex-direction: column;
     gap: 4px;
     margin-inline: 1ch;
     margin-bottom: 4px;
+    background-clip: padding-box;
     background-color: color-mix(in lab, color-mix(in lab, var(--diffs-fg) 4%, var(--diffs-bg)), transparent 40%);
-    border: 1px solid color-mix(in lab, var(--diffs-fg) 8%, var(--diffs-bg));
-    padding: 6px;
-    border-radius: 6px;
-    box-shadow: 0 0 12px 0 color-mix(in lab, var(--diffs-fg) 16% var(--diffs-bg));
+    border: 1px solid color-mix(in lab, var(--diffs-fg) 15%, var(--diffs-bg));
+    padding: 6px 6px 6px 10px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px var(--editor-panel-shadow-color), 0 4px 8px var(--editor-panel-shadow-color);
     backdrop-filter: blur(8px);
   }
   [data-search-panel-row] {
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    gap: 2px;
-    font-family: Arial, Helvetica, sans-serif;
-    font-size: 14px;
+    width: 100%;
   }
   [data-search-panel-row] input {
+    field-sizing: content;
+    min-width: 120px;
     font-size: 14px;
     line-height: 24px;
-    max-width: 50%;
     padding-inline: 4px;
     border: none;
     outline: none;
     background-color: transparent;
     color: var(--diffs-fg);
-    field-sizing: content;
   }
   [data-search-panel-row] input::selection {
     background-color: color-mix(in lab, var(--diffs-fg) 8%, var(--diffs-bg));
   }
   [data-search-panel-row] [data-matches] {
+    min-width: 10ch;
     font-size: 12px;
-    font-weight: 500;
     line-height: 20px;
-    padding-inline-start: 4px;
-    padding-inline-end: 8px;
+    padding-inline: 4px;
+    margin-right: auto;
     color: color-mix(in lab, var(--diffs-fg) 50%, var(--diffs-bg));
   }
-  [data-search-panel-row] [data-matches][data-no-matches] {
-    color: color-mix(in lab, var(--diffs-deletion-base) 90%, var(--diffs-bg));
+
+  [data-search-panel-row] [data-divider] {
+    width: 1px;
+    height: 12px;
+    margin-inline: 8px;
+    background-color: color-mix(in lab, var(--diffs-fg) 12%, var(--diffs-bg));
+    flex-shrink: 0;
+  }
+  [data-search-panel-row] svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
   }
   [data-search-panel-row] [data-icon] {
+    flex-shrink: 0;
     width: 24px;
     height: 24px;
     display: flex;
-    color: color-mix(in lab, var(--diffs-fg) 40%, var(--diffs-bg));
+    color: color-mix(in lab, var(--diffs-fg) 65%, var(--diffs-bg));
     align-items: center;
     justify-content: center;
     border-radius: 4px;
     cursor: pointer;
     transition: background-color 0.1s ease-in-out, color 0.1s ease-in-out;
   }
+  [data-search-panel-row] [data-icon="search"] {
+    width: 16px;
+    margin-right: 2px;
+  }
   [data-search-panel-row] [data-icon][data-disabled='true'] {
-    visibility: hidden;
+    opacity: 0.25;
+    pointer-events: none;
   }
   [data-search-panel-row] [data-icon]:not([data-icon='search']):hover {
     background-color: color-mix(in lab, var(--diffs-fg) 6%, var(--diffs-bg));
     color: var(--diffs-fg);
   }
-  [data-search-panel-row] [data-settings] {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    height: 100%;
-    padding: 0 8px;
-  }
-  [data-search-panel-row] [data-checkbox] {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    font-size: 12px;
-    color: color-mix(in lab, var(--diffs-fg) 60%, var(--diffs-bg));
-  }
-  [data-search-panel-row] [data-checkbox] input {
-    margin: 0;
-  }
-  [data-search-panel-row] [data-checkbox]:hover,
-  [data-search-panel-row] [data-checkbox]:has(input:checked) {
+  [data-search-panel-row] [data-icon][data-active='true'] {
+    background-color: color-mix(in lab, var(--diffs-fg) 10%, var(--diffs-bg));
     color: var(--diffs-fg);
-  }
-  [data-search-panel-row] [data-spacer] {
-    flex: 1;
   }
 `;
 

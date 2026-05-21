@@ -1,0 +1,13 @@
+{
+  "name": "@pierre/diffs",
+  "short_name": "diffs",
+  "display": "standalone",
+  "start_url": "/editor",
+  "scope": "/",
+  "theme_color": "#0a0a0a",
+  "background_color": "#0a0a0a",
+  "icons": [
+    { "src": "/editor/icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "/editor/touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}

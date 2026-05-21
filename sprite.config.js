@@ -1,5 +1,6 @@
 export const spriteConfig = {
   icons: [
+    'IconArrow',
     'IconArrowRightShort',
     'IconBrandGithub',
     'IconChevronsNarrow',
@@ -9,6 +10,9 @@ export const spriteConfig = {
     'IconExpand',
     'IconExpandAll',
     'IconFileCode',
+    'IconPlus',
+    'IconRegex',
+    'IconSearch',
     'IconSymbolDiffstat',
     'IconSymbolAdded',
     'IconSymbolDeleted',
@@ -16,7 +20,9 @@ export const spriteConfig = {
     'IconSymbolModified',
     'IconSymbolMoved',
     'IconSymbolRef',
-    'IconPlus',
+    'IconType',
+    'IconTypeWord',
+    'IconX',
   ],
 
   output: {

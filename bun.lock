@@ -8,7 +8,7 @@
         "@pierre/vscode-icons": "^0.0.9",
       },
       "devDependencies": {
-        "@pierre/icons": "^0.5.0",
+        "@pierre/icons": "^0.6.0",
         "@types/bun": "catalog:",
         "@typescript/native-preview": "catalog:",
         "husky": "^9.1.7",
@@ -106,7 +106,7 @@
     },
     "packages/diffs": {
       "name": "@pierre/diffs",
-      "version": "1.2.0-beta.6",
+      "version": "1.2.1",
       "dependencies": {
         "@pierre/theme": "catalog:",
         "@shikijs/transformers": "^3.0.0",
@@ -198,7 +198,7 @@
     },
     "packages/trees": {
       "name": "@pierre/trees",
-      "version": "1.0.0-beta.3",
+      "version": "1.0.0-beta.4",
       "dependencies": {
         "@pierre/path-store": "workspace:*",
         "preact": "catalog:",
@@ -262,7 +262,7 @@
     "@octokit/auth-app": "8.1.1",
     "@octokit/openapi-types": "26.0.0",
     "@octokit/rest": "22.0.0",
-    "@pierre/icons": "0.5.0",
+    "@pierre/icons": "0.6.0",
     "@pierre/storage": "0.0.10",
     "@pierre/theme": "1.0.3",
     "@pierre/vscode-icons": "0.0.9",
@@ -641,7 +641,7 @@
 
     "@pierre/docs": ["@pierre/docs@workspace:apps/docs"],
 
-    "@pierre/icons": ["@pierre/icons@0.5.0", "", { "peerDependencies": { "react": "^18.0.0 || ^19.0.0" } }, "sha512-c46ZiKK8Vh3fhJM7Ci9jKW36UKsD+DTxVnr91liX0bgpc2jkwICW9bx9XTQsETpLR9CnoLSA/4ZQyLrb5HO0GA=="],
+    "@pierre/icons": ["@pierre/icons@0.6.1", "", { "peerDependencies": { "react": "^18.0.0 || ^19.0.0" } }, "sha512-GAm238ShSqNV9KXUiSGIkTvgIhFr+ohKv5f/efNNRZKmwdwGfZ1FUbRtofEwq5c8ZK+BXqBW5SlgVvVbRsPdrg=="],
 
     "@pierre/path-store": ["@pierre/path-store@workspace:packages/path-store"],
 
@@ -2068,6 +2068,8 @@
     "@mdx-js/mdx/unist-util-visit": ["unist-util-visit@5.1.0", "", { "dependencies": { "@types/unist": "^3.0.0", "unist-util-is": "^6.0.0", "unist-util-visit-parents": "^6.0.0" } }, "sha512-m+vIdyeCOpdr/QeQCu2EzxX/ohgS8KbnPDgFni4dQsfSCtpz8UqDyY5GjRru8PDKuYn7Fq19j1CQ+nJSsGKOzg=="],
 
     "@modelcontextprotocol/sdk/jose": ["jose@6.1.3", "", {}, "sha512-0TpaTfihd4QMNwrz/ob2Bp7X04yuxJkjRGi4aKmOqwhov54i6u79oCv7T+C7lo70MKH6BesI3vscD1yb/yzKXQ=="],
+
+    "@pierre/docs/@pierre/icons": ["@pierre/icons@0.6.0", "", { "peerDependencies": { "react": "^18.0.0 || ^19.0.0" } }, "sha512-ulfg47GOFSExBOuLDU1eIEY/d++60FYNToiZglQ4tYy74xdEiD29m1ior9fRZoyZmiSNZx+MIRqme3pkMvlORg=="],
 
     "@tailwindcss/node/lightningcss": ["lightningcss@1.30.1", "", { "dependencies": { "detect-libc": "^2.0.3" }, "optionalDependencies": { "lightningcss-darwin-arm64": "1.30.1", "lightningcss-darwin-x64": "1.30.1", "lightningcss-freebsd-x64": "1.30.1", "lightningcss-linux-arm-gnueabihf": "1.30.1", "lightningcss-linux-arm64-gnu": "1.30.1", "lightningcss-linux-arm64-musl": "1.30.1", "lightningcss-linux-x64-gnu": "1.30.1", "lightningcss-linux-x64-musl": "1.30.1", "lightningcss-win32-arm64-msvc": "1.30.1", "lightningcss-win32-x64-msvc": "1.30.1" } }, "sha512-xi6IyHML+c9+Q3W0S4fCQJOym42pyurFiJUHEcEyHS0CeKzia4yZDEsLlqOFykxOdHpNy0NmvVO31vcSqAxJCg=="],
 

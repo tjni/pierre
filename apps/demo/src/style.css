@@ -14,7 +14,7 @@
     'SF Mono', Monaco, Consolas, 'Ubuntu Mono', 'Liberation Mono',
     'Courier New', monospace;
 
-  --diffs-font-size: 14px;
+  --diffs-font-size: 13px;
   --diffs-line-height: 20px;
 
   --fg: light-dark(#213547, #ffffff);
@@ -45,7 +45,7 @@ html[data-theme-type='dark'] {
 html,
 body {
   overflow-anchor: none;
-  background-color: light-dark(white, black);
+  background-color: var(--diffs-bg);
 }
 
 html,
@@ -160,7 +160,7 @@ code {
   min-width: 0;
   min-height: 0;
   overflow-anchor: none;
-  background-color: light-dark(white, black);
+  background-color: light-dark(white, #0a0a0a);
 }
 
 .wrapper[data-code-view] {
@@ -263,7 +263,7 @@ diffs-container {
   grid-template-columns: 280px 1fr;
   grid-template-rows: 1fr;
   gap: 10px;
-  background-color: light-dark(white, black);
+  background-color: light-dark(white, #0a0a0a);
   height: 100vh;
   width: 100vw;
   overflow: hidden;
@@ -291,6 +291,31 @@ diffs-container {
 
 #editor-container diffs-container {
   margin-top: 0;
+}
+
+[slot='header-custom'] {
+  padding-block: 8px;
+}
+
+.editor-tab {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding-inline: 12px;
+  margin-bottom: -1px;
+  width: fit-content;
+  gap: 0;
+  font-size: 13px;
+  background-color: color-mix(in srgb, var(--diffs-fg) 5%, var(--diffs-bg));
+  border-radius: 8px;
+}
+
+.editor-tab-dir {
+  opacity: 0.5;
+}
+
+.editor-tab-name {
+  font-weight: 500;
 }
 
 .quick-edit {
@@ -341,4 +366,25 @@ diffs-container {
   align-items: center;
   justify-content: center;
   color: #666;
+}
+
+#file-tree-container {
+  box-sizing: border-box;
+  padding-top: 16px;
+}
+
+@media (display-mode: standalone) {
+  #file-tree-container {
+    margin-left: 8px;
+    height: calc(100% - 8px);
+    border: 1px solid light-dark(rgb(0 0 0 / 0.08), rgb(255 255 255 / 0.08));
+    border-radius: 8px;
+    box-shadow:
+      0 2px 4px rgb(0 0 0 / 0.025),
+      0 6px 12px rgb(0 0 0 / 0.025);
+  }
+
+  [slot='header-custom'] {
+    padding-top: 0;
+  }
 }
