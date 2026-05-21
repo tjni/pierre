@@ -1419,6 +1419,7 @@ export class FileDiff<LAnnotation = undefined> {
       typeof currentTheme === 'string' ? currentTheme : { ...currentTheme };
     const scrollbarGutter = getMeasuredScrollbarGutter(shadowRoot);
     if (
+      !this.hasAdoptedThemeCSS &&
       this.themeCSSStyle?.parentNode === shadowRoot &&
       this.appliedThemeCSS?.themeStyles === themeStyles &&
       this.appliedThemeCSS.themeType === effectiveThemeType &&
@@ -1427,20 +1428,12 @@ export class FileDiff<LAnnotation = undefined> {
       this.appliedThemeCSS.theme = theme;
       return;
     }
-    if (
-      this.hasAdoptedThemeCSS &&
-      this.themeCSSStyle?.parentNode === shadowRoot
-    ) {
-      this.hasAdoptedThemeCSS = false;
-      this.appliedThemeCSS = {
-        theme,
-        themeStyles,
-        themeType: effectiveThemeType,
-        baseThemeType,
-        scrollbarGutter,
-      };
-      return;
-    }
+    // We deliberately fall through to upsertHostThemeStyle when an existing
+    // style was adopted from the element pool: the previous occupant may have
+    // been on a different theme, so we can't trust the adopted text content
+    // matches the current themeStyles. The textContent write is cheap and
+    // happens at most once per pool adoption.
+    this.hasAdoptedThemeCSS = false;
     this.themeCSSStyle = upsertHostThemeStyle({
       shadowRoot,
       currentNode: this.themeCSSStyle,
