@@ -1866,7 +1866,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     if (selections !== undefined) {
       // since we prevent the default input event,
       // we need to update the window selection manually
-      // and scroll to the primary caret to mock the input behavior
+      // and scroll to the primary caret to mock the input behavior.
       this.#updateSelections(selections, true);
       this.#scrollToPrimaryCaret();
     }
