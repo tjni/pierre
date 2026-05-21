@@ -485,13 +485,13 @@ export class VirtualizedFile<
     this.virtualizer.instanceChanged(this, false);
   }
 
-  override emitBreakingChange(
+  override emitLayoutChange(
     textDocument: DiffsTextDocument,
     newLineAnnotations?: LineAnnotation<LAnnotation>[],
     shouldUpdateBuffer = false
   ): void {
     const previousRenderRange = this.renderRange;
-    super.emitBreakingChange(textDocument, newLineAnnotations);
+    super.emitLayoutChange(textDocument, newLineAnnotations);
     this.getSimpleVirtualizer()?.markDOMDirty();
     this.resetLayoutCache(true);
     // Update the buffers caused by the line-count change to ensure the editor

@@ -183,27 +183,6 @@ export class File<
     this.workerManager?.subscribeToThemeChanges(this);
   }
 
-  public setEditor(editor: DiffsEditor<LAnnotation>): () => void {
-    this.editor?.cleanUp();
-    const fileContainer = this.fileContainer;
-    const file = this.file;
-    if (fileContainer != null && file != null) {
-      void this.fileRenderer.initializeHighlighter().then((highlighter) => {
-        editor.emitRender(
-          highlighter,
-          fileContainer,
-          file,
-          this.lineAnnotations,
-          this.renderRange
-        );
-      });
-    }
-    this.editor = editor;
-    return () => {
-      this.editor = undefined;
-    };
-  }
-
   private handleHighlightRender = (): void => {
     this.rerender();
   };
@@ -463,14 +442,35 @@ export class File<
     }
   }
 
-  public emitTokenize(
+  public setupEditor(editor: DiffsEditor<LAnnotation>): () => void {
+    this.editor?.cleanUp();
+    const fileContainer = this.fileContainer;
+    const file = this.file;
+    if (fileContainer != null && file != null) {
+      void this.fileRenderer.initializeHighlighter().then((highlighter) => {
+        editor.emitRender(
+          highlighter,
+          fileContainer,
+          file,
+          this.lineAnnotations,
+          this.renderRange
+        );
+      });
+    }
+    this.editor = editor;
+    return () => {
+      this.editor = undefined;
+    };
+  }
+
+  public emitLineChange(
     lines: Map<number, Array<HighlightedToken>>,
     themeType: 'dark' | 'light'
   ): void {
     this.fileRenderer.emitTokenize(lines, themeType);
   }
 
-  public emitBreakingChange(
+  public emitLayoutChange(
     textDocument: DiffsTextDocument,
     newLineAnnotations?: LineAnnotation<LAnnotation>[]
   ): void {

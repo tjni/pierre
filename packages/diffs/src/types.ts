@@ -901,12 +901,12 @@ export interface DiffsBaseComponent {
 export interface DiffsEditableComponent<
   LAnnotation,
 > extends DiffsBaseComponent {
-  setEditor: (editor: DiffsEditor<LAnnotation>) => () => void;
-  emitTokenize: (
+  setupEditor: (editor: DiffsEditor<LAnnotation>) => () => void;
+  emitLineChange?: (
     lines: Map<number, Array<HighlightedToken>>,
     themeType: 'dark' | 'light'
   ) => void;
-  emitBreakingChange: (
+  emitLayoutChange: (
     textDocument: DiffsTextDocument,
     newLineAnnotations?: DiffLineAnnotation<LAnnotation>[],
     shouldUpdateBuffer?: boolean

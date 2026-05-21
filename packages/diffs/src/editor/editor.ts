@@ -149,7 +149,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     lines: Map<number, Array<HighlightedToken>>,
     themeType: 'light' | 'dark'
   ) => {
-    this.#component?.emitTokenize(lines, themeType);
+    this.#component?.emitLineChange?.(lines, themeType);
     // update the view if the render range is updated by scrolling
     // and the deferred tokenized lines inside the render range
     if (
@@ -189,7 +189,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       component.setOptions(options);
       component.rerender();
     }
-    this.#removeEditorFromComponent = component.setEditor(this);
+    this.#removeEditorFromComponent = component.setupEditor(this);
     return () => this.cleanUp();
   }
 
@@ -1103,9 +1103,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       contentEl.style.gridRow = 'span ' + contentEl.children.length;
     }
 
-    component.emitTokenize(dirtyLines, tokenizer.themeType);
+    component.emitLineChange?.(dirtyLines, tokenizer.themeType);
     if (change.lineDelta !== 0 || isAdvancedMode) {
-      component.emitBreakingChange(
+      component.emitLayoutChange(
         textDocument,
         nextLineAnnotations,
         shouldUpdateBuffer

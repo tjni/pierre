@@ -39,7 +39,6 @@ import type {
   ExpansionDirections,
   FileContents,
   FileDiffMetadata,
-  HighlightedToken,
   HunkData,
   HunkSeparators,
   PrePropertiesConfig,
@@ -949,14 +948,7 @@ export class FileDiff<
     }
   }
 
-  emitTokenize(
-    _lines: Map<number, Array<HighlightedToken>>,
-    _themeType: 'dark' | 'light'
-  ): void {
-    // ignore
-  }
-
-  emitBreakingChange(
+  emitLayoutChange(
     textDocument: DiffsTextDocument,
     newLineAnnotations?: DiffLineAnnotation<LAnnotation>[]
   ): void {
@@ -993,7 +985,7 @@ export class FileDiff<
     }
   }
 
-  setEditor(editor: DiffsEditor<LAnnotation>): () => void {
+  setupEditor(editor: DiffsEditor<LAnnotation>): () => void {
     this.editor?.cleanUp();
     const fileContainer = this.fileContainer;
     const file = this.getAdditionFile();
