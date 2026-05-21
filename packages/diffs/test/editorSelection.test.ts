@@ -425,6 +425,68 @@ describe('getSelectionAnchor', () => {
     expect(node).toBe(token.childNodes[0] as unknown as Node);
     expect(offset).toBe(2);
   });
+
+  test('returns br anchor on an empty rendered line', () => {
+    const placeholder = br();
+    const line = pre(4, [placeholder]);
+    const [node, offset] = getSelectionAnchor(
+      line as unknown as HTMLElement,
+      0
+    );
+    expect(node).toBe(placeholder as unknown as Node);
+    expect(offset).toBe(0);
+  });
+
+  test('returns span anchor for an empty pre-tokenized line placeholder', () => {
+    const placeholder = span('', 0);
+    const line = pre(5, [placeholder]);
+    const [node, offset] = getSelectionAnchor(
+      line as unknown as HTMLElement,
+      0
+    );
+    expect(node).toBe(placeholder.childNodes[0] as unknown as Node);
+    expect(offset).toBe(0);
+  });
+
+  test('returns token span when it has no text nodes', () => {
+    const placeholder: MockElement = {
+      nodeType: 1,
+      tagName: 'SPAN',
+      parentElement: null,
+      children: [],
+      childNodes: [],
+      textContent: '',
+      dataset: { char: '0' },
+    };
+    const line = pre(8, [placeholder]);
+    const [node, offset] = getSelectionAnchor(
+      line as unknown as HTMLElement,
+      0
+    );
+    expect(node).toBe(placeholder as unknown as Node);
+    expect(offset).toBe(0);
+  });
+
+  test('maps direct line text nodes used for whitespace-only lines', () => {
+    const textNode = text('   ');
+    const lineEl = line(6, [textNode]);
+    const [node, offset] = getSelectionAnchor(
+      lineEl as unknown as HTMLElement,
+      2
+    );
+    expect(node).toBe(textNode as unknown as Node);
+    expect(offset).toBe(2);
+  });
+
+  test('falls back to the line element when it has no anchorable children', () => {
+    const line = pre(7, []);
+    const [node, offset] = getSelectionAnchor(
+      line as unknown as HTMLElement,
+      0
+    );
+    expect(node).toBe(line as unknown as Node);
+    expect(offset).toBe(0);
+  });
 });
 
 describe('selectionIntersects', () => {

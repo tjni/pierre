@@ -214,7 +214,7 @@ export function mapSelectionShift(
 }
 
 /**
- * Applies a text change to a selection.
+ * Applies a text change to the given text document
  */
 export function applyTextChangeToSelections<LAnnotation>(
   textDocument: TextDocument<LAnnotation>,
@@ -683,8 +683,7 @@ export function createSelectionFrom(
   } else {
     // When the original anchor sits inside `current`, keep whichever edge
     // stayed at the anchor so drag direction remains stable.
-    const anchorAtStart = currentStartOrder === 0;
-    focus = anchorAtStart ? focusSelection.end : focusSelection.start;
+    focus = currentStartOrder === 0 ? focusSelection.end : focusSelection.start;
   }
   const anchorVsFocus = comparePosition(anchor, focus);
   const direction: SelectionDirection =
@@ -921,6 +920,9 @@ export function getDocumentBoundarySelection(
   };
 }
 
+/**
+ * Get the text of the selections for the given text document.
+ */
 export function getSelectionText(
   textDocument: TextDocument<unknown>,
   selections: EditorSelection[]
@@ -951,6 +953,7 @@ export function getSelectionAnchor(
 ): [Node, number] {
   const ch = Math.max(0, character);
   const tokens = collectTokens(lineElement);
+
   let last: HTMLElement | null = null;
   for (const token of tokens) {
     last = token;
@@ -963,18 +966,48 @@ export function getSelectionAnchor(
       }
     }
   }
+
   if (last !== null) {
     const anchor = textAt(last, last.textContent?.length ?? 0);
     if (anchor !== null) {
       return anchor;
     }
+    return [last, 0];
   }
+
+  let textOffset = 0;
+  let lastTextNode: Text | null = null;
   for (const child of lineElement.childNodes) {
     if (child.nodeType === 1 && (child as HTMLElement).tagName === 'BR') {
       return [child, 0];
     }
+    if (child.nodeType !== 3) {
+      continue;
+    }
+    lastTextNode = child as Text;
+    const len = getTextOffset(
+      lastTextNode.textContent,
+      lastTextNode.textContent?.length ?? 0
+    );
+    if (ch <= textOffset + len) {
+      return [
+        lastTextNode,
+        getTextOffset(lastTextNode.textContent, ch - textOffset),
+      ];
+    }
+    textOffset += len;
   }
-  throw new Error('No node found');
+
+  if (lastTextNode !== null) {
+    return [
+      lastTextNode,
+      getTextOffset(
+        lastTextNode.textContent,
+        lastTextNode.textContent?.length ?? 0
+      ),
+    ];
+  }
+  return [lineElement, 0];
 }
 
 /**
