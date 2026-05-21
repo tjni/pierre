@@ -53,6 +53,12 @@ import {
   resolveIndentEdits,
   selectionIntersects,
 } from './selection';
+import {
+  getUnicodeMeasurementOffsets,
+  measureDomTextWidth,
+  needsDomTextMeasurement,
+  snapTextOffsetToUnicodeBoundary,
+} from './textMeasure';
 import { EditorTokenizer, renderLineTokens } from './tokenzier';
 import { addEventListener, debounce, extend, h, round } from './utils';
 
@@ -2073,7 +2079,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       return [offsetLeft, 0];
     }
 
-    const boundedCharacter = Math.min(char, lineText.length);
+    const boundedCharacter = snapTextOffsetToUnicodeBoundary(
+      lineText,
+      Math.min(char, lineText.length)
+    );
     const textBeforeCharacter = lineText.slice(0, boundedCharacter);
     const asciiWidth = this.#getExpandedAsciiTextWidth(textBeforeCharacter);
 
@@ -2143,6 +2152,13 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       '\t',
       ' '.repeat(this.#tabSize)
     );
+    if (needsDomTextMeasurement(textWithExpandedTabs)) {
+      return measureDomTextWidth(
+        textWithExpandedTabs,
+        this.#contentElement,
+        this.#measureCtx
+      );
+    }
     return this.#measureCtx.measureText(textWithExpandedTabs).width;
   }
 
@@ -2186,11 +2202,16 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     const starts: number[] = [];
 
     try {
+      const unicodeOffsets = getUnicodeMeasurementOffsets(lineText);
       let lastTop = Number.NEGATIVE_INFINITY;
 
-      for (let i = 0; i < lineText.length; i++) {
+      for (let i = 0, offsetIndex = 0; i < lineText.length; ) {
+        const nextOffset =
+          unicodeOffsets === undefined
+            ? i + 1
+            : unicodeOffsets[offsetIndex + 1];
         range.setStart(textNode, i);
-        range.setEnd(textNode, i + 1);
+        range.setEnd(textNode, nextOffset);
 
         // A new visual line starts whenever the character's top edge moves
         // below the previous character's top edge.
@@ -2199,6 +2220,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           starts.push(i);
           lastTop = top;
         }
+        i = nextOffset;
+        offsetIndex++;
       }
 
       const offsets = new Uint32Array(starts.length + 1);
