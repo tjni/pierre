@@ -204,10 +204,12 @@ function renderDiff(parsedPatches: ParsedPatch[], manager?: WorkerPoolManager) {
     const patchAnnotations = FAKE_DIFF_LINE_ANNOTATIONS[patchIndex] ?? [];
     let hunkIndex = 0;
     for (const fileDiff of parsedPatch.files) {
+      const editor = new Editor<LineCommentMetadata>();
       const fileAnnotations = patchAnnotations[hunkIndex];
       let instance:
         | FileDiff<LineCommentMetadata>
         | VirtualizedFileDiff<LineCommentMetadata>;
+      let isEditing = false;
       const options: FileDiffOptions<LineCommentMetadata> = {
         theme: DEMO_THEME,
         themeType,
@@ -215,7 +217,7 @@ function renderDiff(parsedPatches: ParsedPatch[], manager?: WorkerPoolManager) {
         overflow: wrap ? 'wrap' : 'scroll',
         renderAnnotation: renderDiffAnnotation,
         renderHeaderMetadata() {
-          return createToggle(
+          const collapseToggle = createToggle(
             'Collapse',
             instance?.options.collapsed ?? false,
             (checked) => {
@@ -228,6 +230,26 @@ function renderDiff(parsedPatches: ParsedPatch[], manager?: WorkerPoolManager) {
               }
             }
           );
+          const editableToggle = createToggle(
+            'Editable',
+            isEditing,
+            (checked) => {
+              isEditing = checked;
+              if (isEditing) {
+                editor.edit(instance);
+              } else {
+                editor.cleanUp();
+              }
+            }
+          );
+          const div = document.createElement('div');
+          div.style.display = 'flex';
+          div.style.gap = '8px';
+          div.append(collapseToggle);
+          if (!fileDiff.isPartial) {
+            div.append(editableToggle);
+          }
+          return div;
         },
         lineHoverHighlight: 'both',
         expansionLineCount: 10,
@@ -794,8 +816,8 @@ if (renderFileButton != null) {
           'Editable',
           isEditing,
           (checked) => {
-            if (checked) {
-              isEditing = true;
+            isEditing = checked;
+            if (isEditing) {
               editor.edit(instance);
               editor.setSelections([
                 {
@@ -811,7 +833,6 @@ if (renderFileButton != null) {
                 },
               ]);
             } else {
-              isEditing = false;
               editor.cleanUp();
             }
           }

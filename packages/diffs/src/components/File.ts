@@ -183,21 +183,25 @@ export class File<
     this.workerManager?.subscribeToThemeChanges(this);
   }
 
-  public setEditor(editor: DiffsEditor<LAnnotation>): void {
+  public setEditor(editor: DiffsEditor<LAnnotation>): () => void {
     this.editor?.cleanUp();
-    if (this.fileContainer != null && this.file != null) {
-      editor.emitRender(
-        this.fileContainer,
-        this.file,
-        this.lineAnnotations,
-        this.renderRange
-      );
+    const fileContainer = this.fileContainer;
+    const file = this.file;
+    if (fileContainer != null && file != null) {
+      void this.fileRenderer.initializeHighlighter().then((highlighter) => {
+        editor.emitRender(
+          highlighter,
+          fileContainer,
+          file,
+          this.lineAnnotations,
+          this.renderRange
+        );
+      });
     }
     this.editor = editor;
-  }
-
-  public removeEditor(): void {
-    this.editor = undefined;
+    return () => {
+      this.editor = undefined;
+    };
   }
 
   private handleHighlightRender = (): void => {
@@ -466,7 +470,7 @@ export class File<
     this.fileRenderer.emitTokenize(lines, themeType);
   }
 
-  public emitLineCountChange(
+  public emitBreakingChange(
     textDocument: DiffsTextDocument,
     newLineAnnotations?: LineAnnotation<LAnnotation>[]
   ): void {
@@ -624,12 +628,19 @@ export class File<
       }
       this.renderAnnotations();
       this.renderGutterUtility();
-      this.editor?.emitRender(
-        fileContainer,
-        file,
-        this.lineAnnotations,
-        nextRenderRange
-      );
+
+      const editor = this.editor;
+      if (editor != null) {
+        void this.fileRenderer.initializeHighlighter().then((highlighter) => {
+          editor.emitRender(
+            highlighter,
+            fileContainer,
+            file,
+            lineAnnotations,
+            nextRenderRange
+          );
+        });
+      }
     } catch (error: unknown) {
       if (disableErrorHandling) {
         throw error;

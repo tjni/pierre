@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import type { EditorSelection } from '../src/editor/selection';
 import { DirectionNone } from '../src/editor/selection';
 import { TextDocument, type TextEdit } from '../src/editor/textDocument';
-import type { LineAnnotation } from '../src/types';
+import type { DiffLineAnnotation } from '../src/types';
 
 function doc(text: string) {
   return new TextDocument('inmemory://1', text, 'plain');
@@ -977,11 +977,11 @@ describe('TextDocument', () => {
 
   test('undo and redo return stored line annotations', () => {
     const d = doc('abc');
-    const annotationsBefore: LineAnnotation<string>[] = [
-      { lineNumber: 1, metadata: 'bookmark-a' },
+    const annotationsBefore: DiffLineAnnotation<string>[] = [
+      { side: 'additions', lineNumber: 1, metadata: 'bookmark-a' },
     ];
-    const annotationsAfter: LineAnnotation<string>[] = [
-      { lineNumber: 1, metadata: 'bookmark-b' },
+    const annotationsAfter: DiffLineAnnotation<string>[] = [
+      { side: 'additions', lineNumber: 1, metadata: 'bookmark-b' },
     ];
     d.applyEdits(
       [
@@ -1027,8 +1027,8 @@ describe('TextDocument', () => {
 
   test('setLastUndoLineAnnotationsAfter updates redo line annotations', () => {
     const d = doc('a');
-    const annotationsBefore: LineAnnotation<string>[] = [
-      { lineNumber: 1, metadata: 'initial' },
+    const annotationsBefore: DiffLineAnnotation<string>[] = [
+      { side: 'additions', lineNumber: 1, metadata: 'initial' },
     ];
     d.applyEdits(
       [
@@ -1047,8 +1047,8 @@ describe('TextDocument', () => {
       undefined
     );
 
-    const patchedAfter: LineAnnotation<string>[] = [
-      { lineNumber: 1, metadata: 'patched-after-edit' },
+    const patchedAfter: DiffLineAnnotation<string>[] = [
+      { side: 'additions', lineNumber: 1, metadata: 'patched-after-edit' },
     ];
     d.setLastUndoLineAnnotationsAfter(patchedAfter);
 

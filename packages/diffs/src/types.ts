@@ -880,36 +880,43 @@ export interface StickySpecs {
 
 export interface DiffsEditor<LAnnotation> {
   emitRender(
+    highlighter: DiffsHighlighter,
     fileContainer: HTMLElement,
     fileContents: FileContents,
     lineAnnotations: LineAnnotation<LAnnotation>[] | undefined,
-    renderRange: RenderRange | undefined
+    renderRange: RenderRange | undefined,
+    editMode?: 'simple' | 'advanced'
   ): void;
   cleanUp(): void;
 }
 
-export interface DiffsEditableComponent<LAnnotation> {
+export interface DiffsBaseComponent {
   readonly options: BaseCodeOptions;
-  setEditor: (editor: DiffsEditor<LAnnotation>) => void;
   setOptions: (options: Partial<BaseCodeOptions>) => void;
   setSelectedLines: (range: { start: number; end: number } | null) => void;
+  rerender(): void;
+  cleanUp(): void;
+}
+
+export interface DiffsEditableComponent<
+  LAnnotation,
+> extends DiffsBaseComponent {
+  setEditor: (editor: DiffsEditor<LAnnotation>) => () => void;
   emitTokenize: (
     lines: Map<number, Array<HighlightedToken>>,
     themeType: 'dark' | 'light'
   ) => void;
-  emitLineCountChange: (
+  emitBreakingChange: (
     textDocument: DiffsTextDocument,
-    newLineAnnotations?: LineAnnotation<LAnnotation>[],
+    newLineAnnotations?: DiffLineAnnotation<LAnnotation>[],
     shouldUpdateBuffer?: boolean
   ) => void;
-  removeEditor(): void;
-  rerender(): void;
-  cleanUp(): void;
 }
 
 export interface DiffsTextDocument {
   lineCount: number;
   getLineText: (lineNumber: number) => string;
+  getText: () => string;
 }
 
 export interface DiffsEditorSelection {

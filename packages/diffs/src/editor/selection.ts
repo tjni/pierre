@@ -1,4 +1,4 @@
-import type { LineAnnotation } from '../types';
+import type { DiffLineAnnotation } from '../types';
 import type {
   Position,
   Range,
@@ -220,7 +220,7 @@ export function applyTextChangeToSelections<LAnnotation>(
   textDocument: TextDocument<LAnnotation>,
   selections: EditorSelection[],
   edit: ResolvedTextEdit,
-  lineAnnotations?: LineAnnotation<LAnnotation>[],
+  lineAnnotations?: DiffLineAnnotation<LAnnotation>[],
   tabSize = 2
 ): {
   nextSelections: EditorSelection[];
@@ -365,7 +365,7 @@ export function applyTextReplaceToSelections<LAnnotation>(
   textDocument: TextDocument<LAnnotation>,
   selections: EditorSelection[],
   texts: string[],
-  lineAnnotations?: LineAnnotation<LAnnotation>[]
+  lineAnnotations?: DiffLineAnnotation<LAnnotation>[]
 ): {
   nextSelections: EditorSelection[];
   change?: TextDocumentChange;
@@ -465,7 +465,7 @@ export function applyTextReplaceToSelections<LAnnotation>(
 export function applyTransposeToSelections<LAnnotation>(
   textDocument: TextDocument<LAnnotation>,
   selections: EditorSelection[],
-  lineAnnotations?: LineAnnotation<LAnnotation>[]
+  lineAnnotations?: DiffLineAnnotation<LAnnotation>[]
 ): {
   nextSelections: EditorSelection[];
   change?: TextDocumentChange;
@@ -562,7 +562,7 @@ export function applyTransposeToSelections<LAnnotation>(
 export function applyDeleteHardLineForwardToSelections<LAnnotation>(
   textDocument: TextDocument<LAnnotation>,
   selections: EditorSelection[],
-  lineAnnotations?: LineAnnotation<LAnnotation>[]
+  lineAnnotations?: DiffLineAnnotation<LAnnotation>[]
 ): {
   nextSelections: EditorSelection[];
   change?: TextDocumentChange;
@@ -949,25 +949,30 @@ export function getSelectionAnchor(
   lineElement: HTMLElement,
   character: number
 ): [Node, number] {
-  if (lineElement.childElementCount > 0) {
-    for (const child of lineElement.children) {
-      if (child.hasAttribute('data-char')) {
-        const char = Number(child.getAttribute('data-char'));
-        const textNode = child.firstChild;
-        if (
-          textNode !== null &&
-          textNode.nodeType === /* Node.TEXT_NODE */ 3 &&
-          character >= char &&
-          character <= char + (textNode as Text).textContent.length
-        ) {
-          return [textNode, character - char];
-        }
+  const ch = Math.max(0, character);
+  const tokens = collectTokens(lineElement);
+  let last: HTMLElement | null = null;
+  for (const token of tokens) {
+    last = token;
+    const base = getCharacterIndex(token)!;
+    const end = base + (token.textContent?.length ?? 0);
+    if (ch <= end) {
+      const anchor = textAt(token, ch < base ? 0 : ch - base);
+      if (anchor !== null) {
+        return anchor;
       }
     }
   }
-  const textNode = lineElement.firstChild;
-  if (textNode !== null) {
-    return [textNode, character];
+  if (last !== null) {
+    const anchor = textAt(last, last.textContent?.length ?? 0);
+    if (anchor !== null) {
+      return anchor;
+    }
+  }
+  for (const child of lineElement.childNodes) {
+    if (child.nodeType === 1 && (child as HTMLElement).tagName === 'BR') {
+      return [child, 0];
+    }
   }
   throw new Error('No node found');
 }
@@ -1150,128 +1155,265 @@ function normalizeLeadingIndentForChange(
 }
 
 function boundaryToPosition(node: Node, offset: number): Position | null {
-  if (node.nodeType === 3) {
-    const parent = node.parentElement;
-    if (parent === null) {
-      return null;
-    }
-    if (parent.tagName === 'DIV') {
-      const childIndex = Array.prototype.indexOf.call(parent.childNodes, node);
-      const position = getPositionWithinPre(parent, childIndex);
-      return position === null
-        ? null
-        : {
-            ...position,
-            character:
-              position.character + getTextOffset(node.textContent, offset),
-          };
-    }
-    if (parent.tagName === 'SPAN') {
-      const pre = parent.parentElement;
-      if (pre === null || pre.tagName !== 'DIV') {
-        return null;
-      }
-      const line = getLineIndex(pre);
-      const base = getCharacterIndex(parent);
-      if (line !== undefined && base !== undefined) {
-        return { line, character: base + offset };
-      }
-    }
-    const preChild = getDirectPreChild(node);
-    if (preChild !== null) {
-      return getPositionWithinPre(preChild.pre, preChild.childIndex);
-    }
+  const host = node.nodeType === 1 ? (node as HTMLElement) : node.parentElement;
+  let lineEl: HTMLElement | null = host;
+  while (lineEl !== null && getLineIndex(lineEl) === undefined) {
+    lineEl = lineEl.parentElement;
+  }
+  if (lineEl === null) {
     return null;
   }
+  const line = getLineIndex(lineEl);
+  if (line === undefined) {
+    return null;
+  }
+
+  if (node.nodeType === 3) {
+    if (node.parentElement === null) {
+      return null;
+    }
+    if (findTokenSpan(node.parentElement) !== null) {
+      return { line, character: getLineChildEnd(node, offset) };
+    }
+    return {
+      line,
+      character:
+        offsetBefore(lineEl, node) + getTextOffset(node.textContent, offset),
+    };
+  }
+
   if (node.nodeType === 1) {
     const el = node as HTMLElement;
     if (el.tagName === 'DIV') {
-      return getPositionWithinPre(el, offset);
+      let character = 0;
+      for (let i = 0; i < offset; i++) {
+        character = getLineChildEnd(el.childNodes[i]);
+      }
+      return { line, character };
     }
     if (el.tagName === 'BR') {
-      const pre = el.parentElement;
-      if (pre === null || pre.tagName !== 'DIV') {
-        return null;
-      }
-      const line = getLineIndex(pre);
-      if (line !== undefined) {
-        return { line, character: 0 };
-      }
+      return { line, character: 0 };
     }
     if (el.tagName === 'SPAN') {
-      const pre = el.parentElement;
-      if (pre === null || pre.tagName !== 'DIV') {
-        return null;
-      }
-      const line = getLineIndex(pre);
-      const base = getCharacterIndex(el);
-      if (line !== undefined && base !== undefined) {
-        let character = base;
-        for (let i = 0; i < offset; i++) {
-          character += el.childNodes[i]?.textContent?.length ?? 0;
+      if (offset < el.childNodes.length) {
+        const next = el.childNodes[offset];
+        if (next?.nodeType === 1) {
+          const nextBase = getCharacterIndex(next as HTMLElement);
+          if (nextBase !== undefined) {
+            return { line, character: nextBase };
+          }
+          const token = findTokenSpan(next as HTMLElement);
+          const tokenBase =
+            token === null ? undefined : getCharacterIndex(token);
+          if (tokenBase !== undefined) {
+            return { line, character: tokenBase };
+          }
         }
-        return { line, character };
+      }
+      return {
+        line,
+        character:
+          offset > 0
+            ? getLineChildEnd(el.childNodes[offset - 1])
+            : offsetBefore(lineEl, el),
+      };
+    }
+    return { line, character: offsetBefore(lineEl, el) };
+  }
+  return null;
+}
+
+function collectTokens(line: HTMLElement): HTMLElement[] {
+  const tokens: HTMLElement[] = [];
+  for (const child of line.childNodes) {
+    if (child.nodeType !== 1) {
+      continue;
+    }
+    const el = child as HTMLElement;
+    if (el.tagName !== 'SPAN') {
+      continue;
+    }
+    const base = getCharacterIndex(el);
+    if (base !== undefined) {
+      tokens.push(el);
+      continue;
+    }
+    for (const nested of el.childNodes) {
+      if (
+        nested.nodeType === 1 &&
+        getCharacterIndex(nested as HTMLElement) !== undefined
+      ) {
+        tokens.push(nested as HTMLElement);
       }
     }
-    const preChild = getDirectPreChild(el);
-    if (preChild !== null) {
-      return getPositionWithinPre(preChild.pre, preChild.childIndex);
+  }
+  return tokens;
+}
+
+function textAt(token: HTMLElement, offset: number): [Node, number] | null {
+  let remaining = Math.max(0, offset);
+  const stack: Array<{ container: Node; index: number }> = [
+    { container: token, index: 0 },
+  ];
+  while (stack.length > 0) {
+    const frame = stack[stack.length - 1];
+    if (frame.index >= frame.container.childNodes.length) {
+      stack.pop();
+      continue;
+    }
+    const walkNode = frame.container.childNodes[frame.index];
+    frame.index++;
+    if (walkNode.nodeType === 3) {
+      const len = getTextOffset(
+        walkNode.textContent,
+        walkNode.textContent?.length ?? 0
+      );
+      if (remaining <= len) {
+        return [walkNode, remaining];
+      }
+      remaining -= len;
+    } else if (walkNode.nodeType === 1) {
+      stack.push({ container: walkNode, index: 0 });
     }
   }
   return null;
 }
 
-function getPositionWithinPre(
-  pre: HTMLElement,
-  offset: number
-): Position | null {
-  const line = getLineIndex(pre);
-  if (line === undefined) {
-    return null;
-  }
-  let character = 0;
-  for (let i = 0; i < offset; i++) {
-    const c = pre.childNodes[i];
-    if (c?.nodeType === 3) {
-      character += getTextOffset(c.textContent, c.textContent?.length ?? 0);
+function textLengthBefore(root: Node, target: Node): number {
+  let before = 0;
+  const stack: Array<{ container: Node; index: number }> = [
+    { container: root, index: 0 },
+  ];
+  while (stack.length > 0) {
+    const frame = stack[stack.length - 1];
+    if (frame.index >= frame.container.childNodes.length) {
+      stack.pop();
       continue;
     }
-    if (c?.nodeType === 1 && (c as HTMLElement).tagName === 'SPAN') {
-      const span = c as HTMLElement;
-      const o = getCharacterIndex(span);
-      if (o === undefined) {
-        continue;
-      }
-      const len = span.textContent?.length ?? 0;
-      character = o + len;
+    const walkNode = frame.container.childNodes[frame.index];
+    if (walkNode === target) {
+      return before;
+    }
+    frame.index++;
+    if (walkNode.nodeType === 3) {
+      before += getTextOffset(
+        walkNode.textContent,
+        walkNode.textContent?.length ?? 0
+      );
+    } else if (walkNode.nodeType === 1) {
+      stack.push({ container: walkNode, index: 0 });
     }
   }
-  return { line, character };
+  return before;
 }
 
-function getDirectPreChild(
-  node: Node
-): { pre: HTMLElement; childIndex: number } | null {
-  let current =
+function isInside(token: HTMLElement, node: Node): boolean {
+  let current: Node | null = node;
+  while (current !== null) {
+    if (current === token) {
+      return true;
+    }
+    current = current.parentElement;
+  }
+  return false;
+}
+
+function offsetBefore(line: HTMLElement, node: Node): number {
+  if (node.parentElement === line) {
+    let offset = 0;
+    const index = Array.prototype.indexOf.call(line.childNodes, node);
+    for (let i = 0; i < index; i++) {
+      offset = getLineChildEnd(line.childNodes[i]);
+    }
+    return offset;
+  }
+  for (const token of collectTokens(line)) {
+    if (isInside(token, node)) {
+      const base = getCharacterIndex(token)!;
+      return base + (node.nodeType === 3 ? textLengthBefore(token, node) : 0);
+    }
+  }
+  let offset = 0;
+  let target: HTMLElement | null =
     node.nodeType === 1 ? (node as HTMLElement) : node.parentElement;
-  while (current !== null && current.parentElement !== null) {
-    if (current.parentElement.tagName === 'DIV') {
-      return {
-        pre: current.parentElement,
-        childIndex: Array.prototype.indexOf.call(
-          current.parentElement.childNodes,
-          current
-        ),
-      };
+  while (target !== null && target.parentElement !== null) {
+    if (getLineIndex(target.parentElement) !== undefined) {
+      break;
+    }
+    const parent = target.parentElement;
+    const index = Array.prototype.indexOf.call(parent.childNodes, target);
+    for (let i = 0; i < index; i++) {
+      offset = getLineChildEnd(parent.childNodes[i]);
+    }
+    target = parent;
+  }
+  return offset;
+}
+
+function findTokenSpan(el: HTMLElement): HTMLElement | null {
+  let current: HTMLElement | null = el;
+  while (current !== null) {
+    if (getLineIndex(current) !== undefined) {
+      return null;
+    }
+    if (getCharacterIndex(current) !== undefined) {
+      return current;
     }
     current = current.parentElement;
   }
   return null;
 }
 
+function getLineChildEnd(
+  child: Node | undefined,
+  textOffsetInChild?: number
+): number {
+  if (child === undefined) {
+    return 0;
+  }
+  if (child.nodeType === 3) {
+    const parent = child.parentElement;
+    if (parent === null) {
+      return 0;
+    }
+    const token = findTokenSpan(parent);
+    if (token === null) {
+      return 0;
+    }
+    const base = getCharacterIndex(token);
+    if (base === undefined) {
+      return 0;
+    }
+    const length =
+      textOffsetInChild === undefined
+        ? getTextOffset(child.textContent, child.textContent?.length ?? 0)
+        : getTextOffset(child.textContent, textOffsetInChild);
+    return base + textLengthBefore(token, child) + length;
+  }
+  if (child.nodeType !== 1) {
+    return 0;
+  }
+  const el = child as HTMLElement;
+  if (el.tagName !== 'SPAN' && el.tagName !== 'BR') {
+    return 0;
+  }
+  const base = getCharacterIndex(el);
+  if (base !== undefined) {
+    return base + (el.textContent?.length ?? 0);
+  }
+  let end = 0;
+  for (const token of el.childNodes) {
+    end = Math.max(end, getLineChildEnd(token));
+  }
+  return end;
+}
+
 function getLineIndex(el: HTMLElement): number | undefined {
-  const { lineIndex } = el.dataset;
-  return lineIndex !== undefined ? parseInt(lineIndex) : undefined;
+  const { line } = el.dataset;
+  if (line !== undefined) {
+    return parseInt(line) - 1;
+  }
+  return undefined;
 }
 
 function getCharacterIndex(el: HTMLElement): number | undefined {

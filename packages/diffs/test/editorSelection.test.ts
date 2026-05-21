@@ -13,6 +13,7 @@ import {
   expandCollapsedSelectionToWord,
   extendSelection,
   findNexMatch,
+  getSelectionAnchor,
   mapCursorMove,
   mapSelectionShift,
   mergeOverlappingSelections,
@@ -91,7 +92,7 @@ function pre(line: number, children: MockElement[] = []): MockElement {
     children,
     childNodes: children,
     textContent: null,
-    dataset: { lineIndex: String(line) },
+    dataset: { line: String(line + 1) },
   };
   for (const child of children) {
     child.parentElement = element;
@@ -150,6 +151,23 @@ function span(text: string, char?: number): MockElement {
   textNode.parentElement = element;
   if (char !== undefined) {
     element.dataset.char = String(char);
+  }
+  return element;
+}
+
+// div > span[data-diff-span] > span[data-char] (nested diff tokens)
+function diffSpan(...tokenSpans: MockElement[]): MockElement {
+  const element: MockElement = {
+    nodeType: 1,
+    tagName: 'SPAN',
+    parentElement: null,
+    children: tokenSpans,
+    childNodes: tokenSpans,
+    textContent: tokenSpans.map((child) => child.textContent ?? '').join(''),
+    dataset: { diffSpan: '' },
+  };
+  for (const child of tokenSpans) {
+    child.parentElement = element;
   }
   return element;
 }
@@ -254,7 +272,7 @@ describe('convertSelection', () => {
     });
   });
 
-  test('maps a span text node from its data-char base', () => {
+  test('maps div>span token text from data-char', () => {
     const token = span('abcdef', 10);
     const textNode = token.childNodes[0];
     pre(7, [token]);
@@ -265,6 +283,35 @@ describe('convertSelection', () => {
       end: { line: 7, character: 13 },
       direction: DirectionNone,
     });
+  });
+
+  test('maps div>span>span nested diff-span boundaries', () => {
+    const diffToken = span('_diff', 15);
+    const diff = diffSpan(diffToken, span(':', 20));
+    const line = pre(8, [span('  ', 0), span('async', 2), diff]);
+    const textNode = diffToken.childNodes[0];
+
+    expect(
+      convertSelection(composedRange(textNode as unknown as Node, 2))
+    ).toEqual({
+      start: { line: 8, character: 17 },
+      end: { line: 8, character: 17 },
+      direction: DirectionNone,
+    });
+    expect(convertSelection(composedRange(diff as unknown as Node, 1))).toEqual(
+      {
+        start: { line: 8, character: 20 },
+        end: { line: 8, character: 20 },
+        direction: DirectionNone,
+      }
+    );
+    expect(convertSelection(composedRange(line as unknown as Node, 3))).toEqual(
+      {
+        start: { line: 8, character: 21 },
+        end: { line: 8, character: 21 },
+        direction: DirectionNone,
+      }
+    );
   });
 
   test('ignores newline placeholders in direct line text nodes', () => {
@@ -297,6 +344,86 @@ describe('convertSelection', () => {
         direction: DirectionNone,
       }
     );
+  });
+
+  test('maps a text node inside a nested diff-span token', () => {
+    const diffToken = span('_diff', 15);
+    const diff = diffSpan(diffToken, span(':', 20), span(' FileMetadata', 22));
+    const textNode = diffToken.childNodes[0];
+    pre(9, [span('  ', 0), span('async', 2), span(' render', 8), diff]);
+    expect(
+      convertSelection(composedRange(textNode as unknown as Node, 2))
+    ).toEqual({
+      start: { line: 9, character: 17 },
+      end: { line: 9, character: 17 },
+      direction: DirectionNone,
+    });
+  });
+
+  test('maps a boundary at the start of a nested diff-span wrapper', () => {
+    const diff = diffSpan(span('_diff', 15), span(':', 20));
+    pre(10, [span(' render', 8), diff]);
+    expect(convertSelection(composedRange(diff as unknown as Node, 0))).toEqual(
+      {
+        start: { line: 10, character: 15 },
+        end: { line: 10, character: 15 },
+        direction: DirectionNone,
+      }
+    );
+  });
+
+  test('maps a boundary between nested diff-span tokens', () => {
+    const diff = diffSpan(span('_diff', 15), span(':', 20));
+    pre(11, [diff]);
+    expect(convertSelection(composedRange(diff as unknown as Node, 1))).toEqual(
+      {
+        start: { line: 11, character: 20 },
+        end: { line: 11, character: 20 },
+        direction: DirectionNone,
+      }
+    );
+  });
+
+  test('maps a text node inside a wrapped token fragment', () => {
+    const fragment = span('diff', undefined);
+    const token = span('', 15);
+    token.childNodes = [fragment];
+    token.children = [fragment];
+    token.textContent = 'diff';
+    fragment.parentElement = token;
+    const textNode = fragment.childNodes[0];
+    pre(12, [token]);
+    expect(
+      convertSelection(composedRange(textNode as unknown as Node, 1))
+    ).toEqual({
+      start: { line: 12, character: 16 },
+      end: { line: 12, character: 16 },
+      direction: DirectionNone,
+    });
+  });
+});
+
+describe('getSelectionAnchor', () => {
+  test('returns a text node offset inside a nested diff-span token', () => {
+    const diffToken = span('_diff', 15);
+    const line = pre(9, [span('4'), diffSpan(diffToken, span(':', 20))]);
+    const [node, offset] = getSelectionAnchor(
+      line as unknown as HTMLElement,
+      17
+    );
+    expect(node.nodeType).toBe(3);
+    expect(offset).toBe(2);
+  });
+
+  test('ignores gutter spans when mapping character positions', () => {
+    const token = span('code', 0);
+    const line = pre(3, [span('112'), token]);
+    const [node, offset] = getSelectionAnchor(
+      line as unknown as HTMLElement,
+      2
+    );
+    expect(node).toBe(token.childNodes[0] as unknown as Node);
+    expect(offset).toBe(2);
   });
 });
 

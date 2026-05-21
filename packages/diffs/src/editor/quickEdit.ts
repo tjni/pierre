@@ -69,19 +69,20 @@ export class QuickEditWidget {
   render(contentElement: HTMLElement): void {
     const gutterElement =
       contentElement.previousElementSibling as HTMLElement | null;
+    const lineNumber = this.line + 1;
     const gutterLineElement = gutterElement?.querySelector<HTMLElement>(
-      `[data-column-number][data-line-index="${this.line}"]`
+      `[data-column-number="${lineNumber}"]`
     );
     const contentLineElement = contentElement.querySelector<HTMLElement>(
-      `[data-line][data-line-index="${this.line}"]`
+      `[data-line="${lineNumber}"]`
     );
     if (
       gutterElement != null &&
       gutterLineElement != null &&
       contentLineElement != null
     ) {
-      gutterLineElement.before(this.#gutterBuffer);
-      contentLineElement.before(this.#quickEditContainer);
+      gutterLineElement.after(this.#gutterBuffer);
+      contentLineElement.after(this.#quickEditContainer);
       gutterElement.style.gridRow = 'span ' + gutterElement.children.length;
       contentElement.style.gridRow = 'span ' + contentElement.children.length;
       this.#handleDomResize();

@@ -1,10 +1,10 @@
-import type { LineAnnotation } from '../types';
+import type { DiffLineAnnotation } from '../types';
 import type { TextDocumentChange } from './textDocument';
 
 export function applyDocumentChangeToLineAnnotations<T>(
   change: TextDocumentChange,
-  lineAnnotations: LineAnnotation<T>[]
-): LineAnnotation<T>[] {
+  lineAnnotations: DiffLineAnnotation<T>[]
+): DiffLineAnnotation<T>[] {
   if (change.lineDelta === 0) {
     return lineAnnotations;
   }
@@ -23,7 +23,7 @@ export function applyDocumentChangeToLineAnnotations<T>(
     removedLineCount > 0
       ? change.startLine + removedLineCount
       : change.startLine + (startCharacter === 0 ? 0 : 1);
-  const nextLineAnnotations: LineAnnotation<T>[] = [];
+  const nextLineAnnotations: DiffLineAnnotation<T>[] = [];
 
   let changed = false;
   for (const annotation of lineAnnotations) {

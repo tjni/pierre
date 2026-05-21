@@ -33,9 +33,13 @@ import type {
   BaseDiffOptions,
   CustomPreProperties,
   DiffLineAnnotation,
+  DiffsEditableComponent,
+  DiffsEditor,
+  DiffsTextDocument,
   ExpansionDirections,
   FileContents,
   FileDiffMetadata,
+  HighlightedToken,
   HunkData,
   HunkSeparators,
   PrePropertiesConfig,
@@ -167,7 +171,9 @@ interface HydrationSetup<LAnnotation> {
 
 let instanceId = -1;
 
-export class FileDiff<LAnnotation = undefined> {
+export class FileDiff<
+  LAnnotation = undefined,
+> implements DiffsEditableComponent<LAnnotation> {
   // NOTE(amadeus): We sorta need this to ensure the web-component file is
   // properly loaded
   static LoadedCustomComponent: boolean = DiffsContainerLoaded;
@@ -217,6 +223,9 @@ export class FileDiff<LAnnotation = undefined> {
   protected lastRowCount: number | undefined;
 
   protected enabled = true;
+
+  protected editor: DiffsEditor<LAnnotation> | undefined;
+  protected renderDiffTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
     public options: FileDiffOptions<LAnnotation> = { theme: DEFAULT_THEMES },
@@ -524,6 +533,13 @@ export class FileDiff<LAnnotation = undefined> {
     }
 
     this.enabled = false;
+
+    this.editor?.cleanUp();
+    this.editor = undefined;
+    if (this.renderDiffTimer !== undefined) {
+      clearTimeout(this.renderDiffTimer);
+    }
+    this.renderDiffTimer = undefined;
   }
 
   public virtualizedSetup(): void {
@@ -897,6 +913,21 @@ export class FileDiff<LAnnotation = undefined> {
       if (!deferManagers) {
         this.flushManagers();
       }
+
+      const editor = this.editor;
+      const file = this.getAdditionFile();
+      if (editor != null && file != null) {
+        void this.hunksRenderer.initializeHighlighter().then((highlighter) => {
+          editor.emitRender(
+            highlighter,
+            fileContainer,
+            file,
+            lineAnnotations,
+            nextRenderRange,
+            'advanced'
+          );
+        });
+      }
     } catch (error: unknown) {
       if (disableErrorHandling) {
         throw error;
@@ -916,6 +947,112 @@ export class FileDiff<LAnnotation = undefined> {
     if (this.fileContainer != null) {
       this.options.onPostRender?.(this.fileContainer, this);
     }
+  }
+
+  emitTokenize(
+    _lines: Map<number, Array<HighlightedToken>>,
+    _themeType: 'dark' | 'light'
+  ): void {
+    // ignore
+  }
+
+  emitBreakingChange(
+    textDocument: DiffsTextDocument,
+    newLineAnnotations?: DiffLineAnnotation<LAnnotation>[]
+  ): void {
+    if (
+      newLineAnnotations !== undefined &&
+      newLineAnnotations !== this.lineAnnotations
+    ) {
+      this.setLineAnnotations(newLineAnnotations);
+      this.hunksRenderer.setLineAnnotations(this.lineAnnotations);
+    }
+
+    const deletionFile = this.getDeletionFile();
+    if (deletionFile != null) {
+      const { name, lang } = deletionFile;
+      const newFile = {
+        name,
+        lang,
+        cacheKey: name + '-' + Date.now(),
+      } as FileContents;
+      Object.defineProperty(newFile, 'contents', {
+        get: () => textDocument.getText(),
+      });
+      if (this.renderDiffTimer !== undefined) {
+        clearTimeout(this.renderDiffTimer);
+      }
+      this.renderDiffTimer = setTimeout(() => {
+        this.fileDiff = parseDiffFromFile(
+          deletionFile,
+          newFile,
+          this.options.parseDiffOptions
+        );
+        this.hunksRenderer.renderDiff(this.fileDiff, this.renderRange);
+      }, 250);
+    }
+  }
+
+  setEditor(editor: DiffsEditor<LAnnotation>): () => void {
+    this.editor?.cleanUp();
+    const fileContainer = this.fileContainer;
+    const file = this.getAdditionFile();
+    if (fileContainer != null && file != null) {
+      void this.hunksRenderer.initializeHighlighter().then((highlighter) => {
+        editor.emitRender(
+          highlighter,
+          fileContainer,
+          file,
+          this.lineAnnotations,
+          this.renderRange,
+          'advanced'
+        );
+      });
+    }
+    this.editor = editor;
+    return () => {
+      this.editor = undefined;
+    };
+  }
+
+  private getDeletionFile(): FileContents | undefined {
+    if (this.deletionFile != null) {
+      return this.deletionFile;
+    }
+    const fileDiff = this.fileDiff;
+    if (fileDiff != null && !fileDiff.isPartial) {
+      const { name, lang, cacheKey } = fileDiff;
+      const file = {
+        name,
+        lang,
+        cacheKey,
+      } as FileContents;
+      Object.defineProperty(file, 'contents', {
+        get: () => fileDiff.deletionLines.join(''),
+      });
+      return file;
+    }
+    return undefined;
+  }
+
+  private getAdditionFile(): FileContents | undefined {
+    if (this.additionFile != null) {
+      return this.additionFile;
+    }
+    const fileDiff = this.fileDiff;
+    if (fileDiff != null && !fileDiff.isPartial) {
+      const { name, lang, cacheKey } = fileDiff;
+      const file = {
+        name,
+        lang,
+        cacheKey,
+      } as FileContents;
+      Object.defineProperty(file, 'contents', {
+        get: () => fileDiff.additionLines.join(''),
+      });
+      return file;
+    }
+    return undefined;
   }
 
   private removeRenderedCode(): void {

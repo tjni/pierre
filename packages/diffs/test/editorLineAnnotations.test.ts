@@ -2,15 +2,15 @@ import { describe, expect, test } from 'bun:test';
 
 import { applyDocumentChangeToLineAnnotations } from '../src/editor/lineAnnotations';
 import { TextDocument } from '../src/editor/textDocument';
-import type { LineAnnotation } from '../src/types';
+import type { DiffLineAnnotation } from '../src/types';
 
 describe('applyDocumentChangeToLineAnnotations', () => {
   test('deletes annotations attached to deleted lines', () => {
     const textDocument = new TextDocument('inmemory://1', 'one\ntwo\nthree');
-    const annotations: LineAnnotation<string>[] = [
-      { lineNumber: 1, metadata: 'one' },
-      { lineNumber: 2, metadata: 'two' },
-      { lineNumber: 3, metadata: 'three' },
+    const annotations: DiffLineAnnotation<string>[] = [
+      { side: 'additions', lineNumber: 1, metadata: 'one' },
+      { side: 'additions', lineNumber: 2, metadata: 'two' },
+      { side: 'additions', lineNumber: 3, metadata: 'three' },
     ];
 
     const change = textDocument.applyEdits([
@@ -24,17 +24,17 @@ describe('applyDocumentChangeToLineAnnotations', () => {
     ]);
 
     expect(applyDocumentChangeToLineAnnotations(change!, annotations)).toEqual([
-      { lineNumber: 1, metadata: 'one' },
-      { lineNumber: 2, metadata: 'three' },
+      { side: 'additions', lineNumber: 1, metadata: 'one' },
+      { side: 'additions', lineNumber: 2, metadata: 'three' },
     ]);
   });
 
   test('moves annotations down when lines are inserted above them', () => {
     const textDocument = new TextDocument('inmemory://1', 'one\ntwo\nthree');
-    const annotations: LineAnnotation<string>[] = [
-      { lineNumber: 1, metadata: 'one' },
-      { lineNumber: 2, metadata: 'two' },
-      { lineNumber: 3, metadata: 'three' },
+    const annotations: DiffLineAnnotation<string>[] = [
+      { side: 'additions', lineNumber: 1, metadata: 'one' },
+      { side: 'additions', lineNumber: 2, metadata: 'two' },
+      { side: 'additions', lineNumber: 3, metadata: 'three' },
     ];
 
     const change = textDocument.applyEdits([
@@ -48,16 +48,16 @@ describe('applyDocumentChangeToLineAnnotations', () => {
     ]);
 
     expect(applyDocumentChangeToLineAnnotations(change!, annotations)).toEqual([
-      { lineNumber: 1, metadata: 'one' },
-      { lineNumber: 3, metadata: 'two' },
-      { lineNumber: 4, metadata: 'three' },
+      { side: 'additions', lineNumber: 1, metadata: 'one' },
+      { side: 'additions', lineNumber: 3, metadata: 'two' },
+      { side: 'additions', lineNumber: 4, metadata: 'three' },
     ]);
   });
 
   test('returns null when annotations do not move', () => {
     const textDocument = new TextDocument('inmemory://1', 'one\ntwo\nthree');
-    const annotations: LineAnnotation<string>[] = [
-      { lineNumber: 1, metadata: 'one' },
+    const annotations: DiffLineAnnotation<string>[] = [
+      { side: 'additions', lineNumber: 1, metadata: 'one' },
     ];
 
     const change = textDocument.applyEdits([

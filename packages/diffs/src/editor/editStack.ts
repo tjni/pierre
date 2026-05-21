@@ -1,4 +1,4 @@
-import type { LineAnnotation } from '../types';
+import type { DiffLineAnnotation } from '../types';
 import type { EditorSelection } from './selection';
 import type { ResolvedTextEdit, TextDocument } from './textDocument';
 
@@ -20,9 +20,9 @@ export interface EditStackEntry<LAnnotation> {
   /** Selection after the transaction. */
   selectionsAfter?: EditorSelection[];
   /** Line annotations before the transaction. */
-  lineAnnotationsBefore?: LineAnnotation<LAnnotation>[];
+  lineAnnotationsBefore?: DiffLineAnnotation<LAnnotation>[];
   /** Line annotations after the transaction. */
-  lineAnnotationsAfter?: LineAnnotation<LAnnotation>[];
+  lineAnnotationsAfter?: DiffLineAnnotation<LAnnotation>[];
 }
 
 /** Options for the edit stack. */
@@ -84,7 +84,7 @@ export class EditStack<LAnnotation> {
 
   /** Sets the line annotations after the last undo entry. */
   setLastUndoLineAnnotationsAfter(
-    lineAnnotations: LineAnnotation<LAnnotation>[]
+    lineAnnotations: DiffLineAnnotation<LAnnotation>[]
   ): void {
     const lastEntry = this.#undoStack[this.#undoStack.length - 1];
     if (lastEntry !== undefined) {
@@ -133,8 +133,8 @@ export function createEditStackEntry<LAnnotation>(
   versionAfter: number,
   selectionsBefore?: EditorSelection[],
   selectionsAfter?: EditorSelection[],
-  lineAnnotationsBefore?: LineAnnotation<LAnnotation>[],
-  lineAnnotationsAfter?: LineAnnotation<LAnnotation>[]
+  lineAnnotationsBefore?: DiffLineAnnotation<LAnnotation>[],
+  lineAnnotationsAfter?: DiffLineAnnotation<LAnnotation>[]
 ): EditStackEntry<LAnnotation> {
   const forwardEdits = [...resolvedEdits].sort((a, b) => a.start - b.start);
   const inverseEdits: ResolvedTextEdit[] = [];

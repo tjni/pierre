@@ -1,4 +1,4 @@
-import type { DiffsEditorSearchParams, LineAnnotation } from '../types';
+import type { DiffLineAnnotation, DiffsEditorSearchParams } from '../types';
 import {
   coalesceEditStackEntries,
   createEditStackEntry,
@@ -216,8 +216,8 @@ export class TextDocument<LAnnotation> {
     updateHistory = false,
     selectionsBefore?: EditorSelection[],
     selectionsAfter?: EditorSelection[],
-    lineAnnotationsBefore?: LineAnnotation<LAnnotation>[],
-    lineAnnotationsAfter?: LineAnnotation<LAnnotation>[]
+    lineAnnotationsBefore?: DiffLineAnnotation<LAnnotation>[],
+    lineAnnotationsAfter?: DiffLineAnnotation<LAnnotation>[]
   ): TextDocumentChange | undefined {
     if (edits.length === 0) {
       return;
@@ -237,8 +237,8 @@ export class TextDocument<LAnnotation> {
     updateHistory = false,
     selectionsBefore?: EditorSelection[],
     selectionsAfter?: EditorSelection[],
-    lineAnnotationsBefore?: LineAnnotation<LAnnotation>[],
-    lineAnnotationsAfter?: LineAnnotation<LAnnotation>[]
+    lineAnnotationsBefore?: DiffLineAnnotation<LAnnotation>[],
+    lineAnnotationsAfter?: DiffLineAnnotation<LAnnotation>[]
   ): TextDocumentChange | undefined {
     if (edits.length === 0) {
       return;
@@ -280,7 +280,7 @@ export class TextDocument<LAnnotation> {
   }
 
   setLastUndoLineAnnotationsAfter(
-    lineAnnotations: LineAnnotation<LAnnotation>[]
+    lineAnnotations: DiffLineAnnotation<LAnnotation>[]
   ): void {
     this.#editStack.setLastUndoLineAnnotationsAfter(lineAnnotations);
   }
@@ -289,7 +289,7 @@ export class TextDocument<LAnnotation> {
     | [
         change: TextDocumentChange,
         selections?: EditorSelection[],
-        lineAnnotations?: LineAnnotation<LAnnotation>[],
+        lineAnnotations?: DiffLineAnnotation<LAnnotation>[],
       ]
     | undefined {
     const entry = this.#editStack.popUndoToRedo();
@@ -312,7 +312,7 @@ export class TextDocument<LAnnotation> {
     | [
         change: TextDocumentChange,
         selections?: EditorSelection[],
-        lineAnnotations?: LineAnnotation<LAnnotation>[],
+        lineAnnotations?: DiffLineAnnotation<LAnnotation>[],
       ]
     | undefined {
     const entry = this.#editStack.popRedoToUndo();
