@@ -126,7 +126,7 @@ const SITE_ICONS_BY_SITE: Record<ProductId, Metadata['icons']> = {
       { url: '/favicon.svg', type: 'image/svg+xml' },
       { url: '/favicon.png', type: 'image/png' },
     ],
-    apple: '/apple-touch-icon.png',
+    apple: '/diffs-brand/apple-icon.png',
   },
   trees: {
     icon: [
@@ -225,7 +225,7 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: themeBootstrapScript }}
         />
       </head>
-      <body>
+      <body className={SITE}>
         <ScrollbarGutterVariables />
         <WrapperContext>
           <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
