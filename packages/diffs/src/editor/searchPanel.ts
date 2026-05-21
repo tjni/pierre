@@ -14,6 +14,12 @@ export class SearchPanelWidget {
     defaultQuery: string,
     initialMatch: [number, number] | undefined,
     search: (
+      action:
+        | 'findNext'
+        | 'findPrevious'
+        | 'findAll'
+        | 'replace'
+        | 'replaceAll',
       params: DiffsEditorSearchParams,
       retainFocus?: boolean
     ) => [number, number] | undefined,
@@ -24,9 +30,8 @@ export class SearchPanelWidget {
       text: defaultQuery,
       replaceText: '',
       caseSensitive: false,
-      wholeWord: true,
+      wholeWord: false,
       regex: false,
-      action: 'findNext',
     };
 
     const close = () => {
@@ -36,15 +41,102 @@ export class SearchPanelWidget {
 
     const updateAllMatches = () => {
       this.#allMatches =
-        this.#searchParams.text !== ''
-          ? findAll({ ...this.#searchParams, action: 'findAll' })
-          : [];
+        this.#searchParams.text !== '' ? findAll(this.#searchParams) : [];
       this.#container
         .querySelectorAll<HTMLElement>('[data-disabled]')
         .forEach((element) => {
           element.dataset.disabled = String(this.#allMatches.length === 0);
         });
     };
+
+    const updatSearchParam = <K extends keyof DiffsEditorSearchParams>(
+      key: K,
+      value: DiffsEditorSearchParams[K]
+    ) => {
+      this.#searchParams[key] = value;
+      updateAllMatches();
+      this.updateMatches();
+    };
+
+    const settingsSwitch = h('div', {
+      dataset: { icon: 'settings' },
+      title: 'Settings',
+      innerHTML: `<svg width="16" height="16" viewBox="0 0 20 20">
+      <line x1="3" y1="6" x2="10" y2="6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></line>
+      <circle cx="12.5" cy="6" r="2.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></circle>
+      <line x1="15" y1="6" x2="17" y2="6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></line>
+      <line x1="17" y1="14" x2="10" y2="14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></line>
+      <circle cx="7.5" cy="14" r="2.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></circle>
+      <line x1="5" y1="14" x2="3" y2="14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></line>
+    </svg>
+    `,
+      onclick: () => {
+        settingsSwitch.replaceWith(settingsPanel);
+      },
+    });
+    const settingsPanel = h('div', {
+      dataset: 'settings',
+      children: [
+        h('label', {
+          dataset: 'checkbox',
+          children: [
+            h('input', {
+              type: 'checkbox',
+              checked: this.#searchParams.caseSensitive,
+              onchange: (e: Event) => {
+                updatSearchParam(
+                  'caseSensitive',
+                  (e.target as HTMLInputElement).checked
+                );
+              },
+            }),
+            'Match Case',
+          ],
+        }),
+        h('label', {
+          dataset: 'checkbox',
+          children: [
+            h('input', {
+              type: 'checkbox',
+              checked: this.#searchParams.wholeWord,
+              onchange: (e: Event) => {
+                updatSearchParam(
+                  'wholeWord',
+                  (e.target as HTMLInputElement).checked
+                );
+              },
+            }),
+            'Whole Word',
+          ],
+        }),
+        h('label', {
+          dataset: 'checkbox',
+          children: [
+            h('input', {
+              type: 'checkbox',
+              checked: this.#searchParams.regex,
+              onchange: (e: Event) => {
+                updatSearchParam(
+                  'regex',
+                  (e.target as HTMLInputElement).checked
+                );
+              },
+            }),
+            'Regexp',
+          ],
+        }),
+      ],
+      onmouseleave: () => {
+        closeSettingsPanelTimeout = setTimeout(() => {
+          settingsPanel.replaceWith(settingsSwitch);
+        }, 500);
+      },
+      onmouseenter: () => {
+        clearTimeout(closeSettingsPanelTimeout);
+        closeSettingsPanelTimeout = undefined;
+      },
+    });
+    let closeSettingsPanelTimeout: ReturnType<typeof setTimeout> | undefined;
 
     this.#inputElement = h('input', {
       type: 'text',
@@ -54,7 +146,7 @@ export class SearchPanelWidget {
       oninput: (e: Event) => {
         this.#searchParams.text = (e.target as HTMLInputElement).value;
         updateAllMatches();
-        this.updateMatches(this.#allMatches, this.#searchParams.text);
+        this.updateMatches();
       },
       onkeydown: (e: KeyboardEvent) => {
         if (e.key === 'Escape') {
@@ -62,9 +154,8 @@ export class SearchPanelWidget {
           close();
         } else if (e.key === 'Enter') {
           e.preventDefault();
-          this.#searchParams.action = 'findNext';
-          const match = search(this.#searchParams, true);
-          this.updateMatches(this.#allMatches, this.#searchParams.text, match);
+          const match = search('findNext', this.#searchParams, true);
+          this.updateMatches(match);
         } else if (e.key === 'f' && isPrimaryModifier(e)) {
           // prevent the default browser search panel open behavior
           e.preventDefault();
@@ -91,42 +182,31 @@ export class SearchPanelWidget {
             this.#inputElement,
             this.#matchesElement,
             h('div', {
-              dataset: { icon: 'arrow-up', disabled: 'false' },
+              dataset: { icon: 'arrow-up', disabled: 'true' },
               title: 'Previous',
-              innerHTML: `<svg width="16" height="16" viewBox="0 0 20 20">
-                <line x1="10" y1="17" x2="10" y2="3" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></line>
-                <polyline points="15 8 10 3 5 8" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></polyline>
+              innerHTML: `<svg width="14" height="14" viewBox="0 0 20 20">
+                <polyline points="12.5 3.5 6 10 12.5 16.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></polyline>
                 </svg>
               `,
               onclick: () => {
-                this.#searchParams.action = 'findPrevious';
-                const match = search(this.#searchParams);
-                this.updateMatches(
-                  this.#allMatches,
-                  this.#searchParams.text,
-                  match
-                );
+                const match = search('findPrevious', this.#searchParams, true);
+                this.updateMatches(match);
               },
             }),
             h('div', {
-              dataset: { icon: 'arrow-down', disabled: 'false' },
+              dataset: { icon: 'arrow-down', disabled: 'true' },
               title: 'Next',
-              innerHTML: `<svg width="16" height="16" viewBox="0 0 20 20">
-                  <line x1="10" y1="3" x2="10" y2="17" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></line>
-                  <polyline points="5 12 10 17 15 12" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></polyline>
-                  </svg>
-                `,
+              innerHTML: `<svg width="14" height="14" viewBox="0 0 20 20">
+                <polyline points="7.5 16.5 14 10 7.5 3.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></polyline>
+                </svg>
+              `,
               onclick: () => {
-                this.#searchParams.action = 'findNext';
-                const match = search(this.#searchParams);
-                this.updateMatches(
-                  this.#allMatches,
-                  this.#searchParams.text,
-                  match
-                );
+                const match = search('findNext', this.#searchParams, true);
+                this.updateMatches(match);
               },
             }),
             h('div', { dataset: 'spacer' }),
+            settingsSwitch,
             h('div', {
               dataset: { icon: 'close' },
               title: 'Close',
@@ -147,21 +227,16 @@ export class SearchPanelWidget {
     requestAnimationFrame(() => {
       if (initialMatch !== undefined) {
         updateAllMatches();
-        this.updateMatches(
-          this.#allMatches,
-          this.#searchParams.text,
-          initialMatch
-        );
+        this.updateMatches(initialMatch);
       }
       this.#inputElement.select();
     });
   }
 
-  updateMatches(
-    allMatches: [number, number][],
-    searchText: string,
-    currentMatch: [number, number] = allMatches[0]
-  ): void {
+  updateMatches(currentMatch: [number, number] = this.#allMatches[0]): void {
+    const allMatches = this.#allMatches;
+    const searchText = this.#searchParams.text;
+
     if (searchText === '') {
       this.#matchesElement.textContent = '';
       delete this.#matchesElement.dataset.noMatches;

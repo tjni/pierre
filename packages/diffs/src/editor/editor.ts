@@ -1598,8 +1598,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       preElement,
       defaultQuery,
       initialMatch,
-      (params, retainFocus) => this.#search(params, retainFocus),
-      (params) => textDocument.search(params),
+      (kind, params, retainFocus) => this.#search(kind, params, retainFocus),
+      (params) => textDocument.search('findAll', params),
       () => {
         this.#searchPanel = undefined;
         this.#retainSearchPanelFocus = false;
@@ -1607,8 +1607,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     );
     this.#retainSearchPanelFocus = false;
   }
-
   #search(
+    kind: 'findNext' | 'findPrevious' | 'findAll' | 'replace' | 'replaceAll',
     searchParams: DiffsEditorSearchParams,
     retainSearchPanelFocus: boolean = false
   ): [number, number] | undefined {
@@ -1617,20 +1617,15 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     if (textDocument === undefined) {
       return undefined;
     }
-    const matches = textDocument.search(searchParams, primarySelection);
+    const matches = textDocument.search(kind, searchParams, primarySelection);
     if (matches.length === 0) {
       return undefined;
     }
 
     const [startOffset, endOffset] = matches[0];
     const startPosition = textDocument.positionAt(startOffset);
-    const action = searchParams.action;
 
-    if (
-      action === 'findNext' ||
-      action === 'findPrevious' ||
-      action === 'replace'
-    ) {
+    if (kind === 'findNext' || kind === 'findPrevious' || kind === 'replace') {
       const nextSelection = createSelectionFromAnchorAndFocusOffsets(
         textDocument,
         startOffset,
@@ -1645,7 +1640,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         });
       }
       return [startOffset, endOffset];
-    } else if (action === 'findAll' || action === 'replaceAll') {
+    } else if (kind === 'findAll' || kind === 'replaceAll') {
       this.#scrollToLine(startPosition.line);
     }
     return undefined;

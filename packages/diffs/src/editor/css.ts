@@ -136,7 +136,8 @@ export const editorCSS: string = /* CSS */ `
     font-size: 12px;
     font-weight: 500;
     line-height: 20px;
-    padding-inline: 6px;
+    padding-inline-start: 4px;
+    padding-inline-end: 8px;
     color: color-mix(in lab, var(--diffs-fg) 50%, var(--diffs-bg));
   }
   [data-search-panel-row] [data-matches][data-no-matches] {
@@ -151,14 +152,36 @@ export const editorCSS: string = /* CSS */ `
     justify-content: center;
     border-radius: 4px;
     cursor: pointer;
-    transition: background-color 0.1s ease-in-out, color 0.1s ease-in-out, opacity 0.1s ease-in-out;
+    transition: background-color 0.1s ease-in-out, color 0.1s ease-in-out;
   }
   [data-search-panel-row] [data-icon][data-disabled='true'] {
-    opacity: 0.5;
-    pointer-events: none;
+    visibility: hidden;
   }
   [data-search-panel-row] [data-icon]:not([data-icon='search']):hover {
     background-color: color-mix(in lab, var(--diffs-fg) 6%, var(--diffs-bg));
+    color: var(--diffs-fg);
+  }
+  [data-search-panel-row] [data-settings] {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 100%;
+    padding: 0 8px;
+  }
+  [data-search-panel-row] [data-checkbox] {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    font-size: 12px;
+    color: color-mix(in lab, var(--diffs-fg) 60%, var(--diffs-bg));
+  }
+  [data-search-panel-row] [data-checkbox] input {
+    margin: 0;
+  }
+  [data-search-panel-row] [data-checkbox]:hover,
+  [data-search-panel-row] [data-checkbox]:has(input:checked) {
     color: var(--diffs-fg);
   }
   [data-search-panel-row] [data-spacer] {

@@ -238,6 +238,7 @@ export class PieceTable {
   }
 
   search(
+    kind: 'findNext' | 'findPrevious' | 'findAll' | 'replace' | 'replaceAll',
     searchParams: DiffsEditorSearchParams,
     range?: Range
   ): [start: number, end: number][] {
@@ -261,20 +262,19 @@ export class PieceTable {
       searchParams.wholeWord,
       MAX_FIND_MATCHES
     );
-    const action = searchParams.action;
 
-    if (action === 'findAll' || action === 'replaceAll') {
+    if (kind === 'findAll' || kind === 'replaceAll') {
       return matches;
     }
 
     const caretOffset =
       range === undefined
         ? 0
-        : action === 'findPrevious'
+        : kind === 'findPrevious'
           ? this.offsetAt(range?.start)
           : this.offsetAt(range?.end);
 
-    if (action === 'findPrevious') {
+    if (kind === 'findPrevious') {
       const refOffset = getSearchFindPreviousReferenceOffset(range, (p) =>
         this.offsetAt(p)
       );

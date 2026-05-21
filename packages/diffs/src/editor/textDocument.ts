@@ -204,10 +204,11 @@ export class TextDocument<LAnnotation> {
   }
 
   search(
+    kind: 'findNext' | 'findPrevious' | 'findAll' | 'replace' | 'replaceAll',
     searchParams: DiffsEditorSearchParams,
     selection?: Range
   ): [start: number, end: number][] {
-    return this.#pieceTable.search(searchParams, selection);
+    return this.#pieceTable.search(kind, searchParams, selection);
   }
 
   applyEdits(

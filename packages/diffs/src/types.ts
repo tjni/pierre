@@ -925,7 +925,6 @@ export interface DiffsEditorSelection {
 }
 
 export interface DiffsEditorSearchParams {
-  action: 'findNext' | 'findPrevious' | 'findAll' | 'replace' | 'replaceAll';
   text: string;
   replaceText: string;
   caseSensitive: boolean;
