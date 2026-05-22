@@ -131,7 +131,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
   // state
   #shouldIgnoreSelectionChange = false;
-  #isMouseDown = false;
+  #isGutterMouseDown = false;
+  #isContentMouseDown = false;
   #shiftKeyPressed = false;
   #selectionStart: EditorSelection | undefined;
   #reservedSelections?: EditorSelection[];
@@ -187,7 +188,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#initialize();
     if (
       component.options.useTokenTransformer !== true ||
-      Reflect.get(component.options, 'enableGutterUtility') === true
+      Reflect.get(component.options, 'enableGutterUtility') === true ||
+      Reflect.get(component.options, 'enableLineSelection') === true
     ) {
       // Normalize the component options:
       // 1. Ensure the component uses token transformer that adds `data-char` attribute to the tokens
@@ -196,6 +198,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         ...component.options,
         useTokenTransformer: true,
         enableGutterUtility: false,
+        enableLineSelection: false,
       };
       component.setOptions(options);
       component.rerender();
@@ -389,6 +392,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
 
     if (this.#contentElement !== contentEl) {
+      const guttterEl = contentEl.previousElementSibling as HTMLElement | null;
       const targetIsContentElement = (e: Event) => {
         const target = e.composedPath()[0] as HTMLElement;
         if (this.#contentElement === undefined) {
@@ -522,6 +526,62 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           { passive: true }
         ),
       ];
+      if (guttterEl !== null && guttterEl.dataset.gutter !== undefined) {
+        this.#editorEventDisposes.push(
+          addEventListener(guttterEl, 'mousedown', (e) => {
+            const target = e.composedPath()[0] as HTMLElement;
+            const textDocument = this.#textDocument;
+            if (
+              target.dataset.lineNumberContent !== undefined &&
+              textDocument !== undefined
+            ) {
+              const lineNumber = target.textContent.trim();
+              const lineIndex = Number(lineNumber) - 1;
+              const selection: EditorSelection = {
+                start: { line: lineIndex, character: 0 },
+                end: {
+                  line: lineIndex,
+                  character: textDocument.getLineText(lineIndex).length,
+                },
+                direction: DirectionForward,
+              };
+              this.#isGutterMouseDown = true;
+              this.#selectionStart = selection;
+              this.#updateSelections([selection]);
+            }
+          }),
+          addEventListener(guttterEl, 'mousemove', (e) => {
+            const target = e.composedPath()[0] as HTMLElement;
+            const textDocument = this.#textDocument;
+            if (
+              this.#isGutterMouseDown &&
+              target.dataset.lineNumberContent !== undefined &&
+              textDocument !== undefined
+            ) {
+              const lineNumber = target.textContent.trim();
+              const lineIndex = Number(lineNumber) - 1;
+              let selection: EditorSelection = {
+                start: { line: lineIndex, character: 0 },
+                end: {
+                  line: lineIndex,
+                  character: textDocument.getLineText(lineIndex).length,
+                },
+                direction: DirectionForward,
+              };
+              if (this.#selectionStart !== undefined) {
+                selection = createSelectionFrom(
+                  this.#selectionStart,
+                  selection
+                );
+              } else {
+                this.#selectionStart = selection;
+              }
+
+              this.#updateSelections([selection]);
+            }
+          })
+        );
+      }
 
       this.#contentResizeObserver?.disconnect();
       this.#contentResizeObserver = new ResizeObserver(() => {
@@ -668,7 +728,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           }
 
           if (
-            this.#isMouseDown &&
+            this.#isContentMouseDown &&
             this.#shiftKeyPressed &&
             this.#selections !== undefined &&
             this.#selections.length > 0
@@ -684,7 +744,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
             return;
           }
 
-          if (this.#isMouseDown) {
+          if (this.#isContentMouseDown) {
             if (this.#selectionStart !== undefined) {
               selection = createSelectionFrom(this.#selectionStart, selection);
             } else {
@@ -707,7 +767,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
             ]);
           } else {
             if (
-              this.#isMouseDown ||
+              this.#isContentMouseDown ||
               this.#selections === undefined ||
               this.#selections.length === 0 ||
               this.#textDocument === undefined
@@ -762,7 +822,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
             return;
           }
 
-          this.#isMouseDown = true;
+          this.#isContentMouseDown = true;
           this.#selectionStart = undefined;
           if (e.button === 0 && isPrimaryModifier(e)) {
             this.#reservedSelections = this.#selections?.map((selection) => ({
@@ -783,7 +843,13 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         document,
         'mouseup',
         () => {
-          this.#isMouseDown = false;
+          if (this.#isGutterMouseDown) {
+            this.#isGutterMouseDown = false;
+            requestAnimationFrame(() => {
+              this.#contentElement?.focus({ preventScroll: true });
+            });
+          }
+          this.#isContentMouseDown = false;
           this.#shiftKeyPressed = false;
           this.#selectionStart = undefined;
           this.#reservedSelections = undefined;
