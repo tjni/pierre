@@ -649,6 +649,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
     if (this.#scrollingToLine !== undefined) {
       this.#scrollToLine(this.#scrollingToLine, this.#scrollingToLineChar);
+      requestAnimationFrame(() => {
+        this.#contentElement?.focus();
+      });
       this.#scrollingToLine = undefined;
       this.#scrollingToLineChar = undefined;
     }
