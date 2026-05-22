@@ -138,7 +138,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #reservedSelections?: EditorSelection[];
   #selections?: EditorSelection[];
   #scrollingToLine?: number;
-  #scrollingForceFocus?: boolean;
+  #scrollingToLineChar?: number;
   #retainSearchPanelFocus = false;
 
   #emitChange = debounce(
@@ -379,7 +379,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       this.#selectionElements = undefined;
       this.#selections = undefined;
       this.#scrollingToLine = undefined;
-      this.#scrollingForceFocus = undefined;
       this.#reservedSelections = undefined;
       this.#searchPanel?.cleanup();
       this.#searchPanel = undefined;
@@ -584,7 +583,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
 
     if (this.#scrollingToLine !== undefined) {
-      this.#scrollToLine(this.#scrollingToLine, this.#scrollingForceFocus);
+      this.#scrollToLine(this.#scrollingToLine, this.#scrollingToLineChar);
+      this.#scrollingToLine = undefined;
+      this.#scrollingToLineChar = undefined;
     }
 
     if (this.#retainSearchPanelFocus) {
@@ -915,7 +916,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
             [getDocumentBoundarySelection(textDocument, atEnd)],
             true
           );
-          this.#scrollToLine(atEnd ? textDocument.lineCount - 1 : 0, true);
+          this.#scrollToPrimaryCaret();
         }
         break;
 
@@ -932,7 +933,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
               ),
               true
             );
-            this.#scrollToLine(atEnd ? textDocument.lineCount - 1 : 0, true);
+            this.#scrollToPrimaryCaret();
           }
         }
         break;
@@ -1266,37 +1267,48 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   }
 
   #scrollToPrimaryCaret() {
-    if (this.#primaryCaretElement !== undefined) {
-      this.#primaryCaretElement.scrollIntoView({
-        block: 'nearest',
-        inline: 'nearest',
+    const primaryCaretElement = this.#primaryCaretElement;
+    if (primaryCaretElement !== undefined) {
+      // call `scrollIntoView` in next frame to prevent
+      // Safari from scrolling to the start of the line
+      requestAnimationFrame(() => {
+        primaryCaretElement.scrollIntoView({
+          block: 'nearest',
+          inline: 'nearest',
+        });
       });
     } else if (this.#selections !== undefined && this.#selections.length > 0) {
       const primarySelection = this.#selections.at(-1)!;
       const { start, end, direction } = primarySelection;
       const isBackward = direction === DirectionBackward;
-      this.#scrollToLine(isBackward ? start.line : end.line, false);
+      const pos = isBackward ? start : end;
+      this.#scrollToLine(pos.line, pos.character);
     }
   }
 
-  #scrollToLine(line: number, forceFocus = false) {
-    const lineElement = this.#getLineElement(line);
-    if (lineElement !== undefined) {
-      const scrollAndFoucus = () => {
-        lineElement.scrollIntoView({ block: 'center', inline: 'start' });
-        if (forceFocus) {
-          requestAnimationFrame(() => {
-            this.#contentElement?.focus({ preventScroll: true });
-          });
-        }
-      };
-      if (this.#scrollingToLine !== undefined) {
-        this.#scrollingToLine = undefined;
-        this.#scrollingForceFocus = undefined;
-        requestAnimationFrame(scrollAndFoucus);
-      } else {
-        scrollAndFoucus();
-      }
+  get #scrollMarginInline() {
+    const start = this.#getGutterWidth() + this.#charWidth;
+    return start + 'px ' + this.#charWidth + 'px';
+  }
+
+  #scrollToLine(line: number, char = 0) {
+    const virtualCaret = h('div', {
+      style: {
+        position: 'absolute',
+        left: '0',
+        width: '2px',
+        height: this.#lineHeight + 'px',
+        scrollMarginInline: this.#scrollMarginInline,
+      },
+    });
+    if (this.#getLineElement(line) !== undefined) {
+      const [left, wrapLine] = this.#getCharX(line, char);
+      const lineY = this.#getLineY(line) + wrapLine * this.#lineHeight;
+      virtualCaret.style.top = lineY + 'px';
+      virtualCaret.style.left = left + 'px';
+      this.#overlayElement?.appendChild(virtualCaret);
+      virtualCaret.scrollIntoView({ block: 'center', inline: 'nearest' });
+      requestAnimationFrame(() => virtualCaret.remove());
     }
     // if the line is not rendered yet(virtualized),
     // scroll to the approximate line position to trigger
@@ -1307,20 +1319,12 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         (annotation) => annotation.lineNumber < line
       ).length;
       const approximateLineY = (lineAnnotations + line) * this.#lineHeight;
-      const anchor = h('span', {
-        style: {
-          position: 'absolute',
-          top: approximateLineY + 'px',
-          left: '0',
-          width: '1px',
-          height: '1px',
-        },
-      });
-      this.#componentContainer?.shadowRoot?.appendChild(anchor);
+      virtualCaret.style.top = approximateLineY + 'px';
+      this.#componentContainer?.shadowRoot?.appendChild(virtualCaret);
       this.#scrollingToLine = line;
-      this.#scrollingForceFocus = forceFocus;
-      anchor.scrollIntoView({ block: 'center', inline: 'start' });
-      requestAnimationFrame(() => anchor.remove());
+      this.#scrollingToLineChar = char;
+      virtualCaret.scrollIntoView({ block: 'center', inline: 'nearest' });
+      requestAnimationFrame(() => virtualCaret.remove());
     }
   }
 
@@ -1560,6 +1564,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     );
     renderCtx.elements.set(cacheKey, caretEl);
     if (isPrimary) {
+      // add scroll margin to the primary caret element to prevent
+      // the caret from being hidden by the gutter
+      caretEl.style.scrollMarginInline = this.#scrollMarginInline;
       this.#primaryCaretElement = caretEl;
     }
   }
@@ -1725,8 +1732,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
 
     const [startOffset, endOffset] = matches[0];
-    const startPosition = textDocument.positionAt(startOffset);
-
     if (kind === 'findNext' || kind === 'findPrevious' || kind === 'replace') {
       const nextSelection = createSelectionFromAnchorAndFocusOffsets(
         textDocument,
@@ -1743,7 +1748,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       }
       return [startOffset, endOffset];
     } else if (kind === 'findAll' || kind === 'replaceAll') {
-      this.#scrollToLine(startPosition.line);
+      const { line, character } = textDocument.positionAt(startOffset);
+      this.#scrollToLine(line, character);
     }
     return undefined;
   }
