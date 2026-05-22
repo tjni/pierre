@@ -636,8 +636,8 @@ export class File<
             highlighter,
             fileContainer,
             file,
-            lineAnnotations,
-            nextRenderRange
+            this.lineAnnotations,
+            this.renderRange
           );
         });
       }

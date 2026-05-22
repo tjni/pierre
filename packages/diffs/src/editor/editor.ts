@@ -965,7 +965,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
   #rerender(
     change: TextDocumentChange,
-    nextLineAnnotations?: DiffLineAnnotation<LAnnotation>[],
+    newLineAnnotations?: DiffLineAnnotation<LAnnotation>[],
     renderRange = this.#renderRange,
     shouldUpdateBuffer?: boolean
   ) {
@@ -1116,7 +1116,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     if (change.lineDelta !== 0 || isAdvancedMode) {
       component.emitLayoutChange(
         textDocument,
-        nextLineAnnotations,
+        newLineAnnotations,
         shouldUpdateBuffer
       );
     }
@@ -1752,14 +1752,13 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     if (textDocument == null || primarySelection == null) {
       return;
     }
-    const lineAnnotations = this.#lineAnnotations;
     const { nextSelections, change } =
       Array.isArray(text) && text.length === selections.length
         ? applyTextReplaceToSelections<LAnnotation>(
             textDocument,
             selections,
             text,
-            lineAnnotations
+            this.#lineAnnotations
           )
         : applyTextChangeToSelections<LAnnotation>(
             textDocument,
@@ -1769,7 +1768,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
               end: textDocument.offsetAt(primarySelection.end),
               text: Array.isArray(text) ? text.join('\n') : text,
             },
-            lineAnnotations
+            this.#lineAnnotations
           );
 
     if (change !== undefined) {
@@ -1880,7 +1879,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #applyChange(
     change: TextDocumentChange,
     selections?: EditorSelection[],
-    lineAnnotations?: DiffLineAnnotation<LAnnotation>[]
+    newLineAnnotations?: DiffLineAnnotation<LAnnotation>[]
   ) {
     const fileContents = this.#fileContents;
     const textDocument = this.#textDocument;
@@ -1895,7 +1894,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       Object.defineProperty(file, 'contents', {
         get: () => textDocument.getText(),
       });
-      this.#emitChange(file, lineAnnotations ?? this.#lineAnnotations);
+      this.#emitChange(file, newLineAnnotations ?? this.#lineAnnotations);
     }
 
     // Invalidate layout caches touched by the edit.
@@ -1938,7 +1937,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         shouldUpdateBuffer = true;
       }
     }
-    this.#rerender(change, lineAnnotations, renderRange, shouldUpdateBuffer);
+    this.#rerender(change, newLineAnnotations, renderRange, shouldUpdateBuffer);
 
     if (selections !== undefined) {
       // since we prevent the default input event,

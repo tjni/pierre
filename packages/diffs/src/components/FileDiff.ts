@@ -921,8 +921,8 @@ export class FileDiff<
             highlighter,
             fileContainer,
             file,
-            lineAnnotations,
-            nextRenderRange,
+            this.lineAnnotations,
+            this.renderRange,
             'advanced'
           );
         });
