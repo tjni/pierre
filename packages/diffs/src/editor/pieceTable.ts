@@ -1,5 +1,5 @@
-import type { DiffsEditorSearchParams } from '../types';
 import { computeLineOffsets } from '../utils/computeFileOffsets';
+import type { SearchParams } from './searchPanel';
 import type { Position, Range, ResolvedTextEdit } from './textDocument';
 
 const MAX_FIND_MATCHES = 100000;
@@ -239,7 +239,7 @@ export class PieceTable {
 
   search(
     kind: 'findNext' | 'findPrevious' | 'findAll' | 'replace' | 'replaceAll',
-    searchParams: DiffsEditorSearchParams,
+    searchParams: SearchParams,
     range?: Range
   ): [start: number, end: number][] {
     if (searchParams.text.length === 0 || this.#length === 0) {

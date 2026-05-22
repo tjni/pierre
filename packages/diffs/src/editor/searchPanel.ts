@@ -1,12 +1,19 @@
-import type { DiffsEditorSearchParams } from '../types';
 import { isPrimaryModifier } from './platform';
 import { h } from './utils';
+
+export interface SearchParams {
+  text: string;
+  replaceText: string;
+  caseSensitive: boolean;
+  wholeWord: boolean;
+  regex: boolean;
+}
 
 export class SearchPanelWidget {
   #container: HTMLDivElement;
   #inputElement: HTMLInputElement;
   #matchesElement: HTMLDivElement;
-  #searchParams: DiffsEditorSearchParams;
+  #searchParams: SearchParams;
   #allMatches: [number, number][] = [];
 
   constructor(
@@ -20,10 +27,10 @@ export class SearchPanelWidget {
         | 'findAll'
         | 'replace'
         | 'replaceAll',
-      params: DiffsEditorSearchParams,
+      params: SearchParams,
       retainFocus?: boolean
     ) => [number, number] | undefined,
-    findAll: (params: DiffsEditorSearchParams) => [number, number][],
+    findAll: (params: SearchParams) => [number, number][],
     onClose: () => void
   ) {
     this.#searchParams = {
@@ -49,9 +56,9 @@ export class SearchPanelWidget {
         });
     };
 
-    const updatSearchParam = <K extends keyof DiffsEditorSearchParams>(
+    const updatSearchParam = <K extends keyof SearchParams>(
       key: K,
-      value: DiffsEditorSearchParams[K]
+      value: SearchParams[K]
     ) => {
       this.#searchParams[key] = value;
       updateAllMatches();

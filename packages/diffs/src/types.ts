@@ -930,12 +930,3 @@ export interface DiffsEditorSelection {
   };
   direction: 'none' | 'backward' | 'forward';
 }
-
-export interface DiffsEditorSearchParams {
-  text: string;
-  replaceText: string;
-  caseSensitive: boolean;
-  wholeWord: boolean;
-  regex: boolean;
-  // searchInSelection: false,
-}

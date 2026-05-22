@@ -9,7 +9,6 @@ import type {
   DiffLineAnnotation,
   DiffsEditableComponent,
   DiffsEditor,
-  DiffsEditorSearchParams,
   DiffsEditorSelection,
   DiffsHighlighter,
   FileContents,
@@ -25,7 +24,7 @@ import { editorCSS } from './css';
 import { applyDocumentChangeToLineAnnotations } from './lineAnnotations';
 import { isPrimaryModifier } from './platform';
 import { QuickEditWidget } from './quickEdit';
-import { SearchPanelWidget } from './searchPanel';
+import { SearchPanelWidget, type SearchParams } from './searchPanel';
 import type { EditorSelection } from './selection';
 import {
   applyDeleteHardLineForwardToSelections,
@@ -302,7 +301,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#editMode = editMode ?? 'simple';
     this.#wrap = this.#component?.options.overflow === 'wrap';
 
-    if (editMode === 'advanced') {
+    if (editMode === 'advanced' || (lineAnnotations?.length ?? 0) > 0) {
       let startingLine: number | undefined;
       let endLine: number | undefined;
       for (const child of contentEl.children) {
@@ -318,11 +317,15 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           el.contentEditable = 'false';
         }
       }
+      if (endLine !== undefined && renderRange !== undefined) {
+        const { startingLine, totalLines } = renderRange;
+        endLine = Math.max(endLine, startingLine + totalLines);
+      }
       // normalize the render range
       if (startingLine !== undefined && endLine !== undefined) {
         renderRange = {
           startingLine: startingLine,
-          totalLines: endLine - startingLine + 1,
+          totalLines: endLine - startingLine,
           bufferBefore: 0,
           bufferAfter: 0,
         };
@@ -1692,7 +1695,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
   #search(
     kind: 'findNext' | 'findPrevious' | 'findAll' | 'replace' | 'replaceAll',
-    searchParams: DiffsEditorSearchParams,
+    searchParams: SearchParams,
     retainSearchPanelFocus: boolean = false
   ): [number, number] | undefined {
     const primarySelection = this.#selections?.at(-1);

@@ -1,4 +1,4 @@
-import type { DiffLineAnnotation, DiffsEditorSearchParams } from '../types';
+import type { DiffLineAnnotation } from '../types';
 import {
   coalesceEditStackEntries,
   createEditStackEntry,
@@ -6,6 +6,7 @@ import {
   shouldCoalesceEditStackEntry,
 } from './editStack';
 import { PieceTable } from './pieceTable';
+import type { SearchParams } from './searchPanel';
 import { type EditorSelection } from './selection';
 
 /**
@@ -205,7 +206,7 @@ export class TextDocument<LAnnotation> {
 
   search(
     kind: 'findNext' | 'findPrevious' | 'findAll' | 'replace' | 'replaceAll',
-    searchParams: DiffsEditorSearchParams,
+    searchParams: SearchParams,
     selection?: Range
   ): [start: number, end: number][] {
     return this.#pieceTable.search(kind, searchParams, selection);
