@@ -797,11 +797,17 @@ export class VirtualizedFile<
     let centerHunk: number | undefined;
     let overflowCounter: number | undefined;
 
-    for (let lineIndex = 0; lineIndex < lineCount; lineIndex++) {
+    const startingLineIndex = checkpoint?.lineIndex ?? 0;
+    for (
+      let lineIndex = startingLineIndex;
+      lineIndex < lineCount;
+      lineIndex++
+    ) {
       const isAtHunkBoundary = currentLine % hunkLineCount === 0;
+      const currentHunk = Math.floor(currentLine / hunkLineCount);
 
       if (isAtHunkBoundary) {
-        hunkOffsets.push(absoluteLineTop - (fileTop + headerRegion));
+        hunkOffsets[currentHunk] = absoluteLineTop - (fileTop + headerRegion);
 
         if (overflowCounter != null) {
           if (overflowCounter <= 0) {
@@ -812,7 +818,6 @@ export class VirtualizedFile<
       }
 
       const lineHeight = this.getLineHeight(lineIndex, false);
-      const currentHunk = Math.floor(currentLine / hunkLineCount);
 
       // Track visible region
       if (absoluteLineTop > top - lineHeight && absoluteLineTop < bottom) {
