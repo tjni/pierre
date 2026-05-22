@@ -20,7 +20,7 @@ import {
   type EditorCommand,
   resolveEditorCommandFromKeyboardEvent,
 } from './command';
-import { editorCSS } from './css';
+import { editorCSS, editorGlobalCSS } from './css';
 import { applyDocumentChangeToLineAnnotations } from './lineAnnotations';
 import { isPrimaryModifier } from './platform';
 import { QuickEditWidget } from './quickEdit';
@@ -117,9 +117,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #lastCharX?: [line: number, character: number, x: number, wrapLine: number];
 
   // dom
+  #globalStyleElement?: HTMLStyleElement;
+  #styleElement?: HTMLStyleElement;
   #componentContainer?: HTMLElement;
   #contentElement?: HTMLElement;
-  #styleElement?: HTMLStyleElement;
   #overlayElement?: HTMLElement;
   #primaryCaretElement?: HTMLElement;
   #selectionElements?: Map<string, HTMLElement>;
@@ -190,7 +191,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     ) {
       // Normalize the component options:
       // 1. Ensure the component uses token transformer that adds `data-char` attribute to the tokens
-      // 2. Disable the gutter utility to avoid conflicts with the editor
+      // 2. Disable gutter utility to avoid conflicts with the editor
       const options = {
         ...component.options,
         useTokenTransformer: true,
@@ -250,11 +251,13 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#wrapLineOffsetsCache.clear();
     this.#lastCharX = undefined;
 
+    this.#globalStyleElement?.remove();
+    this.#globalStyleElement = undefined;
+    this.#styleElement?.remove();
+    this.#styleElement = undefined;
     this.#componentContainer = undefined;
     this.#contentElement?.removeAttribute('contentEditable');
     this.#contentElement = undefined;
-    this.#styleElement?.remove();
-    this.#styleElement = undefined;
     this.#overlayElement?.remove();
     this.#overlayElement = undefined;
     this.#primaryCaretElement?.remove();
@@ -340,6 +343,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     if (this.#componentContainer !== fileContainer) {
       this.#componentContainer = fileContainer;
       // inject editor css to the file container
+      if (this.#globalStyleElement !== undefined) {
+        fileContainer.appendChild(this.#globalStyleElement);
+      }
       if (this.#styleElement !== undefined) {
         shadowRoot.appendChild(this.#styleElement);
       }
@@ -620,6 +626,11 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#styleElement = h('style', {
       dataset: 'editorCss',
       textContent: editorCSS,
+    });
+
+    this.#globalStyleElement = h('style', {
+      dataset: 'editorGlobalCss',
+      textContent: editorGlobalCSS,
     });
 
     this.#overlayElement = h('div', {

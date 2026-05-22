@@ -188,3 +188,12 @@ export const editorCSS: string = /* CSS */ `
     flex: 1;
   }
 `;
+
+// Safari doesn't support `::selection` for slot elements in ShadowDOM,
+// Add a global style to disable selection for slot elements
+export const editorGlobalCSS = /* CSS */ `
+  [data-annotation-slot] {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+`;
