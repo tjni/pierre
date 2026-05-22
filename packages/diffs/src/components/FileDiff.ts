@@ -981,7 +981,7 @@ export class FileDiff<
           this.options.parseDiffOptions
         );
         this.hunksRenderer.renderDiff(this.fileDiff, this.renderRange);
-      }, 250);
+      }, 500);
     }
   }
 
