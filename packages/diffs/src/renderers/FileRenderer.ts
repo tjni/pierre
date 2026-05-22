@@ -132,9 +132,17 @@ export class FileRenderer<LAnnotation = undefined> {
   }
 
   public recycle(): void {
+    const renderCache = this.renderCache;
     this.renderCache = undefined;
     this.highlighter = undefined;
     this.workerManager?.cleanUpTasks(this);
+    if (
+      renderCache != null &&
+      renderCache.isDirty === true &&
+      renderCache.file.cacheKey != null
+    ) {
+      this.workerManager?.evictFileFromCache(renderCache.file.cacheKey);
+    }
   }
 
   public hydrate(file: FileContents): void {
@@ -215,11 +223,14 @@ export class FileRenderer<LAnnotation = undefined> {
     );
   }
 
-  public emitTokenize(
+  public applyDirtyLines(
     lines: Map<number, Array<HighlightedToken>>,
     themeType: 'dark' | 'light'
   ): void {
-    const result = this.renderCache?.result;
+    if (this.renderCache == null) {
+      return;
+    }
+    const { result } = this.renderCache;
     if (result == null) {
       return;
     }
@@ -256,17 +267,17 @@ export class FileRenderer<LAnnotation = undefined> {
         }),
       };
     }
+    this.renderCache.isDirty = true;
   }
 
-  public emitLineCountChange(
+  public applyLayoutChange(
     textDocument: DiffsTextDocument,
     newLineAnnotations?: LineAnnotation<LAnnotation>[]
   ): void {
-    const renderCache = this.renderCache;
-    if (renderCache == null) {
+    if (this.renderCache == null) {
       return undefined;
     }
-    const result = renderCache.result;
+    const { file, result } = this.renderCache;
     if (result != null && result.code.length !== textDocument.lineCount) {
       for (let i = result.code.length; i < textDocument.lineCount; i++) {
         // prefill lines with plain text content
@@ -295,11 +306,12 @@ export class FileRenderer<LAnnotation = undefined> {
           ],
         });
       }
+      this.renderCache.isDirty = true;
     }
     if (newLineAnnotations != null) {
       this.setLineAnnotations(newLineAnnotations);
     }
-    this.textDoucmentCache.set(renderCache.file, textDocument);
+    this.textDoucmentCache.set(file, textDocument);
   }
 
   public renderFile(

@@ -467,14 +467,14 @@ export class File<
     lines: Map<number, Array<HighlightedToken>>,
     themeType: 'dark' | 'light'
   ): void {
-    this.fileRenderer.emitTokenize(lines, themeType);
+    this.fileRenderer.applyDirtyLines(lines, themeType);
   }
 
   public emitLayoutChange(
     textDocument: DiffsTextDocument,
     newLineAnnotations?: LineAnnotation<LAnnotation>[]
   ): void {
-    this.fileRenderer.emitLineCountChange(textDocument, newLineAnnotations);
+    this.fileRenderer.applyLayoutChange(textDocument, newLineAnnotations);
     if (
       newLineAnnotations != null &&
       newLineAnnotations !== this.lineAnnotations

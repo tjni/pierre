@@ -740,6 +740,7 @@ export interface RenderedFileASTCache {
   options: RenderFileOptions;
   result: ThemedFileResult | undefined;
   renderRange: RenderRange | undefined;
+  isDirty?: boolean;
 }
 
 export interface RenderedDiffASTCache {
