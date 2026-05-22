@@ -130,13 +130,13 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #contentResizeObserver?: ResizeObserver;
 
   // state
-  #ready = Promise.withResolvers<void>();
   #shouldIgnoreSelectionChange = false;
   #isMouseDown = false;
   #shiftKeyPressed = false;
   #selectionStart: EditorSelection | undefined;
   #reservedSelections?: EditorSelection[];
   #selections?: EditorSelection[];
+  #initSelections?: DiffsEditorSelection[];
   #scrollingToLine?: number;
   #scrollingToLineChar?: number;
   #retainSearchPanelFocus = false;
@@ -205,26 +205,28 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   }
 
   setSelections(selections: DiffsEditorSelection[]): void {
-    void this.#ready.promise.then(() => {
-      const textDocument = this.#textDocument;
-      if (textDocument !== undefined) {
-        const resolvedSelections = selections.map<EditorSelection>(
-          (selection) => {
-            const start = textDocument.normalizePosition(selection.start);
-            const end = textDocument.normalizePosition(selection.end);
-            const direction =
-              selection.direction === 'none'
-                ? DirectionNone
-                : selection.direction === 'backward'
-                  ? DirectionBackward
-                  : DirectionForward;
-            return { direction, start, end };
-          }
-        );
-        this.#updateSelections(resolvedSelections, true);
+    const textDocument = this.#textDocument;
+    if (textDocument !== undefined) {
+      const resolvedSelections = selections.map<EditorSelection>(
+        (selection) => {
+          const start = textDocument.normalizePosition(selection.start);
+          const end = textDocument.normalizePosition(selection.end);
+          const direction =
+            selection.direction === 'none'
+              ? DirectionNone
+              : selection.direction === 'backward'
+                ? DirectionBackward
+                : DirectionForward;
+          return { direction, start, end };
+        }
+      );
+      this.#updateSelections(resolvedSelections, true);
+      requestAnimationFrame(() => {
         this.#contentElement?.focus();
-      }
-    });
+      });
+    } else {
+      this.#initSelections = selections;
+    }
   }
 
   cleanUp(): void {
@@ -563,7 +565,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#renderRange = renderRange;
     this.#tokenizer?.prebuildStateStackMap(renderRange);
 
-    if (this.#selections !== undefined && this.#selections.length > 0) {
+    if (this.#initSelections !== undefined) {
+      this.setSelections(this.#initSelections);
+      this.#initSelections = undefined;
+    } else if (this.#selections !== undefined && this.#selections.length > 0) {
       // when re-rendering triggered by viewport scroll,
       // re-render the existing selections
       this.#updateSelections(this.#selections, true);
@@ -602,8 +607,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     ) {
       this.#quickEdit.render(this.#contentElement);
     }
-
-    this.#ready.resolve();
   }
 
   #getTheme(): {
@@ -1210,15 +1213,12 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       this.#renderQuickEditIcon(renderCtx, primarySelection);
     }
     this.#overlayElement?.appendChild(fragment);
-    requestAnimationFrame(() => {
-      this.#selectionElements?.forEach((el) => el.remove());
-      this.#selectionElements?.clear();
-      this.#selectionElements = renderCtx.elements;
-      if (updateWindowSelection) {
-        this.#updateWindowSelection(primarySelection);
-        this.#contentElement?.focus({ preventScroll: true });
-      }
-    });
+    this.#selectionElements?.forEach((el) => el.remove());
+    this.#selectionElements?.clear();
+    this.#selectionElements = renderCtx.elements;
+    if (updateWindowSelection) {
+      this.#updateWindowSelection(primarySelection);
+    }
   }
 
   #updateWindowSelection(primarySelection: EditorSelection) {
