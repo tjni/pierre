@@ -184,12 +184,17 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   edit(component: DiffsEditableComponent<LAnnotation>): () => void {
     this.#component = component;
     this.#initialize();
-    if (component.options.useTokenTransformer !== true) {
-      // Ensure the component uses token transformer that adds
-      // `data-char` attribute to the tokens
+    if (
+      component.options.useTokenTransformer !== true ||
+      Reflect.get(component.options, 'enableGutterUtility') === true
+    ) {
+      // Normalize the component options:
+      // 1. Ensure the component uses token transformer that adds `data-char` attribute to the tokens
+      // 2. Disable the gutter utility to avoid conflicts with the editor
       const options = {
         ...component.options,
         useTokenTransformer: true,
+        enableGutterUtility: false,
       };
       component.setOptions(options);
       component.rerender();
