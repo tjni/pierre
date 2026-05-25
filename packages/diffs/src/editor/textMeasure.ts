@@ -1,5 +1,6 @@
 import { h } from './utils';
 
+/** Check if the text needs DOM text measurement. */
 export function needsDomTextMeasurement(text: string): boolean {
   for (let i = 0; i < text.length; i++) {
     const code = text.charCodeAt(i);
@@ -15,9 +16,7 @@ export function needsDomTextMeasurement(text: string): boolean {
   return false;
 }
 
-// Avoid measuring a caret position inside one visual emoji/grapheme. Browser
-// caret movement can report offsets around UTF-16 surrogate pairs and emoji
-// joiners; measuring a partial sequence gives a replacement-glyph width.
+/** snap the text offset to the Unicode boundary */
 export function snapTextOffsetToUnicodeBoundary(
   text: string,
   offset: number
@@ -30,6 +29,10 @@ export function snapTextOffsetToUnicodeBoundary(
   ) {
     return boundedOffset;
   }
+  // Avoid measuring a caret position inside one visual emoji/grapheme.
+  // Browser caret movement can report offsets around UTF-16 surrogate
+  // pairs and emoji joiners; measuring a partial sequence gives a
+  // replacement-glyph width.
   const segmenter = new Intl.Segmenter(undefined, {
     granularity: 'grapheme',
   });
@@ -46,6 +49,7 @@ export function snapTextOffsetToUnicodeBoundary(
   return boundedOffset;
 }
 
+/** get the offsets of the Unicode grapheme clusters in the text */
 export function getUnicodeMeasurementOffsets(
   text: string
 ): number[] | undefined {
@@ -62,14 +66,11 @@ export function getUnicodeMeasurementOffsets(
   return offsets;
 }
 
+/** measure the width of the text using the DOM */
 export function measureDomTextWidth(
   text: string,
-  containerElement: HTMLElement | undefined,
-  measureCtx: CanvasRenderingContext2D | undefined
+  parentElement: HTMLElement
 ): number {
-  if (containerElement === undefined || measureCtx === undefined) {
-    return measureCtx?.measureText(text).width ?? 0;
-  }
   const measureEl = h(
     'span',
     {
@@ -84,11 +85,26 @@ export function measureDomTextWidth(
       },
       textContent: text,
     },
-    containerElement
+    parentElement
   );
   try {
     return measureEl.getBoundingClientRect().width;
   } finally {
     measureEl.remove();
   }
+}
+
+/** get the number of columns of the ASCII text */
+export function getExpandedAsciiTextColumns(
+  text: string,
+  tabSize: number
+): number {
+  let columns = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text.charCodeAt(i) > 127) {
+      return -1;
+    }
+    columns += text.charCodeAt(i) === /* '\t' */ 9 ? tabSize : 1;
+  }
+  return columns;
 }

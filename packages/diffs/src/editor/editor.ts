@@ -1,4 +1,3 @@
-import { DEFAULT_THEMES } from '../constants';
 import {
   type ResolvedTextEdit,
   TextDocument,
@@ -22,7 +21,7 @@ import {
 } from './command';
 import { editorCSS, editorGlobalCSS } from './css';
 import { applyDocumentChangeToLineAnnotations } from './lineAnnotations';
-import { isPrimaryModifier } from './platform';
+import { isPrimaryModifier, isSafari } from './platform';
 import { QuickEditWidget } from './quickEdit';
 import { SearchPanelWidget, type SearchParams } from './searchPanel';
 import type { EditorSelection } from './selection';
@@ -53,6 +52,7 @@ import {
   selectionIntersects,
 } from './selection';
 import {
+  getExpandedAsciiTextColumns,
   getUnicodeMeasurementOffsets,
   measureDomTextWidth,
   needsDomTextMeasurement,
@@ -93,10 +93,11 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   // event handlers
   #editorEventDisposes?: (() => void)[];
   #globalEventDisposes?: (() => void)[];
+  #mouseUpDisposes?: (() => void)[];
   #removeEditorFromComponent?: () => void;
 
   // metrics
-  #charWidth = -1;
+  #ch = -1;
   #lineHeight = 20;
   #tabSize = 2;
   #wrap = false;
@@ -233,7 +234,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   }
 
   cleanUp(): void {
-    this.#tokenizer?.stopBackgroundTokenize();
+    this.#tokenizer?.cleanUp();
     this.#tokenizer = undefined;
 
     this.#globalEventDisposes?.forEach((dispose) => dispose());
@@ -368,13 +369,11 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       );
       this.#fileContents = fileContents;
       this.#textDocument = textDocument;
-      this.#tokenizer?.stopBackgroundTokenize();
+      this.#tokenizer?.cleanUp();
       this.#tokenizer = new EditorTokenizer({
         highlighter,
-        theme: this.#getTheme(),
         textDocument,
-        tokenizeMaxLineLength:
-          this.#component?.options.tokenizeMaxLineLength ?? 1000,
+        codeOptions: this.#component?.options ?? {},
         onDeferTokenize: this.#onDeferTokenize,
       });
       this.#shouldIgnoreSelectionChange = false;
@@ -420,86 +419,120 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       this.#editorEventDisposes = [
         addEventListener(
           contentEl,
-          'keydown',
+          'pointerdown',
           (e) => {
-            if (e.key === 'Escape') {
-              e.preventDefault();
-              this.#searchPanel?.cleanup();
-              this.#searchPanel = undefined;
-              this.#retainSearchPanelFocus = false;
-              this.#quickEdit?.cleanup();
-              this.#quickEdit = undefined;
+            if (e.pointerType !== 'mouse') {
               return;
             }
-            if (!targetIsContentElement(e)) {
-              return;
+
+            // this is a workaround for the selection rendering glitch
+            // happens when selecting content in shadow DOM on Safari
+            if (
+              isSafari() &&
+              this.#lineAnnotations !== undefined &&
+              this.#lineAnnotations.length > 0
+            ) {
+              this.#mouseUpDisposes = [
+                ...contentEl.querySelectorAll<HTMLElement>(
+                  '[data-line-annotation]'
+                ),
+              ]
+                .map((el) => [
+                  addEventListener(el, 'mouseenter', () => {
+                    this.#shouldIgnoreSelectionChange = true;
+                  }),
+                  addEventListener(el, 'mouseleave', () => {
+                    this.#shouldIgnoreSelectionChange = false;
+                  }),
+                ])
+                .flat();
             }
-            const command = resolveEditorCommandFromKeyboardEvent(e);
-            if (command !== undefined) {
-              e.preventDefault();
-              this.#runCommand(command);
+
+            this.#isContentMouseDown = true;
+            this.#selectionStart = undefined;
+            if (e.button === 0 && isPrimaryModifier(e)) {
+              this.#reservedSelections = this.#selections?.map((selection) => ({
+                ...selection,
+              }));
+            }
+            if (e.shiftKey) {
+              const primarySelection = this.#selections?.at(-1);
+              if (primarySelection !== undefined) {
+                const pos =
+                  primarySelection.direction === DirectionBackward
+                    ? primarySelection.end
+                    : primarySelection.start;
+                this.#updateWindowSelection({
+                  start: pos,
+                  end: pos,
+                  direction: DirectionNone,
+                });
+              }
+              this.#shiftKeyPressed = true;
+            } else {
+              this.#selections = undefined;
             }
           },
-          { passive: false }
+          { passive: true }
         ),
 
-        addEventListener(
-          contentEl,
-          'copy',
-          (e) => {
-            if (!targetIsContentElement(e)) {
-              return;
-            }
+        addEventListener(contentEl, 'keydown', (e) => {
+          if (e.key === 'Escape') {
             e.preventDefault();
-            e.clipboardData?.setData('text', this.#getSelectionText());
-          },
-          { passive: false }
-        ),
+            this.#searchPanel?.cleanup();
+            this.#searchPanel = undefined;
+            this.#retainSearchPanelFocus = false;
+            this.#quickEdit?.cleanup();
+            this.#quickEdit = undefined;
+            return;
+          }
+          if (!targetIsContentElement(e)) {
+            return;
+          }
+          const command = resolveEditorCommandFromKeyboardEvent(e);
+          if (command !== undefined) {
+            e.preventDefault();
+            this.#runCommand(command);
+          }
+        }),
 
-        addEventListener(
-          contentEl,
-          'cut',
-          (e) => {
-            if (!targetIsContentElement(e)) {
-              return;
-            }
-            e.preventDefault();
-            e.clipboardData?.setData('text', this.#getSelectionText());
-            this.#replaceSelectionText('');
-          },
-          { passive: false }
-        ),
+        addEventListener(contentEl, 'copy', (e) => {
+          if (!targetIsContentElement(e)) {
+            return;
+          }
+          e.preventDefault();
+          e.clipboardData?.setData('text', this.#getSelectionText());
+        }),
 
-        addEventListener(
-          contentEl,
-          'paste',
-          (e) => {
-            if (!targetIsContentElement(e)) {
-              return;
-            }
-            e.preventDefault();
-            const text = e.clipboardData?.getData('text');
-            if (text !== undefined) {
-              // TODO(@ije): Add support of multiple selections copy&paste
-              // TODO(@ije): normalize the pasted text with textDocument.EOF
-              this.#replaceSelectionText(text);
-            }
-          },
-          { passive: false }
-        ),
+        addEventListener(contentEl, 'cut', (e) => {
+          if (!targetIsContentElement(e)) {
+            return;
+          }
+          e.preventDefault();
+          e.clipboardData?.setData('text', this.#getSelectionText());
+          this.#replaceSelectionText('');
+        }),
 
-        addEventListener(
-          contentEl,
-          'beforeinput',
-          (e) => {
-            if (!targetIsContentElement(e)) {
-              return;
-            }
-            e.preventDefault();
-            this.#handleInput(e.inputType, e.data);
-          },
-          { passive: false }
-        ),
+        addEventListener(contentEl, 'paste', (e) => {
+          if (!targetIsContentElement(e)) {
+            return;
+          }
+          e.preventDefault();
+          const text = e.clipboardData?.getData('text');
+          if (text !== undefined) {
+            // TODO(@ije): Add support of multiple selections copy&paste
+            // TODO(@ije): normalize the pasted text with textDocument.EOF
+            this.#replaceSelectionText(text);
+          }
+        }),
+
+        addEventListener(contentEl, 'beforeinput', (e) => {
+          if (!targetIsContentElement(e)) {
+            return;
+          }
+          e.preventDefault();
+          this.#handleInput(e.inputType, e.data);
+        }),
 
         addEventListener(
           contentEl,
@@ -528,58 +561,83 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       ];
       if (guttterEl !== null && guttterEl.dataset.gutter !== undefined) {
         this.#editorEventDisposes.push(
-          addEventListener(guttterEl, 'mousedown', (e) => {
-            const target = e.composedPath()[0] as HTMLElement;
-            const textDocument = this.#textDocument;
-            if (
-              target.dataset.lineNumberContent !== undefined &&
-              textDocument !== undefined
-            ) {
-              const lineNumber = target.textContent.trim();
-              const lineIndex = Number(lineNumber) - 1;
-              const selection: EditorSelection = {
-                start: { line: lineIndex, character: 0 },
-                end: {
-                  line: lineIndex,
-                  character: textDocument.getLineText(lineIndex).length,
-                },
-                direction: DirectionForward,
-              };
-              this.#isGutterMouseDown = true;
-              this.#selectionStart = selection;
-              this.#updateSelections([selection]);
-            }
-          }),
-          addEventListener(guttterEl, 'mousemove', (e) => {
-            const target = e.composedPath()[0] as HTMLElement;
-            const textDocument = this.#textDocument;
-            if (
-              this.#isGutterMouseDown &&
-              target.dataset.lineNumberContent !== undefined &&
-              textDocument !== undefined
-            ) {
-              const lineNumber = target.textContent.trim();
-              const lineIndex = Number(lineNumber) - 1;
-              let selection: EditorSelection = {
-                start: { line: lineIndex, character: 0 },
-                end: {
-                  line: lineIndex,
-                  character: textDocument.getLineText(lineIndex).length,
-                },
-                direction: DirectionForward,
-              };
-              if (this.#selectionStart !== undefined) {
-                selection = createSelectionFrom(
-                  this.#selectionStart,
-                  selection
-                );
-              } else {
+          addEventListener(
+            guttterEl,
+            'pointerdown',
+            (e) => {
+              const target = e.composedPath()[0] as HTMLElement;
+              const textDocument = this.#textDocument;
+              if (
+                target.dataset.lineNumberContent !== undefined &&
+                textDocument !== undefined
+              ) {
+                const lineNumber = target.textContent.trim();
+                const lineIndex = Number(lineNumber) - 1;
+                const selection: EditorSelection = {
+                  start: { line: lineIndex, character: 0 },
+                  end: {
+                    line: lineIndex,
+                    character: textDocument.getLineText(lineIndex).length,
+                  },
+                  direction: DirectionForward,
+                };
+                this.#isGutterMouseDown = true;
                 this.#selectionStart = selection;
+                this.#updateSelections([selection], true);
               }
+              this.#mouseUpDisposes = [
+                addEventListener(
+                  document,
+                  'mousemove',
+                  (e) => {
+                    let lineNumber: number | undefined;
+                    const target = e.composedPath()[0] as HTMLElement;
+                    const dataset = target.dataset;
+                    if (dataset.lineNumberContent !== undefined) {
+                      lineNumber = Number(target.textContent.trim());
+                    } else if (dataset.columnNumber !== undefined) {
+                      lineNumber = Number(dataset.columnNumber);
+                    } else if (dataset.line !== undefined) {
+                      lineNumber = Number(dataset.line);
+                    } else if (dataset.char !== undefined) {
+                      const lineElement = target.closest('[data-line]');
+                      if (lineElement instanceof HTMLElement) {
+                        lineNumber = Number(lineElement.dataset.line);
+                      }
+                    }
+                    if (
+                      this.#isGutterMouseDown &&
+                      this.#textDocument !== undefined &&
+                      lineNumber !== undefined
+                    ) {
+                      const lineIndex = Number(lineNumber) - 1;
+                      let selection: EditorSelection = {
+                        start: { line: lineIndex, character: 0 },
+                        end: {
+                          line: lineIndex,
+                          character:
+                            this.#textDocument.getLineText(lineIndex).length,
+                        },
+                        direction: DirectionForward,
+                      };
+                      if (this.#selectionStart !== undefined) {
+                        selection = createSelectionFrom(
+                          this.#selectionStart,
+                          selection
+                        );
+                      } else {
+                        this.#selectionStart = selection;
+                      }
 
-              this.#updateSelections([selection]);
-            }
-          })
+                      this.#updateSelections([selection]);
+                    }
+                  },
+                  { passive: true }
+                ),
+              ];
+            },
+            { passive: true }
+          )
         );
       }
 
@@ -591,10 +649,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       this.#contentResizeObserver.observe(contentEl.parentElement!);
     }
 
-    // measure the font width, line height, and tab size
-    // purge the lineY cache if the line height or line annotations change
-    const style = getComputedStyle(contentEl);
-    const { fontSize, fontFamily, tabSize, lineHeight } = style;
+    // measure the ch(width of '0' character), line height, and tab size
+    const { fontSize, fontFamily, tabSize, lineHeight } =
+      getComputedStyle(contentEl);
     let lineHeighPx = 20;
     if (lineHeight.endsWith('px')) {
       lineHeighPx = Number(lineHeight.slice(0, -2));
@@ -603,7 +660,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         Number(fontSize.slice(0, -2)) * Number(lineHeight.slice(0, -2))
       );
     }
-    this.#lastCharX = undefined;
     this.#lineHeight = lineHeighPx;
     this.#tabSize = Number(tabSize);
     this.#measureCtx ??=
@@ -611,10 +667,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     const font = fontSize + ' ' + fontFamily;
     if (
       this.#measureCtx !== undefined &&
-      (this.#measureCtx.font !== font || this.#charWidth === -1)
+      (this.#measureCtx.font !== font || this.#ch === -1)
     ) {
       this.#measureCtx.font = font;
-      this.#charWidth = round(this.#measureCtx.measureText('0').width);
+      this.#ch = round(this.#measureCtx.measureText('0').width);
     }
 
     this.#lineYCache.clear();
@@ -672,23 +728,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
   }
 
-  #getTheme(): {
-    name: string;
-    type: 'dark' | 'light';
-  } {
-    let { themeType = 'system', theme = DEFAULT_THEMES } =
-      this.#component?.options ?? {};
-    if (themeType === 'system') {
-      themeType = window.matchMedia('(prefers-color-scheme: dark)').matches
-        ? 'dark'
-        : 'light';
-    }
-    return {
-      name: typeof theme === 'string' ? theme : theme[themeType],
-      type: themeType,
-    };
-  }
-
   #initialize(): void {
     this.#styleElement = h('style', {
       dataset: 'editorCss',
@@ -730,6 +769,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
             return;
           }
 
+          // extend selection by shift + click
           if (
             this.#isContentMouseDown &&
             this.#shiftKeyPressed &&
@@ -737,13 +777,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
             this.#selections.length > 0
           ) {
             const primarySelection = this.#selections.at(-1)!;
-            // before shift + click, the window selection has been cleared,
-            // so we need to set the window selection manually with the new
-            // selection
-            this.#updateSelections(
-              [extendSelection(primarySelection, selection)],
-              true
-            );
+            this.#updateSelections([
+              extendSelection(primarySelection, selection),
+            ]);
             return;
           }
 
@@ -776,31 +812,27 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
               this.#textDocument === undefined
             ) {
               this.#updateSelections([selection]);
-            } else {
-              // The selection change is triggered by the keyboard
-              // For example, moving the cursor by arrow keys.
-              if (isCollapsedSelection(selection)) {
-                this.#updateSelections(
-                  mapCursorMove(
-                    this.#textDocument,
-                    this.#selections,
-                    selection.start
-                  )
-                );
-              } else {
-                // shift key is pressed when moving the cursor by
-                const newSelections = mapSelectionShift(
+            }
+            // The selection change is triggered by the keyboard
+            // For example, moving the cursor by arrow keys.
+            else if (isCollapsedSelection(selection)) {
+              this.#updateSelections(
+                mapCursorMove(
                   this.#textDocument,
                   this.#selections,
-                  selection
-                );
-                const hasMergedSelections =
-                  newSelections.length !== this.#selections.length;
-                this.#updateSelections(newSelections, false);
-                if (hasMergedSelections) {
-                  this.#updateWindowSelection(newSelections.at(-1)!);
-                }
-              }
+                  selection.start
+                )
+              );
+            } else {
+              // shift key is pressed when moving the cursor by
+              const newSelections = mapSelectionShift(
+                this.#textDocument,
+                this.#selections,
+                selection
+              );
+              const hasMergedSelections =
+                newSelections.length !== this.#selections.length;
+              this.#updateSelections(newSelections, hasMergedSelections);
             }
           }
         },
@@ -809,43 +841,15 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
       addEventListener(
         document,
-        'mousedown',
+        'pointerup',
         (e) => {
-          const target = e.composedPath()[0];
-          if (target === undefined || !(target instanceof HTMLElement)) {
-            return;
-          }
-          const { tagName, dataset } = target;
-          if (
-            !(
-              (tagName === 'DIV' && dataset.line !== undefined) ||
-              (tagName === 'SPAN' && dataset.char !== undefined)
-            )
-          ) {
+          if (e.pointerType !== 'mouse') {
             return;
           }
 
-          this.#isContentMouseDown = true;
-          this.#selectionStart = undefined;
-          if (e.button === 0 && isPrimaryModifier(e)) {
-            this.#reservedSelections = this.#selections?.map((selection) => ({
-              ...selection,
-            }));
-          }
-          if (e.shiftKey) {
-            window.getSelection()?.empty();
-            this.#shiftKeyPressed = true;
-          } else {
-            this.#selections = undefined;
-          }
-        },
-        { passive: true }
-      ),
+          this.#mouseUpDisposes?.forEach((dispose) => dispose());
+          this.#mouseUpDisposes = undefined;
 
-      addEventListener(
-        document,
-        'mouseup',
-        () => {
           if (this.#isGutterMouseDown) {
             this.#isGutterMouseDown = false;
             requestAnimationFrame(() => {
@@ -1286,7 +1290,11 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#selectionElements?.clear();
     this.#selectionElements = renderCtx.elements;
     if (updateWindowSelection) {
+      this.#shouldIgnoreSelectionChange = true;
       this.#updateWindowSelection(primarySelection);
+      setTimeout(() => {
+        this.#shouldIgnoreSelectionChange = false;
+      }, 0);
     }
   }
 
@@ -1320,7 +1328,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         anchorOffset,
       ];
     }
-    this.#shouldIgnoreSelectionChange = true;
     try {
       winSelection.setBaseAndExtent(
         anchorNode,
@@ -1328,10 +1335,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         focusNode,
         clampDomOffset(focusNode, focusOffset)
       );
-    } finally {
-      setTimeout(() => {
-        this.#shouldIgnoreSelectionChange = false;
-      }, 0);
+    } catch (err) {
+      console.error('[diffs/editor] failed to update window selection:', err);
     }
   }
 
@@ -1356,8 +1361,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   }
 
   get #scrollMarginInline() {
-    const start = this.#getGutterWidth() + this.#charWidth;
-    return start + 'px ' + this.#charWidth + 'px';
+    const start = this.#getGutterWidth() + this.#ch;
+    return start + 'px ' + this.#ch + 'px';
   }
 
   #scrollToLine(line: number, char = 0) {
@@ -1419,7 +1424,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       const endChar = ln === end.line ? end.character : lineText.length;
 
       if (this.#wrap) {
-        const paddingInline = this.#charWidth; // 1ch, align to diff css: padding-inline: 1ch
+        const paddingInline = this.#ch; // 1ch, align to diff css: padding-inline: 1ch
         const contentWidth = this.#getContentWidth();
         const textWidth = 2 * paddingInline + this.#measureTextWidth(lineText);
         if (textWidth > contentWidth) {
@@ -1439,8 +1444,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       let left = 0;
       let width = 0;
       if (startChar === endChar && startChar === 0) {
-        left = this.#getGutterWidth() + this.#charWidth; // gutter width + inline padding (1ch)
-        width = ln === end.line ? 0 : this.#charWidth;
+        left = this.#getGutterWidth() + this.#ch; // gutter width + inline padding (1ch)
+        width = ln === end.line ? 0 : this.#ch;
       } else {
         left = this.#getCharX(ln, startChar)[0];
         width =
@@ -1515,23 +1520,27 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         segmentWidth = line === selection.end.line ? 0 : paddingInline;
       } else {
         const prefixInSegment = lineText.slice(segmentStart, wrapStartChar);
-        const prefixAsciiWidth =
-          this.#getExpandedAsciiTextWidth(prefixInSegment);
+        const prefixAsciiColumns = getExpandedAsciiTextColumns(
+          prefixInSegment,
+          this.#tabSize
+        );
         segmentLeft =
           offsetLeft +
-          (prefixAsciiWidth !== -1
-            ? prefixAsciiWidth
+          (prefixAsciiColumns !== -1
+            ? prefixAsciiColumns * this.#ch
             : this.#measureTextWidth(prefixInSegment));
 
         if (wrapStartChar === wrapEndChar) {
           segmentWidth = 0;
         } else {
           const selectionInSegment = lineText.slice(wrapStartChar, wrapEndChar);
-          const selectionAsciiWidth =
-            this.#getExpandedAsciiTextWidth(selectionInSegment);
+          const selectionAsciiWidth = getExpandedAsciiTextColumns(
+            selectionInSegment,
+            this.#tabSize
+          );
           segmentWidth =
             selectionAsciiWidth !== -1
-              ? selectionAsciiWidth
+              ? selectionAsciiWidth * this.#ch
               : this.#measureTextWidth(selectionInSegment);
         }
       }
@@ -1574,7 +1583,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       selection.end.line === ln ||
       (startChar === endChar && ln !== selection.start.line)
         ? 0
-        : this.#charWidth;
+        : this.#ch;
     const css = `width:${width + spacing}px;transform:translateY(${this.#getLineY(ln) + wrapLine * this.#lineHeight}px) translateX(${left}px);`;
     const cacheKey = 'selection-range-' + css;
     const selectionEls = this.#selectionElements;
@@ -1946,14 +1955,12 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   }
 
   #applyResolvedTextEdit(edit: ResolvedTextEdit) {
-    const selections = this.#selections;
-    const textDocument = this.#textDocument;
-    if (selections === undefined || textDocument === undefined) {
+    if (this.#selections === undefined || this.#textDocument === undefined) {
       return;
     }
     const { nextSelections, change } = applyTextChangeToSelections<LAnnotation>(
-      textDocument,
-      selections,
+      this.#textDocument,
+      this.#selections,
       edit,
       this.#lineAnnotations,
       this.#tabSize
@@ -1980,12 +1987,19 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       textDocument !== undefined &&
       onChange !== undefined
     ) {
-      const { name, lang, cacheKey } = fileContents;
-      const file = { name, lang, cacheKey } as FileContents;
+      const { contents: _, ...file } = fileContents;
+      let contents: string | undefined;
+      // tradeoff: using a getter for the 'contents' property
+      // to avoid pre-concactinating the text content of the textDocument
+      // but the user may get newer contents when accessing
+      // the 'contents' property
       Object.defineProperty(file, 'contents', {
-        get: () => textDocument.getText(),
+        get: () => (contents ??= textDocument.getText()),
       });
-      this.#emitChange(file, newLineAnnotations ?? this.#lineAnnotations);
+      this.#emitChange(
+        file as FileContents,
+        newLineAnnotations ?? this.#lineAnnotations
+      );
     }
 
     // Invalidate layout caches touched by the edit.
@@ -2167,7 +2181,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
 
     const lineText = this.#textDocument?.getLineText(line);
-    const offsetLeft = this.#getGutterWidth() + this.#charWidth; // gutter width + inline padding (1ch)
+    const offsetLeft = this.#getGutterWidth() + this.#ch; // gutter width + inline padding (1ch)
     if (lineText === undefined || lineText.length === 0 || char <= 0) {
       return [offsetLeft, 0];
     }
@@ -2177,12 +2191,15 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       Math.min(char, lineText.length)
     );
     const textBeforeCharacter = lineText.slice(0, boundedCharacter);
-    const asciiWidth = this.#getExpandedAsciiTextWidth(textBeforeCharacter);
+    const asciiColumns = getExpandedAsciiTextColumns(
+      textBeforeCharacter,
+      this.#tabSize
+    );
 
     let left = 0;
     let wrapLine = 0;
-    if (asciiWidth !== -1) {
-      left = offsetLeft + asciiWidth;
+    if (asciiColumns !== -1) {
+      left = offsetLeft + asciiColumns * this.#ch;
     } else {
       left = offsetLeft + this.#measureTextWidth(textBeforeCharacter);
     }
@@ -2201,10 +2218,12 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
               segmentStart,
               boundedCharacter
             );
-            const segmentAsciiWidth =
-              this.#getExpandedAsciiTextWidth(prefixInSegment);
-            if (segmentAsciiWidth !== -1) {
-              left = offsetLeft + segmentAsciiWidth;
+            const segmentAsciiColumns = getExpandedAsciiTextColumns(
+              prefixInSegment,
+              this.#tabSize
+            );
+            if (segmentAsciiColumns !== -1) {
+              left = offsetLeft + segmentAsciiColumns * this.#ch;
             } else {
               left = offsetLeft + this.#measureTextWidth(prefixInSegment);
             }
@@ -2226,31 +2245,19 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     return [left, wrapLine];
   }
 
-  #getExpandedAsciiTextWidth(text: string) {
-    let columns = 0;
-    for (let i = 0; i < text.length; i++) {
-      if (text.charCodeAt(i) > 127) {
-        return -1;
-      }
-      columns += text.charCodeAt(i) === /* '\t' */ 9 ? this.#tabSize : 1;
-    }
-    return columns * this.#charWidth;
-  }
-
   #measureTextWidth(text: string) {
-    if (this.#measureCtx === undefined) {
-      throw new Error('Measure context not initialized');
-    }
     const textWithExpandedTabs = text.replaceAll(
       '\t',
       ' '.repeat(this.#tabSize)
     );
-    if (needsDomTextMeasurement(textWithExpandedTabs)) {
-      return measureDomTextWidth(
-        textWithExpandedTabs,
-        this.#contentElement,
-        this.#measureCtx
-      );
+    if (
+      needsDomTextMeasurement(textWithExpandedTabs) &&
+      this.#contentElement !== undefined
+    ) {
+      return measureDomTextWidth(textWithExpandedTabs, this.#contentElement);
+    }
+    if (this.#measureCtx === undefined) {
+      throw new Error('Measure context not initialized');
     }
     return this.#measureCtx.measureText(textWithExpandedTabs).width;
   }
@@ -2342,9 +2349,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
   // Check whether a line is visible in the currently rendered line window.
   #isLineVisible(line: number): boolean {
-    if (this.#editMode === 'advanced') {
-      return true;
-    }
     const lineCount = this.#textDocument?.lineCount ?? 0;
     if (line < 0 || line >= lineCount) {
       return false;

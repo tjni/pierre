@@ -1,5 +1,6 @@
 let _isMacLike: boolean | undefined = undefined;
 let _isLinux: boolean | undefined = undefined;
+let _isSafari: boolean | undefined = undefined;
 
 export function isMacLike(): boolean {
   return (
@@ -10,6 +11,12 @@ export function isMacLike(): boolean {
 
 export function isLinux(): boolean {
   return _isLinux ?? (_isLinux = /Linux/i.test(getPlatform()));
+}
+
+export function isSafari(): boolean {
+  return (_isSafari ??=
+    ('safari' in window && 'pushNotification' in (window as any).safari) ||
+    /^((?!chrome|android).)*safari/i.test(navigator.userAgent));
 }
 
 export function isPrimaryModifier(

@@ -519,7 +519,7 @@ export class VirtualizedFile<
     forceRender = false,
     ...props
   }: FileRenderProps<LAnnotation>): boolean {
-    const fileChanged = this.file == null || !areFilesEqual(this.file, file);
+    const didFileChange = this.file == null || !areFilesEqual(this.file, file);
     const { forceRenderOverride, isSetup } = this;
     this.forceRenderOverride = undefined;
 
@@ -555,7 +555,7 @@ export class VirtualizedFile<
       this.isSetup = true;
     } else {
       this.top ??= this.getVirtualizedTop();
-      if (fileChanged) {
+      if (didFileChange) {
         this.getSimpleVirtualizer()?.markDOMDirty();
         this.resetLayoutCache(true);
       }
