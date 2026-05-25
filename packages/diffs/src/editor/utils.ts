@@ -55,8 +55,14 @@ export function addEventListener<K extends keyof WindowEventMap>(
   listener: (this: Window, evt: WindowEventMap[K]) => void,
   options?: AddEventListenerOptions
 ): () => void;
+export function addEventListener<K extends keyof MediaQueryListEventMap>(
+  el: MediaQueryList,
+  event: K,
+  listener: (this: MediaQueryList, evt: MediaQueryListEventMap[K]) => void,
+  options?: AddEventListenerOptions
+): () => void;
 export function addEventListener(
-  el: HTMLElement | Document | ShadowRoot | Window,
+  el: HTMLElement | Document | ShadowRoot | Window | MediaQueryList,
   event: string,
   listener: EventListener,
   options?: AddEventListenerOptions

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { IGrammar, StateStack } from 'shiki/textmate';
 
 import {
@@ -9,6 +9,40 @@ import { EditorTokenizer } from '../src/editor/tokenzier';
 import type { DiffsHighlighter, HighlightedToken } from '../src/types';
 
 describe('EditorTokenizer', () => {
+  const originalWindowDescriptor = Object.getOwnPropertyDescriptor(
+    globalThis,
+    'window'
+  );
+  const originalMatchMedia = globalThis.window?.matchMedia;
+
+  beforeAll(() => {
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: globalThis,
+      writable: true,
+    });
+    globalThis.window.matchMedia = (() =>
+      ({
+        addEventListener: () => {},
+        addListener: () => {},
+        dispatchEvent: () => false,
+        matches: false,
+        media: '(prefers-color-scheme: dark)',
+        onchange: null,
+        removeEventListener: () => {},
+        removeListener: () => {},
+      }) as MediaQueryList) as typeof window.matchMedia;
+  });
+
+  afterAll(() => {
+    if (originalWindowDescriptor === undefined) {
+      Reflect.deleteProperty(globalThis, 'window');
+    } else {
+      Object.defineProperty(globalThis, 'window', originalWindowDescriptor);
+      globalThis.window.matchMedia = originalMatchMedia;
+    }
+  });
+
   test('limits foreground tokenization to the render range after prepending lines', () => {
     const originalAddEventListener = globalThis.addEventListener;
     const originalPostMessage = globalThis.postMessage;
@@ -45,7 +79,7 @@ describe('EditorTokenizer', () => {
           setTheme: () => ({ colorMap: [''] }),
         } as unknown as DiffsHighlighter,
         textDocument,
-        theme: { name: 'test-theme', type: 'dark' },
+        codeOptions: { theme: 'test-theme', themeType: 'dark' },
         onDeferTokenize: () => {},
       });
       const renderRange = {
@@ -117,7 +151,7 @@ describe('EditorTokenizer', () => {
         setTheme: () => ({ colorMap: [''] }),
       } as unknown as DiffsHighlighter,
       textDocument,
-      theme: { name: 'test-theme', type: 'dark' },
+      codeOptions: { theme: 'test-theme', themeType: 'dark' },
       onDeferTokenize: (lines) => {
         offscreenUpdates.push(lines);
       },
@@ -211,7 +245,7 @@ describe('EditorTokenizer', () => {
           setTheme: () => ({ colorMap: [''] }),
         } as unknown as DiffsHighlighter,
         textDocument,
-        theme: { name: 'test-theme', type: 'dark' },
+        codeOptions: { theme: 'test-theme', themeType: 'dark' },
         onDeferTokenize: (lines) => {
           deferredUpdates.push(lines);
         },
@@ -287,7 +321,7 @@ describe('EditorTokenizer', () => {
         setTheme: () => ({ colorMap: [''] }),
       } as unknown as DiffsHighlighter,
       textDocument,
-      theme: { name: 'test-theme', type: 'dark' },
+      codeOptions: { theme: 'test-theme', themeType: 'dark' },
       onDeferTokenize: (lines) => {
         offscreenUpdates.push(lines);
       },
@@ -380,7 +414,7 @@ describe('EditorTokenizer', () => {
           setTheme: () => ({ colorMap: [''] }),
         } as unknown as DiffsHighlighter,
         textDocument,
-        theme: { name: 'test-theme', type: 'dark' },
+        codeOptions: { theme: 'test-theme', themeType: 'dark' },
         onDeferTokenize: () => {},
       });
       const change: TextDocumentChange = {
@@ -443,7 +477,7 @@ describe('EditorTokenizer', () => {
         setTheme: () => ({ colorMap: [''] }),
       } as unknown as DiffsHighlighter,
       textDocument,
-      theme: { name: 'test-theme', type: 'dark' },
+      codeOptions: { theme: 'test-theme', themeType: 'dark' },
       onDeferTokenize: () => {},
     });
 

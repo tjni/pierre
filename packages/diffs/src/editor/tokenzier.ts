@@ -5,15 +5,21 @@ import {
   type StateStack,
 } from 'shiki/textmate';
 
-import type { DiffsHighlighter, HighlightedToken, RenderRange } from '../types';
+import { DEFAULT_THEMES } from '../constants';
+import type {
+  BaseCodeOptions,
+  DiffsHighlighter,
+  HighlightedToken,
+  RenderRange,
+  ThemesType,
+} from '../types';
 import type { TextDocument, TextDocumentChange } from './textDocument';
-import { debounce, h } from './utils';
+import { addEventListener, debounce, h } from './utils';
 
 export interface EditorTokenizerProps {
   highlighter: DiffsHighlighter;
-  theme: { name: string; type: 'dark' | 'light' };
   textDocument: TextDocument<unknown>;
-  tokenizeMaxLineLength?: number;
+  codeOptions: BaseCodeOptions;
   onDeferTokenize: (
     lines: Map<number, Array<HighlightedToken>>,
     themeType: 'dark' | 'light'
@@ -26,14 +32,16 @@ export class EditorTokenizer {
 
   #highlighter: DiffsHighlighter;
   #grammar: IGrammar | undefined;
+  #mediaQueryList: MediaQueryList;
   #themeType: 'light' | 'dark';
   #colorMap: string[];
   #textDocument: TextDocument<unknown>;
   #tokenizeMaxLineLength: number;
   #onDeferTokenize: EditorTokenizerProps['onDeferTokenize'];
+  #editorEventDisposes?: (() => void)[];
 
   // state
-  #stateStackMap: StateStack[] = [INITIAL];
+  #stateStackCache: StateStack[] = [INITIAL];
   #lastLine: number = -1;
   #isStopped: boolean = true;
   #backgroundJobId: number = 0;
@@ -63,26 +71,87 @@ export class EditorTokenizer {
     }
   };
 
+  // By default, diffs components support dual themes, but the tokenizer only renders
+  // the preferred theme. When the theme type is changed, the tokenizer will re-tokenize the document.
+  #onThemeChange = (themeName: string, themeType: 'light' | 'dark') => {
+    this.#themeType = themeType;
+    this.#colorMap = this.#highlighter.setTheme(themeName).colorMap;
+    this.stopBackgroundTokenize();
+    this.#stateStackCache = [INITIAL];
+    if (this.#grammar !== undefined && this.#textDocument.lineCount > 0) {
+      this.#scheduleBackgroundTokenize(0);
+    }
+    console.debug('[diffs/editor] themeType changed to', this.#themeType);
+  };
+
+  #watchColorScheme = (theme: ThemesType) => {
+    const observer = new MutationObserver((mutations) => {
+      for (const { type, attributeName } of mutations) {
+        if (
+          type === 'attributes' &&
+          attributeName !== null &&
+          (attributeName === 'class' || attributeName.startsWith('data-'))
+        ) {
+          const themeType =
+            getComputedStyle(document.body).colorScheme === 'dark'
+              ? 'dark'
+              : 'light';
+          this.#onThemeChange(theme[themeType], themeType);
+          break;
+        }
+      }
+    });
+    observer.observe(document.documentElement, { attributes: true });
+    observer.observe(document.body, { attributes: true });
+    this.#editorEventDisposes = [
+      addEventListener(this.#mediaQueryList, 'change', (e) => {
+        const themeType = e.matches ? 'dark' : 'light';
+        this.#onThemeChange(theme[themeType], themeType);
+      }),
+      () => observer.disconnect(),
+    ];
+  };
+
+  get themeType(): 'light' | 'dark' {
+    return this.#themeType;
+  }
+
   constructor({
+    codeOptions,
     highlighter,
-    theme,
     textDocument,
-    tokenizeMaxLineLength,
-    onDeferTokenize: onTokenize,
+    onDeferTokenize,
   }: EditorTokenizerProps) {
+    const {
+      themeType = 'system',
+      theme = DEFAULT_THEMES,
+      tokenizeMaxLineLength = 1000,
+    } = codeOptions;
+    this.#mediaQueryList = window.matchMedia('(prefers-color-scheme: dark)');
+    if (themeType === 'system') {
+      this.#themeType = this.#mediaQueryList.matches ? 'dark' : 'light';
+    } else {
+      this.#themeType = themeType;
+    }
+    if (typeof theme !== 'string') {
+      this.#watchColorScheme(theme);
+    }
+    const themeName =
+      typeof theme === 'string' ? theme : theme[this.#themeType];
+    this.#colorMap = highlighter.setTheme(themeName).colorMap;
     this.#highlighter = highlighter;
-    this.#themeType = theme.type;
-    this.#colorMap = highlighter.setTheme(theme.name).colorMap;
     this.#textDocument = textDocument;
-    this.#tokenizeMaxLineLength = tokenizeMaxLineLength ?? 1000;
-    this.#onDeferTokenize = onTokenize;
+    this.#tokenizeMaxLineLength = tokenizeMaxLineLength;
+    this.#onDeferTokenize = onDeferTokenize;
     if (highlighter.getLoadedLanguages().includes(textDocument.languageId)) {
       this.#grammar = highlighter.getLanguage(textDocument.languageId);
     }
   }
 
-  get themeType(): 'light' | 'dark' {
-    return this.#themeType;
+  cleanUp(): void {
+    this.stopBackgroundTokenize();
+    this.#editorEventDisposes?.forEach((dispose) => dispose());
+    this.#editorEventDisposes = undefined;
   }
 
   // to use `tokenize`, call `prebuildStateStackMap` first to prebuild
@@ -136,8 +205,8 @@ export class EditorTokenizer {
     if (canReuseCachedStates) {
       this.#buildStateStackMap(dirtyStart);
     } else {
-      this.#stateStackMap.length = Math.min(
-        this.#stateStackMap.length,
+      this.#stateStackCache.length = Math.min(
+        this.#stateStackCache.length,
         dirtyStart + 1
       );
       if (renderRange === undefined || dirtyStart >= viewStart) {
@@ -152,7 +221,7 @@ export class EditorTokenizer {
     let line = canReuseCachedStates
       ? changedLineRanges[changedRangeIndex][0]
       : viewStart;
-    let state = this.#stateStackMap[line] ?? INITIAL;
+    let state = this.#stateStackCache[line] ?? INITIAL;
     let settled = false;
     const dirtyLines: Map<number, Array<HighlightedToken>> = new Map();
     const offscreenDirtyLines:
@@ -167,23 +236,23 @@ export class EditorTokenizer {
       if (offscreenEnd > dirtyStart) {
         this.#buildStateStackMap(offscreenEnd);
         let offscreenLine = dirtyStart;
-        let offscreenState = this.#stateStackMap[offscreenLine] ?? INITIAL;
+        let offscreenState = this.#stateStackCache[offscreenLine] ?? INITIAL;
         for (; offscreenLine < offscreenEnd; offscreenLine++) {
           const resolved = this.#tokenizeLineAt(offscreenLine, offscreenState);
           offscreenState = resolved.state;
           offscreenDirtyLines.set(offscreenLine, resolved.resolvedTokens);
         }
         if (canCacheTokenizedStates) {
-          this.#stateStackMap[offscreenEnd] = offscreenState;
+          this.#stateStackCache[offscreenEnd] = offscreenState;
         }
       }
     }
     for (; line < renderRangeEndLine; ) {
       const previousNextState = canReuseCachedStates
-        ? this.#stateStackMap[line + 1]
+        ? this.#stateStackCache[line + 1]
         : undefined;
       if (canCacheTokenizedStates) {
-        this.#stateStackMap[line] = state;
+        this.#stateStackCache[line] = state;
       }
 
       const { resolvedTokens, state: nextState } = this.#tokenizeLineAt(
@@ -199,7 +268,7 @@ export class EditorTokenizer {
       }
 
       if (canCacheTokenizedStates) {
-        this.#stateStackMap[line + 1] = state;
+        this.#stateStackCache[line + 1] = state;
       }
       settled =
         line >= currentChangedRangeEnd &&
@@ -217,12 +286,12 @@ export class EditorTokenizer {
           backgroundChangedRangeIndex = changedRangeIndex;
           break;
         }
-        if (this.#stateStackMap[nextRange[0]] === undefined) {
+        if (this.#stateStackCache[nextRange[0]] === undefined) {
           currentChangedRangeEnd = nextRange[1];
           line++;
         } else {
           line = nextRange[0];
-          state = this.#stateStackMap[line] ?? state;
+          state = this.#stateStackCache[line] ?? state;
           currentChangedRangeEnd = nextRange[1];
         }
         settled = false;
@@ -233,9 +302,9 @@ export class EditorTokenizer {
 
     if (canCacheTokenizedStates) {
       if (line < renderRangeEndLine) {
-        this.#stateStackMap[line + 1] = state;
+        this.#stateStackCache[line + 1] = state;
       } else {
-        this.#stateStackMap[line] = state;
+        this.#stateStackCache[line] = state;
       }
     }
 
@@ -294,13 +363,13 @@ export class EditorTokenizer {
     this.#backgroundChangedLineRanges = changedLineRanges;
     this.#backgroundChangedRangeIndex = changedRangeIndex;
 
-    addEventListener('message', this.#onMessage);
+    globalThis.addEventListener('message', this.#onMessage);
     this.#postBackgroundTokenizeMessage(jobId);
   }
 
   #postBackgroundTokenizeMessage(jobId: number): void {
     // use `postMessage` instead of `setTimeout(fn, 0)` to avoid 4ms delay
-    postMessage({ type: 'tokenize', jobId });
+    globalThis.postMessage({ type: 'tokenize', jobId });
   }
 
   #tokenizeLineAt(
@@ -339,15 +408,15 @@ export class EditorTokenizer {
       this.#textDocument.lineCount
     );
     if (
-      this.#stateStackMap.length > boundedEndAt ||
+      this.#stateStackCache.length > boundedEndAt ||
       this.#grammar === undefined
     ) {
       return;
     }
-    let line = this.#stateStackMap.length - 1;
-    let state = this.#stateStackMap[line] ?? INITIAL;
+    let line = this.#stateStackCache.length - 1;
+    let state = this.#stateStackCache[line] ?? INITIAL;
     for (; line < boundedEndAt; line++) {
-      this.#stateStackMap[line] = state;
+      this.#stateStackCache[line] = state;
       const lineText = this.#textDocument.getLineText(line);
       if (
         lineText.length <= this.#tokenizeMaxLineLength &&
@@ -361,7 +430,7 @@ export class EditorTokenizer {
         ).ruleStack;
       }
     }
-    this.#stateStackMap[line] = state;
+    this.#stateStackCache[line] = state;
   }
 
   #backgroundTokenize(jobId: number) {
@@ -379,16 +448,16 @@ export class EditorTokenizer {
     const changedLineRanges = this.#backgroundChangedLineRanges;
 
     let line = this.#lastLine;
-    let state = this.#stateStackMap[line] ?? INITIAL;
+    let state = this.#stateStackCache[line] ?? INITIAL;
     let settled = false;
     let changedRangeIndex = this.#backgroundChangedRangeIndex;
     let currentChangedRangeEnd = changedLineRanges?.[changedRangeIndex]?.[1];
     for (; line < totalLines; ) {
-      this.#stateStackMap[line] = state;
+      this.#stateStackCache[line] = state;
 
       const previousNextState =
         currentChangedRangeEnd !== undefined
-          ? this.#stateStackMap[line + 1]
+          ? this.#stateStackCache[line + 1]
           : undefined;
       const lineText = this.#textDocument.getLineText(line);
       if (lineText.length > this.#tokenizeMaxLineLength) {
@@ -410,7 +479,7 @@ export class EditorTokenizer {
         state = ret.ruleStack;
       }
 
-      this.#stateStackMap[line + 1] = state;
+      this.#stateStackCache[line + 1] = state;
       settled =
         currentChangedRangeEnd !== undefined &&
         line >= currentChangedRangeEnd &&
@@ -424,11 +493,11 @@ export class EditorTokenizer {
           break;
         }
         currentChangedRangeEnd = nextRange[1];
-        if (this.#stateStackMap[nextRange[0]] === undefined) {
+        if (this.#stateStackCache[nextRange[0]] === undefined) {
           settled = false;
         } else {
           line = nextRange[0];
-          state = this.#stateStackMap[line] ?? state;
+          state = this.#stateStackCache[line] ?? state;
           settled = false;
           continue;
         }
