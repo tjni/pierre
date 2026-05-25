@@ -1,4 +1,5 @@
 import type { DiffLineAnnotation } from '../types';
+import { applyDocumentChangeToLineAnnotations } from './lineAnnotations';
 import type {
   Position,
   Range,
@@ -337,13 +338,7 @@ export function applyTextChangeToSelections<LAnnotation>(
   }
   finalizeMergedGroup();
 
-  const change = textDocument.applyResolvedEdits(
-    edits,
-    true,
-    selections,
-    undefined,
-    lineAnnotations
-  );
+  const change = textDocument.applyResolvedEdits(edits, true, selections);
   const nextSelections = createSelectionsFromOffsetPairs(
     textDocument,
     nextSelectionOffsets.map((offsets) => {
@@ -354,7 +349,19 @@ export function applyTextChangeToSelections<LAnnotation>(
     })
   );
   textDocument.setLastUndoSelectionsAfter(nextSelections);
-
+  if (change !== undefined && lineAnnotations !== undefined) {
+    const nextLineAnnotations =
+      applyDocumentChangeToLineAnnotations<LAnnotation>(
+        change,
+        lineAnnotations
+      );
+    if (nextLineAnnotations !== undefined) {
+      textDocument.setLastUndoLineAnnotations(
+        lineAnnotations,
+        nextLineAnnotations
+      );
+    }
+  }
   return { nextSelections, change };
 }
 
@@ -443,18 +450,25 @@ export function applyTextReplaceToSelections<LAnnotation>(
     offsetDelta += newText.length - (entry.end - entry.start);
   }
 
-  const change = textDocument.applyResolvedEdits(
-    edits,
-    true,
-    selections,
-    undefined,
-    lineAnnotations
-  );
+  const change = textDocument.applyResolvedEdits(edits, true, selections);
   const nextSelections = createSelectionsFromOffsetPairs(
     textDocument,
     nextSelectionOffsets.map((offset) => [offset, offset])
   );
   textDocument.setLastUndoSelectionsAfter(nextSelections);
+  if (change !== undefined && lineAnnotations !== undefined) {
+    const nextLineAnnotations =
+      applyDocumentChangeToLineAnnotations<LAnnotation>(
+        change,
+        lineAnnotations
+      );
+    if (nextLineAnnotations !== undefined) {
+      textDocument.setLastUndoLineAnnotations(
+        lineAnnotations,
+        nextLineAnnotations
+      );
+    }
+  }
   return { nextSelections, change };
 }
 
@@ -539,18 +553,25 @@ export function applyTransposeToSelections<LAnnotation>(
     }
   }
 
-  const change = textDocument.applyResolvedEdits(
-    edits,
-    true,
-    selections,
-    undefined,
-    lineAnnotations
-  );
+  const change = textDocument.applyResolvedEdits(edits, true, selections);
   const nextSelections = createSelectionsFromOffsetPairs(
     textDocument,
     nextOffsetPairs
   );
   textDocument.setLastUndoSelectionsAfter(nextSelections);
+  if (change !== undefined && lineAnnotations !== undefined) {
+    const nextLineAnnotations =
+      applyDocumentChangeToLineAnnotations<LAnnotation>(
+        change,
+        lineAnnotations
+      );
+    if (nextLineAnnotations !== undefined) {
+      textDocument.setLastUndoLineAnnotations(
+        lineAnnotations,
+        nextLineAnnotations
+      );
+    }
+  }
   return { nextSelections, change };
 }
 

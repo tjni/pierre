@@ -66,14 +66,14 @@ export class QuickEditWidget {
     this.#handleDomResize = handleDomResize;
   }
 
-  render(contentElement: HTMLElement): void {
+  render(containerElement: HTMLElement): void {
     const gutterElement =
-      contentElement.previousElementSibling as HTMLElement | null;
+      containerElement.previousElementSibling as HTMLElement | null;
     const lineNumber = this.line + 1;
     const gutterLineElement = gutterElement?.querySelector<HTMLElement>(
       `[data-column-number="${lineNumber}"]`
     );
-    const contentLineElement = contentElement.querySelector<HTMLElement>(
+    const contentLineElement = containerElement.querySelector<HTMLElement>(
       `[data-line="${lineNumber}"]`
     );
     if (
@@ -84,7 +84,8 @@ export class QuickEditWidget {
       gutterLineElement.after(this.#gutterBuffer);
       contentLineElement.after(this.#quickEditContainer);
       gutterElement.style.gridRow = 'span ' + gutterElement.children.length;
-      contentElement.style.gridRow = 'span ' + contentElement.children.length;
+      containerElement.style.gridRow =
+        'span ' + containerElement.children.length;
       this.#handleDomResize();
     }
   }

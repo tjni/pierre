@@ -54,7 +54,7 @@ describe('applyDocumentChangeToLineAnnotations', () => {
     ]);
   });
 
-  test('returns null when annotations do not move', () => {
+  test('returns undefined when annotations do not move', () => {
     const textDocument = new TextDocument('inmemory://1', 'one\ntwo\nthree');
     const annotations: DiffLineAnnotation<string>[] = [
       { side: 'additions', lineNumber: 1, metadata: 'one' },
@@ -70,8 +70,8 @@ describe('applyDocumentChangeToLineAnnotations', () => {
       },
     ]);
 
-    expect(applyDocumentChangeToLineAnnotations(change!, annotations)).toEqual(
-      annotations
-    );
+    expect(
+      applyDocumentChangeToLineAnnotations(change!, annotations)
+    ).toBeUndefined();
   });
 });

@@ -216,9 +216,7 @@ export class TextDocument<LAnnotation> {
     edits: TextEdit[],
     updateHistory = false,
     selectionsBefore?: EditorSelection[],
-    selectionsAfter?: EditorSelection[],
-    lineAnnotationsBefore?: DiffLineAnnotation<LAnnotation>[],
-    lineAnnotationsAfter?: DiffLineAnnotation<LAnnotation>[]
+    selectionsAfter?: EditorSelection[]
   ): TextDocumentChange | undefined {
     if (edits.length === 0) {
       return;
@@ -227,9 +225,7 @@ export class TextDocument<LAnnotation> {
       edits.map((edit) => this.#resolveEdit(edit)),
       updateHistory,
       selectionsBefore,
-      selectionsAfter,
-      lineAnnotationsBefore,
-      lineAnnotationsAfter
+      selectionsAfter
     );
   }
 
@@ -237,9 +233,7 @@ export class TextDocument<LAnnotation> {
     edits: ResolvedTextEdit[],
     updateHistory = false,
     selectionsBefore?: EditorSelection[],
-    selectionsAfter?: EditorSelection[],
-    lineAnnotationsBefore?: DiffLineAnnotation<LAnnotation>[],
-    lineAnnotationsAfter?: DiffLineAnnotation<LAnnotation>[]
+    selectionsAfter?: EditorSelection[]
   ): TextDocumentChange | undefined {
     if (edits.length === 0) {
       return;
@@ -252,9 +246,7 @@ export class TextDocument<LAnnotation> {
         this.#version,
         this.#version + 1,
         selectionsBefore,
-        selectionsAfter,
-        lineAnnotationsBefore,
-        lineAnnotationsAfter
+        selectionsAfter
       );
       const previousEntry = this.#editStack.peekUndo();
       const change = this.#applyResolvedEditsToBuffer(resolvedEdits);
@@ -280,10 +272,14 @@ export class TextDocument<LAnnotation> {
     this.#editStack.setLastUndoSelectionsAfter(selections);
   }
 
-  setLastUndoLineAnnotationsAfter(
-    lineAnnotations: DiffLineAnnotation<LAnnotation>[]
+  setLastUndoLineAnnotations(
+    lineAnnotationsBefore: DiffLineAnnotation<LAnnotation>[],
+    lineAnnotationsAfter: DiffLineAnnotation<LAnnotation>[]
   ): void {
-    this.#editStack.setLastUndoLineAnnotationsAfter(lineAnnotations);
+    this.#editStack.setLastUndoLineAnnotations(
+      lineAnnotationsBefore,
+      lineAnnotationsAfter
+    );
   }
 
   undo():

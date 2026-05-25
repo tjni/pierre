@@ -83,12 +83,14 @@ export class EditStack<LAnnotation> {
   }
 
   /** Sets the line annotations after the last undo entry. */
-  setLastUndoLineAnnotationsAfter(
-    lineAnnotations: DiffLineAnnotation<LAnnotation>[]
+  setLastUndoLineAnnotations(
+    lineAnnotationsBefore: DiffLineAnnotation<LAnnotation>[],
+    lineAnnotationsAfter: DiffLineAnnotation<LAnnotation>[]
   ): void {
     const lastEntry = this.#undoStack[this.#undoStack.length - 1];
     if (lastEntry !== undefined) {
-      lastEntry.lineAnnotationsAfter = lineAnnotations.slice();
+      lastEntry.lineAnnotationsBefore = lineAnnotationsBefore.slice();
+      lastEntry.lineAnnotationsAfter = lineAnnotationsAfter.slice();
     }
   }
 

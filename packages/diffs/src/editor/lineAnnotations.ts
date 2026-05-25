@@ -4,9 +4,9 @@ import type { TextDocumentChange } from './textDocument';
 export function applyDocumentChangeToLineAnnotations<T>(
   change: TextDocumentChange,
   lineAnnotations: DiffLineAnnotation<T>[]
-): DiffLineAnnotation<T>[] {
+): DiffLineAnnotation<T>[] | undefined {
   if (change.lineDelta === 0) {
-    return lineAnnotations;
+    return undefined;
   }
 
   const startCharacter = change.startCharacter;
@@ -50,5 +50,5 @@ export function applyDocumentChangeToLineAnnotations<T>(
     nextLineAnnotations.push(annotation);
   }
 
-  return changed ? nextLineAnnotations : lineAnnotations;
+  return changed ? nextLineAnnotations : undefined;
 }

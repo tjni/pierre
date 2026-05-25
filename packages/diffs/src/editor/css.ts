@@ -26,7 +26,7 @@ export const editorCSS: string = /* CSS */ `
   }
   @media (min-width: 480px) {
     [data-content] {
-      caret-color: ${DEBUG_SELECTION ? 'blue' : 'transparent'};
+      caret-color: ${DEBUG_SELECTION ? 'red' : 'transparent'};
     }
     [data-quick-edit] {
       caret-color: currentColor;
@@ -48,9 +48,9 @@ export const editorCSS: string = /* CSS */ `
   [data-caret] {
     width: 2px;
     height: 1lh;
-    background-color: var(--diffs-bg-caret);
+    background-color: ${DEBUG_SELECTION ? 'transparent' : 'var(--diffs-bg-caret)'};
     animation: blinking 1.2s infinite;
-    animation-delay: 0.6s;
+    animation-delay: 0.8s;
     visibility: hidden;
   }
   [data-selection-range] {

@@ -975,35 +975,6 @@ describe('TextDocument', () => {
     expect(d.redo()?.[1]).toEqual(selectionsAfter);
   });
 
-  test('undo and redo return stored line annotations', () => {
-    const d = doc('abc');
-    const annotationsBefore: DiffLineAnnotation<string>[] = [
-      { side: 'additions', lineNumber: 1, metadata: 'bookmark-a' },
-    ];
-    const annotationsAfter: DiffLineAnnotation<string>[] = [
-      { side: 'additions', lineNumber: 1, metadata: 'bookmark-b' },
-    ];
-    d.applyEdits(
-      [
-        {
-          range: {
-            start: { line: 0, character: 1 },
-            end: { line: 0, character: 1 },
-          },
-          newText: 'x',
-        },
-      ],
-      true,
-      [caret(0, 1)],
-      [caret(0, 2)],
-      annotationsBefore,
-      annotationsAfter
-    );
-
-    expect(d.undo()?.[2]).toEqual(annotationsBefore);
-    expect(d.redo()?.[2]).toEqual(annotationsAfter);
-  });
-
   test('undo omits line annotations tuple entry when none were recorded', () => {
     const d = doc('abc');
     d.applyEdits(
@@ -1042,15 +1013,13 @@ describe('TextDocument', () => {
       ],
       true,
       [caret(0, 1)],
-      undefined,
-      annotationsBefore,
       undefined
     );
 
     const patchedAfter: DiffLineAnnotation<string>[] = [
       { side: 'additions', lineNumber: 1, metadata: 'patched-after-edit' },
     ];
-    d.setLastUndoLineAnnotationsAfter(patchedAfter);
+    d.setLastUndoLineAnnotations(annotationsBefore, patchedAfter);
 
     d.undo();
     expect(d.redo()?.[2]).toEqual(patchedAfter);

@@ -1,4 +1,5 @@
 import {
+  type Position,
   type ResolvedTextEdit,
   TextDocument,
   type TextDocumentChange,
@@ -224,12 +225,24 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           return { direction, start, end };
         }
       );
-      this.#updateSelections(resolvedSelections, true);
-      requestAnimationFrame(() => {
-        this.#contentElement?.focus();
-      });
+      this.#updateSelections(resolvedSelections);
+      this.#scrollToPrimaryCaret();
     } else {
       this.#initSelections = selections;
+    }
+  }
+
+  focus(options?: FocusOptions): void {
+    const preventScroll = options?.preventScroll ?? false;
+    const primarySelection = this.#selections?.at(-1);
+    if (primarySelection !== undefined) {
+      const pos =
+        primarySelection.direction === DirectionBackward
+          ? primarySelection.end
+          : primarySelection.start;
+      this.#focus(pos, preventScroll);
+    } else {
+      this.#focus(undefined, preventScroll);
     }
   }
 
@@ -394,14 +407,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       const guttterEl = contentEl.previousElementSibling as HTMLElement | null;
       const targetIsContentElement = (e: Event) => {
         const target = e.composedPath()[0] as HTMLElement;
-        if (this.#contentElement === undefined) {
-          return false;
-        }
-        return (
-          target === this.#contentElement ||
-          this.#contentElement.contains(target)
-        );
+        return target === contentEl || contentEl.contains(target);
       };
+
       this.#contentElement = extend(contentEl, {
         contentEditable: 'true',
         role: 'textbox',
@@ -462,6 +470,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
                   primarySelection.direction === DirectionBackward
                     ? primarySelection.end
                     : primarySelection.start;
+                // fix the window selection for shift mode
                 this.#updateWindowSelection({
                   start: pos,
                   end: pos,
@@ -583,7 +592,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
                 };
                 this.#isGutterMouseDown = true;
                 this.#selectionStart = selection;
-                this.#updateSelections([selection], true);
+                this.#updateSelections([selection]);
               }
               this.#mouseUpDisposes = [
                 addEventListener(
@@ -640,11 +649,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           )
         );
       }
-
       this.#contentResizeObserver?.disconnect();
-      this.#contentResizeObserver = new ResizeObserver(() => {
-        this.#handleLayoutResize();
-      });
+      this.#contentResizeObserver = new ResizeObserver(() =>
+        this.#handleLayoutResize()
+      );
       this.#contentResizeObserver.observe(contentEl);
       this.#contentResizeObserver.observe(contentEl.parentElement!);
     }
@@ -683,11 +691,12 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
     if (this.#initSelections !== undefined) {
       this.setSelections(this.#initSelections);
+      this.#scrollToPrimaryCaret();
       this.#initSelections = undefined;
     } else if (this.#selections !== undefined && this.#selections.length > 0) {
       // when re-rendering triggered by viewport scroll,
       // re-render the existing selections
-      this.#updateSelections(this.#selections, true);
+      this.#updateSelections(this.#selections);
     }
 
     if (renderRange !== undefined) {
@@ -705,11 +714,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
     if (this.#scrollingToLine !== undefined) {
       this.#scrollToLine(this.#scrollingToLine, this.#scrollingToLineChar);
-      requestAnimationFrame(() => {
-        this.#contentElement?.focus();
-      });
       this.#scrollingToLine = undefined;
       this.#scrollingToLineChar = undefined;
+    } else if (this.#selections !== undefined && this.#selections.length > 0) {
+      this.focus({ preventScroll: true });
     }
 
     if (this.#retainSearchPanelFocus) {
@@ -830,9 +838,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
                 this.#selections,
                 selection
               );
-              const hasMergedSelections =
-                newSelections.length !== this.#selections.length;
-              this.#updateSelections(newSelections, hasMergedSelections);
+              this.#updateSelections(newSelections);
             }
           }
         },
@@ -852,9 +858,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
           if (this.#isGutterMouseDown) {
             this.#isGutterMouseDown = false;
-            requestAnimationFrame(() => {
-              this.#contentElement?.focus({ preventScroll: true });
-            });
+            this.#focus();
           }
           this.#isContentMouseDown = false;
           this.#shiftKeyPressed = false;
@@ -928,11 +932,11 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
             }
             return sel;
           });
-          this.#updateSelections(expanded, true);
+          this.#updateSelections(expanded);
         } else {
           const nextMatch = findNexMatch(textDocument, selections);
           if (nextMatch !== undefined) {
-            this.#updateSelections(nextMatch, true);
+            this.#updateSelections(nextMatch);
             this.#scrollToPrimaryCaret();
           }
         }
@@ -988,10 +992,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       case 'moveCursorToDocEnd':
         {
           const atEnd = command === 'moveCursorToDocEnd';
-          this.#updateSelections(
-            [getDocumentBoundarySelection(textDocument, atEnd)],
-            true
-          );
+          this.#updateSelections([
+            getDocumentBoundarySelection(textDocument, atEnd),
+          ]);
           this.#scrollToPrimaryCaret();
         }
         break;
@@ -1001,13 +1004,12 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         {
           const atEnd = command === 'expandSelectionDocEnd';
           const selections = this.#selections;
-          if (selections !== undefined && selections.length > 0) {
+          if (selections !== undefined) {
             this.#updateSelections(
               extendSelections(
                 selections,
                 getDocumentBoundarySelection(textDocument, atEnd)
-              ),
-              true
+              )
             );
             this.#scrollToPrimaryCaret();
           }
@@ -1052,7 +1054,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       this.#wrapLineOffsetsCache.clear();
     }
     if (this.#selections !== undefined) {
-      this.#updateSelections(this.#selections, true);
+      this.#updateSelections(this.#selections);
     }
   }
 
@@ -1238,6 +1240,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       case 'deleteContentForward':
         this.#deleteSelectionText(true);
         break;
+      // TODO(@ije): Safari and Firefox does not support this input type
+      // use command instead
       case 'deleteHardLineForward':
         this.#deleteHardLineForward();
         break;
@@ -1250,10 +1254,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
   }
 
-  #updateSelections(
-    selections: EditorSelection[],
-    updateWindowSelection = false
-  ) {
+  #updateSelections(selections: EditorSelection[]) {
     const primarySelection = selections.at(-1);
     if (primarySelection === undefined) {
       return;
@@ -1289,21 +1290,15 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#selectionElements?.forEach((el) => el.remove());
     this.#selectionElements?.clear();
     this.#selectionElements = renderCtx.elements;
-    if (updateWindowSelection) {
-      this.#shouldIgnoreSelectionChange = true;
-      this.#updateWindowSelection(primarySelection);
-      setTimeout(() => {
-        this.#shouldIgnoreSelectionChange = false;
-      }, 0);
-    }
   }
 
-  #updateWindowSelection(primarySelection: EditorSelection) {
+  // update window native selection to match the selection
+  #updateWindowSelection(selection: EditorSelection) {
     const winSelection = window.getSelection();
     if (winSelection === null) {
       return;
     }
-    let { start, end, direction } = primarySelection;
+    let { start, end, direction } = selection;
     if (comparePosition(start, end) > 0) {
       [start, end] = [end, start];
     }
@@ -1340,22 +1335,46 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
   }
 
-  #scrollToPrimaryCaret() {
-    const primaryCaretElement = this.#primaryCaretElement;
-    if (primaryCaretElement !== undefined) {
-      // call `scrollIntoView` in next frame to prevent
-      // Safari from scrolling to the start of the line
+  #focus(position?: Position, preventScroll = true) {
+    if (position !== undefined) {
+      this.#shouldIgnoreSelectionChange = true;
+      this.#updateWindowSelection({
+        start: position,
+        end: position,
+        direction: DirectionNone,
+      });
       requestAnimationFrame(() => {
-        primaryCaretElement.scrollIntoView({
-          block: 'nearest',
-          inline: 'nearest',
+        this.#contentElement?.focus({ preventScroll });
+        requestAnimationFrame(() => {
+          this.#shouldIgnoreSelectionChange = false;
         });
       });
-    } else if (this.#selections !== undefined && this.#selections.length > 0) {
-      const primarySelection = this.#selections.at(-1)!;
+    } else {
+      requestAnimationFrame(() => {
+        this.#contentElement?.focus({ preventScroll });
+      });
+    }
+  }
+
+  #scrollToPrimaryCaret() {
+    const primaryCaretElement = this.#primaryCaretElement;
+    const primarySelection = this.#selections?.at(-1);
+    if (primarySelection === undefined) {
+      return;
+    }
+    if (primaryCaretElement !== undefined) {
+      primaryCaretElement.scrollIntoView({
+        block: 'nearest',
+        inline: 'nearest',
+      });
+      this.#focus(
+        primarySelection.direction === DirectionBackward
+          ? primarySelection.end
+          : primarySelection.start
+      );
+    } else {
       const { start, end, direction } = primarySelection;
-      const isBackward = direction === DirectionBackward;
-      const pos = isBackward ? start : end;
+      const pos = direction === DirectionBackward ? start : end;
       this.#scrollToLine(pos.line, pos.character);
     }
   }
@@ -1382,6 +1401,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       virtualCaret.style.left = left + 'px';
       this.#overlayElement?.appendChild(virtualCaret);
       virtualCaret.scrollIntoView({ block: 'center', inline: 'nearest' });
+      this.#focus({ line, character: char });
       requestAnimationFrame(() => virtualCaret.remove());
     }
     // if the line is not rendered yet(virtualized),
@@ -1685,7 +1705,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           // clear the line y cache and rerender the selection
           this.#lineYCache.clear();
           if (this.#selections !== undefined) {
-            this.#updateSelections(this.#selections, true);
+            this.#updateSelections(this.#selections);
+            this.#scrollToPrimaryCaret();
           }
         };
 
@@ -1767,7 +1788,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         primarySelection
       );
       const nextSelections = [...selections.slice(0, primaryIndex), expanded];
-      this.#updateSelections(nextSelections, true);
+      this.#updateSelections(nextSelections);
       primarySelection = expanded;
     }
     const selectionText = textDocument.getText(primarySelection);
@@ -1816,7 +1837,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         startOffset,
         endOffset
       );
-      this.#updateSelections([nextSelection], true);
+      this.#updateSelections([nextSelection]);
       this.#scrollToPrimaryCaret();
       if (retainSearchPanelFocus) {
         this.#retainSearchPanelFocus = true;
@@ -2045,11 +2066,22 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#rerender(change, newLineAnnotations, renderRange, shouldUpdateBuffer);
 
     if (selections !== undefined) {
-      // since we prevent the default input event,
-      // we need to update the window selection manually
-      // and scroll to the primary caret to mock the input behavior.
-      this.#updateSelections(selections, true);
-      this.#scrollToPrimaryCaret();
+      // re-render selection range and caret, focus to the editor to update the window selection,
+      // and scroll to the crate to mock the 'contenteditable' behavior
+      this.#updateSelections(selections);
+      this.focus({ preventScroll: true });
+      requestAnimationFrame(() => {
+        if (this.#primaryCaretElement !== undefined) {
+          this.#primaryCaretElement.scrollIntoView({
+            block: 'nearest',
+            inline: 'nearest',
+          });
+        } else if (selections.length > 0) {
+          const { start, end, direction } = selections.at(-1)!;
+          const pos = direction === DirectionBackward ? start : end;
+          this.#scrollToLine(pos.line, pos.character);
+        }
+      });
     }
   }
 
@@ -2062,8 +2094,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           change,
           this.#lineAnnotations
         );
-      if (nextLineAnnotations !== this.#lineAnnotations) {
-        this.#textDocument?.setLastUndoLineAnnotationsAfter(
+      if (nextLineAnnotations !== undefined) {
+        this.#textDocument?.setLastUndoLineAnnotations(
+          this.#lineAnnotations,
           nextLineAnnotations
         );
         return nextLineAnnotations;
