@@ -115,12 +115,20 @@ export function useFileInstance<LAnnotation>({
 
   useIsometricEffect(() => {
     if (instanceRef.current == null) return;
-    const newOptions = mergeFileOptions({
+    let newOptions = mergeFileOptions({
       controlledSelection,
       hasCustomHeader,
       hasGutterRenderUtility,
       options,
     });
+    if (editor !== undefined) {
+      newOptions = {
+        ...newOptions,
+        useTokenTransformer: true,
+        enableGutterUtility: false,
+        enableLineSelection: false,
+      };
+    }
     const forceRender = !areOptionsEqual(
       instanceRef.current.options,
       newOptions

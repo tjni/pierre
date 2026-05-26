@@ -114,12 +114,20 @@ export function useFileDiffInstance<LAnnotation>({
   useIsometricEffect(() => {
     const { current: instance } = instanceRef;
     if (instance == null) return;
-    const newOptions = mergeFileDiffOptions({
+    let newOptions = mergeFileDiffOptions({
       controlledSelection,
       hasCustomHeader,
       hasGutterRenderUtility,
       options,
     });
+    if (editor !== undefined) {
+      newOptions = {
+        ...newOptions,
+        useTokenTransformer: true,
+        enableGutterUtility: false,
+        enableLineSelection: false,
+      };
+    }
     const forceRender = !areOptionsEqual(instance.options, newOptions);
     instance.setOptions(newOptions);
     void instance.render({
