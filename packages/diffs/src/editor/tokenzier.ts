@@ -81,7 +81,6 @@ export class EditorTokenizer {
     if (this.#grammar !== undefined && this.#textDocument.lineCount > 0) {
       this.#scheduleBackgroundTokenize(0);
     }
-    console.debug('[diffs/editor] themeType changed to', this.#themeType);
   };
 
   #watchColorScheme = (theme: ThemesType) => {
@@ -164,7 +163,6 @@ export class EditorTokenizer {
       throw new Error('Grammar not loaded');
     }
 
-    const t = performance.now();
     const { lineCount } = this.#textDocument;
     const { startingLine = 0, totalLines = Infinity } = renderRange ?? {};
     const renderRangeEndLine =
@@ -331,10 +329,6 @@ export class EditorTokenizer {
         changedRangeIndex
       );
     }
-
-    console.debug(
-      `[diffs/editor] tokenize time: ${Math.round((performance.now() - t) * 1000) / 1000}ms`
-    );
 
     return dirtyLines;
   }

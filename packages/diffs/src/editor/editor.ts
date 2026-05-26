@@ -59,7 +59,7 @@ import {
   snapTextOffsetToUnicodeBoundary,
 } from './textMeasure';
 import { EditorTokenizer, renderLineTokens } from './tokenzier';
-import { addEventListener, debounce, extend, h } from './utils';
+import { addEventListener, debounce, extend, h, round } from './utils';
 
 function clampDomOffset(node: Node, offset: number): number {
   if (node.nodeType === 3) {
@@ -1042,9 +1042,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     // cancel existing background tokenzier task
     tokenizer.stopBackgroundTokenize();
 
+    const t = performance.now();
     const isAdvancedMode = this.#editMode === 'advanced';
     const dirtyLines = tokenizer.tokenize(change, renderRange);
-    const t = performance.now();
+    const t2 = performance.now();
 
     if (dirtyLines.size > 0) {
       const children = contentEl.children;
@@ -1173,11 +1174,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
 
     console.debug(
-      `[diffs/editor] re-render time: ${Math.round((performance.now() - t) * 1000) / 1000}ms`,
-      'lastChange:',
-      change,
-      'dirtyLines:',
-      dirtyLines.size
+      `[diffs/editor] re-render in: ${round(performance.now() - t2)}ms,`,
+      `tokenize in: ${round(t2 - t)}ms (${dirtyLines.size} dirty lines)`
     );
   }
 
@@ -1335,9 +1333,13 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
   }
 
-  get #scrollMarginInline() {
+  // add scroll margin to the primary caret element to prevent
+  // the caret from being hidden by the gutter
+  #getScrollMargin() {
+    const top = this.#searchPanel !== undefined ? 48 : 0;
     const start = this.#getGutterWidth() + this.#metrics.ch;
-    return start + 'px ' + this.#metrics.ch + 'px';
+    const end = this.#metrics.ch;
+    return `${top}px ${end}px 0 ${start}px`;
   }
 
   #scrollToLine(line: number, char = 0) {
@@ -1347,7 +1349,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         left: '0',
         width: '2px',
         height: this.#metrics.lineHeight + 'px',
-        scrollMarginInline: this.#scrollMarginInline,
+        scrollMargin: this.#getScrollMargin(),
       },
     });
     if (this.#getLineElement(line) !== undefined) {
@@ -1620,9 +1622,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     );
     renderCtx.elements.set(cacheKey, caretEl);
     if (isPrimary) {
-      // add scroll margin to the primary caret element to prevent
-      // the caret from being hidden by the gutter
-      caretEl.style.scrollMarginInline = this.#scrollMarginInline;
+      caretEl.style.scrollMargin = this.#getScrollMargin();
       this.#primaryCaretElement = caretEl;
     }
   }

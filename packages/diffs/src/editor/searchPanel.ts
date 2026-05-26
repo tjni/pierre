@@ -17,7 +17,7 @@ export class SearchPanelWidget {
   #allMatches: [number, number][] = [];
 
   constructor(
-    preElement: HTMLElement,
+    containerElement: HTMLElement,
     defaultQuery: string,
     initialMatch: [number, number] | undefined,
     search: (
@@ -229,7 +229,7 @@ export class SearchPanelWidget {
       ],
     });
 
-    preElement.before(this.#container);
+    containerElement.before(this.#container);
 
     requestAnimationFrame(() => {
       if (initialMatch !== undefined) {
