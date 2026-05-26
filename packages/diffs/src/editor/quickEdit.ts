@@ -1,4 +1,15 @@
+import type { EditorSelection } from './selection';
+import type { TextDocument, TextEdit } from './textDocument';
 import { h } from './utils';
+
+export interface QuickEditContext<LAnnotation> {
+  selection: EditorSelection;
+  textDocument: TextDocument<LAnnotation>;
+  applyEdits: (edits: TextEdit[]) => void;
+  getSelectionText: () => string;
+  replaceSelectionText: (text: string) => void;
+  close: () => void;
+}
 
 export class QuickEditWidget {
   static renderIcon(

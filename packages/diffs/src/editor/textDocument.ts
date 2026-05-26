@@ -236,7 +236,7 @@ export class TextDocument<LAnnotation> {
     selectionsAfter?: EditorSelection[]
   ): TextDocumentChange | undefined {
     if (edits.length === 0) {
-      return;
+      return undefined;
     }
     const resolvedEdits = this.#sortAndValidateResolvedEdits(edits);
     if (updateHistory) {

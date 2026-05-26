@@ -23,7 +23,7 @@ import {
 import { editorCSS, editorGlobalCSS } from './css';
 import { applyDocumentChangeToLineAnnotations } from './lineAnnotations';
 import { isPrimaryModifier, isSafari } from './platform';
-import { QuickEditWidget } from './quickEdit';
+import { type QuickEditContext, QuickEditWidget } from './quickEdit';
 import { SearchPanelWidget, type SearchParams } from './searchPanel';
 import type { EditorSelection } from './selection';
 import {
@@ -74,12 +74,7 @@ function clampDomOffset(node: Node, offset: number): number {
 
 export interface EditorOptions<LAnnotation> {
   enabledQuickEdit?: boolean;
-  renderQuickEdit?: (context: {
-    selection: EditorSelection;
-    textDocument: TextDocument<LAnnotation>;
-    replaceSelectionText: (text: string) => void;
-    close: () => void;
-  }) => HTMLElement;
+  renderQuickEdit?: (context: QuickEditContext<LAnnotation>) => HTMLElement;
   onChange?: (
     file: FileContents,
     lineAnnotations?: DiffLineAnnotation<LAnnotation>[]
@@ -933,16 +928,14 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
               );
             }
           }
-          if (edits.length > 0) {
-            const change = textDocument.applyEdits(
-              edits,
-              true,
-              this.#selections,
-              nextSelections
-            );
-            if (change !== undefined) {
-              this.#applyChange(change, nextSelections);
-            }
+          const change = textDocument.applyEdits(
+            edits,
+            true,
+            this.#selections,
+            nextSelections
+          );
+          if (change !== undefined) {
+            this.#applyChange(change, nextSelections);
           }
         }
         break;
@@ -1692,14 +1685,27 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         const lineText = textDocument.getLineText(line);
         const quickEditElement = renderQuickEdit({
           textDocument,
-          selection: selection,
+          selection,
+          applyEdits: (edits: TextEdit[]) => {
+            const change = textDocument.applyEdits(
+              edits,
+              true,
+              this.#selections
+            );
+            if (change !== undefined) {
+              this.#applyChange(change);
+            }
+          },
+          getSelectionText: () => {
+            return this.#textDocument?.getText(selection) ?? '';
+          },
+          replaceSelectionText: (text: string) => {
+            this.#replaceSelectionText(text);
+          },
           close: () => {
             cleanUpQuickEdit();
             handleWidgetDomResize();
             this.#scrollToPrimaryCaret();
-          },
-          replaceSelectionText: (text: string) => {
-            this.#replaceSelectionText(text);
           },
         });
         let leadingWhitespaces = 0;
@@ -1835,7 +1841,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
     const textDocument = this.#textDocument;
     const primarySelection = selections.at(-1);
-    if (textDocument == null || primarySelection == null) {
+    if (textDocument === undefined || primarySelection === undefined) {
       return;
     }
     const { nextSelections, change } =

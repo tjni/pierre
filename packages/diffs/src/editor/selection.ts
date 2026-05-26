@@ -366,7 +366,7 @@ export function applyTextChangeToSelections<LAnnotation>(
 }
 
 /**
- * Applies a text replace to a selection.
+ * Applies a text replace to multiple selections.
  */
 export function applyTextReplaceToSelections<LAnnotation>(
   textDocument: TextDocument<LAnnotation>,
