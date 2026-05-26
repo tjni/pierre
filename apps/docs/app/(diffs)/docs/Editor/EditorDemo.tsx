@@ -23,7 +23,7 @@ dispose();
 };
 
 export function EditorDemo() {
-  const [file, setFile] = useState<FileContents>(initialFile);
+  const [file, _setFile] = useState<FileContents>(initialFile);
   const [changeCount, setChangeCount] = useState(0);
 
   const editor = useMemo(
@@ -48,8 +48,8 @@ export function EditorDemo() {
           container.appendChild(button);
           return container;
         },
-        onChange(nextFile) {
-          setFile(nextFile);
+        onChange(_file) {
+          // setFile(nextFile);
           setChangeCount((count) => count + 1);
         },
       }),
@@ -71,13 +71,13 @@ export function EditorDemo() {
       </div>
       <EditorProvider editor={editor}>
         <File
-          file={file}
-          contentEditable
+          className="max-h-[480px] overflow-auto rounded-none border-0"
           options={{
             theme: { dark: 'pierre-dark', light: 'pierre-light' },
             disableFileHeader: true,
           }}
-          className="max-h-[480px] overflow-auto rounded-none border-0"
+          file={file}
+          contentEditable
         />
       </EditorProvider>
     </div>
