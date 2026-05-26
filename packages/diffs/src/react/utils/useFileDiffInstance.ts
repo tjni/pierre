@@ -17,6 +17,7 @@ import type {
 } from '../../types';
 import { areOptionsEqual } from '../../utils/areOptionsEqual';
 import { noopRender } from '../constants';
+import { useEditor } from '../EditorContext';
 import { useVirtualizer } from '../Virtualizer';
 import { WorkerPoolContext } from '../WorkerPoolContext';
 import { useStableCallback } from './useStableCallback';
@@ -34,6 +35,7 @@ interface UseFileDiffInstanceProps<LAnnotation> {
   hasGutterRenderUtility: boolean;
   hasCustomHeader: boolean;
   disableWorkerPool: boolean;
+  contentEditable: boolean;
 }
 
 interface UseFileDiffInstanceReturn {
@@ -51,10 +53,12 @@ export function useFileDiffInstance<LAnnotation>({
   hasGutterRenderUtility,
   hasCustomHeader,
   disableWorkerPool,
+  contentEditable,
 }: UseFileDiffInstanceProps<LAnnotation>): UseFileDiffInstanceReturn {
   const simpleVirtualizer = useVirtualizer();
   const controlledSelection = selectedLines !== undefined;
   const poolManager = useContext(WorkerPoolContext);
+  const editor = useEditor<LAnnotation>();
   const instanceRef = useRef<
     FileDiff<LAnnotation> | VirtualizedFileDiff<LAnnotation> | null
   >(null);
@@ -127,6 +131,17 @@ export function useFileDiffInstance<LAnnotation>({
       instance.setSelectedLines(selectedLines);
     }
   });
+
+  useIsometricEffect(() => {
+    if (
+      contentEditable &&
+      editor !== undefined &&
+      instanceRef.current != null
+    ) {
+      return editor.edit(instanceRef.current);
+    }
+    return undefined;
+  }, [contentEditable, editor]);
 
   const getHoveredLine = useCallback(():
     | GetHoveredLineResult<'diff'>
