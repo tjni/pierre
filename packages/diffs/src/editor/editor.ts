@@ -102,6 +102,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #renderRange?: RenderRange;
 
   // cache
+  #codePaddingTop = 0;
   #gutterWidthCache?: number;
   #contentWidthCache?: number;
   #lineYCache = new Map<number, number>();
@@ -307,7 +308,11 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         break;
       }
     }
-    const contentEl = codeElement?.children[1] as HTMLElement | undefined;
+    if (codeElement === undefined) {
+      console.error('[editor] Could not find the code element.');
+      return;
+    }
+    const contentEl = codeElement.children[1] as HTMLElement | undefined;
     if (contentEl === undefined) {
       console.error('[editor] Could not find the content element.');
       return;
@@ -347,9 +352,12 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       }
     }
 
+    // inject editor css to the file container
     if (this.#componentContainer !== fileContainer) {
       this.#componentContainer = fileContainer;
-      // inject editor css to the file container
+      this.#codePaddingTop = Number(
+        getComputedStyle(codeElement).paddingTop.slice(0, -2)
+      );
       if (this.#globalStyleElement !== undefined) {
         fileContainer.appendChild(this.#globalStyleElement);
       }
@@ -2155,7 +2163,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
 
     // cold(slow) path: measure line top position from DOM (will cause reflow)
-    const y = lineElement.offsetTop;
+    const y = lineElement.offsetTop + this.#codePaddingTop;
     this.#lineYCache.set(line, y);
     return y;
   }

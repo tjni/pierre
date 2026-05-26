@@ -15,10 +15,6 @@ export const editorCSS: string = /* CSS */ `
   {
     position: relative;
   }
-  [data-code] {
-    padding-bottom: 0;
-    overflow: auto;
-  }
   [data-content] {
     background-color: transparent;
     caret-color: var(--diffs-bg-caret);
