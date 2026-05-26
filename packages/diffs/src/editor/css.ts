@@ -118,6 +118,7 @@ export const editorCSS: string = /* CSS */ `
     display: flex;
     align-items: center;
     justify-content: flex-start;
+    gap: 1px;
     width: 100%;
   }
   [data-search-panel-row] input {
