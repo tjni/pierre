@@ -55,12 +55,11 @@ import {
 import {
   getExpandedAsciiTextColumns,
   getUnicodeMeasurementOffsets,
-  measureDomTextWidth,
-  needsDomTextMeasurement,
+  Metrics,
   snapTextOffsetToUnicodeBoundary,
 } from './textMeasure';
 import { EditorTokenizer, renderLineTokens } from './tokenzier';
-import { addEventListener, debounce, extend, h, round } from './utils';
+import { addEventListener, debounce, extend, h } from './utils';
 
 function clampDomOffset(node: Node, offset: number): number {
   if (node.nodeType === 3) {
@@ -88,6 +87,8 @@ export interface EditorOptions<LAnnotation> {
 }
 
 export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
+  #editMode: 'simple' | 'advanced' = 'simple';
+  #wrap = false;
   #options: EditorOptions<LAnnotation>;
   #tokenizer?: EditorTokenizer;
 
@@ -98,11 +99,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #removeEditorFromComponent?: () => void;
 
   // metrics
-  #ch = -1;
-  #lineHeight = 20;
-  #tabSize = 2;
-  #wrap = false;
-  #editMode: 'simple' | 'advanced' = 'simple';
+  #metrics = new Metrics();
 
   // file
   #component?: DiffsEditableComponent<LAnnotation>;
@@ -128,8 +125,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #selectionElements?: Map<string, HTMLElement>;
   #quickEdit?: QuickEditWidget;
   #searchPanel?: SearchPanelWidget;
-  #measureCtx?: CanvasRenderingContext2D;
-  #contentResizeObserver?: ResizeObserver;
+  #resizeObserver?: ResizeObserver;
 
   // state
   #shouldIgnoreSelectionChange = false;
@@ -288,9 +284,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#searchPanel = undefined;
     this.#quickEdit?.cleanup();
     this.#quickEdit = undefined;
-    this.#measureCtx = undefined;
-    this.#contentResizeObserver?.disconnect();
-    this.#contentResizeObserver = undefined;
+    this.#resizeObserver?.disconnect();
+    this.#resizeObserver = undefined;
 
     this.#shouldIgnoreSelectionChange = false;
     this.#selectionStart = undefined;
@@ -410,6 +405,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         return target === contentEl || contentEl.contains(target);
       };
 
+      this.#metrics.init(contentEl);
       this.#contentElement = extend(contentEl, {
         contentEditable: 'true',
         role: 'textbox',
@@ -649,36 +645,14 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           )
         );
       }
-      this.#contentResizeObserver?.disconnect();
-      this.#contentResizeObserver = new ResizeObserver(() =>
-        this.#handleLayoutResize()
-      );
-      this.#contentResizeObserver.observe(contentEl);
-      this.#contentResizeObserver.observe(contentEl.parentElement!);
-    }
-
-    // measure the ch(width of '0' character), line height, and tab size
-    const { fontSize, fontFamily, tabSize, lineHeight } =
-      getComputedStyle(contentEl);
-    let lineHeighPx = 20;
-    if (lineHeight.endsWith('px')) {
-      lineHeighPx = Number(lineHeight.slice(0, -2));
-    } else if (fontSize.endsWith('px')) {
-      lineHeighPx = round(
-        Number(fontSize.slice(0, -2)) * Number(lineHeight.slice(0, -2))
-      );
-    }
-    this.#lineHeight = lineHeighPx;
-    this.#tabSize = Number(tabSize);
-    this.#measureCtx ??=
-      document.createElement('canvas').getContext('2d') ?? undefined;
-    const font = fontSize + ' ' + fontFamily;
-    if (
-      this.#measureCtx !== undefined &&
-      (this.#measureCtx.font !== font || this.#ch === -1)
-    ) {
-      this.#measureCtx.font = font;
-      this.#ch = round(this.#measureCtx.measureText('0').width);
+      this.#resizeObserver?.disconnect();
+      this.#resizeObserver = new ResizeObserver(() => {
+        requestAnimationFrame(() => {
+          this.#handleLayoutResize();
+        });
+      });
+      this.#resizeObserver.observe(contentEl);
+      this.#resizeObserver.observe(contentEl.parentElement!);
     }
 
     this.#lineYCache.clear();
@@ -894,15 +868,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         },
         { passive: true }
       ),
-
-      addEventListener(
-        window,
-        'resize',
-        () => {
-          this.#handleLayoutResize();
-        },
-        { passive: true }
-      ),
     ];
   }
 
@@ -955,7 +920,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
               const ret = resolveIndentEdits(
                 textDocument,
                 selection,
-                this.#tabSize,
+                this.#metrics.tabSize,
                 outdent
               );
               edits.push(...ret[0]);
@@ -966,7 +931,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
                 character: 0,
               });
               this.#replaceSelectionText(
-                lineChar0 === '\t' ? '\t' : ' '.repeat(this.#tabSize)
+                lineChar0 === '\t' ? '\t' : ' '.repeat(this.#metrics.tabSize)
               );
             }
           }
@@ -1380,8 +1345,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   }
 
   get #scrollMarginInline() {
-    const start = this.#getGutterWidth() + this.#ch;
-    return start + 'px ' + this.#ch + 'px';
+    const start = this.#getGutterWidth() + this.#metrics.ch;
+    return start + 'px ' + this.#metrics.ch + 'px';
   }
 
   #scrollToLine(line: number, char = 0) {
@@ -1390,13 +1355,13 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         position: 'absolute',
         left: '0',
         width: '2px',
-        height: this.#lineHeight + 'px',
+        height: this.#metrics.lineHeight + 'px',
         scrollMarginInline: this.#scrollMarginInline,
       },
     });
     if (this.#getLineElement(line) !== undefined) {
       const [left, wrapLine] = this.#getCharX(line, char);
-      const lineY = this.#getLineY(line) + wrapLine * this.#lineHeight;
+      const lineY = this.#getLineY(line) + wrapLine * this.#metrics.lineHeight;
       virtualCaret.style.top = lineY + 'px';
       virtualCaret.style.left = left + 'px';
       this.#overlayElement?.appendChild(virtualCaret);
@@ -1412,7 +1377,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       const lineAnnotations = (this.#lineAnnotations ?? []).filter(
         (annotation) => annotation.lineNumber < line
       ).length;
-      const approximateLineY = (lineAnnotations + line) * this.#lineHeight;
+      const approximateLineY =
+        (lineAnnotations + line) * this.#metrics.lineHeight;
       virtualCaret.style.top = approximateLineY + 'px';
       this.#componentContainer?.shadowRoot?.appendChild(virtualCaret);
       this.#scrollingToLine = line;
@@ -1444,9 +1410,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       const endChar = ln === end.line ? end.character : lineText.length;
 
       if (this.#wrap) {
-        const paddingInline = this.#ch; // 1ch, align to diff css: padding-inline: 1ch
+        const paddingInline = this.#metrics.ch; // 1ch, align to diff css: padding-inline: 1ch
         const contentWidth = this.#getContentWidth();
-        const textWidth = 2 * paddingInline + this.#measureTextWidth(lineText);
+        const textWidth =
+          2 * paddingInline + this.#metrics.measureTextWidth(lineText);
         if (textWidth > contentWidth) {
           this.#renderWrappedSelection(
             renderCtx,
@@ -1464,8 +1431,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       let left = 0;
       let width = 0;
       if (startChar === endChar && startChar === 0) {
-        left = this.#getGutterWidth() + this.#ch; // gutter width + inline padding (1ch)
-        width = ln === end.line ? 0 : this.#ch;
+        left = this.#getGutterWidth() + this.#metrics.ch; // gutter width + inline padding (1ch)
+        width = ln === end.line ? 0 : this.#metrics.ch;
       } else {
         left = this.#getCharX(ln, startChar)[0];
         width =
@@ -1542,13 +1509,13 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         const prefixInSegment = lineText.slice(segmentStart, wrapStartChar);
         const prefixAsciiColumns = getExpandedAsciiTextColumns(
           prefixInSegment,
-          this.#tabSize
+          this.#metrics.tabSize
         );
         segmentLeft =
           offsetLeft +
           (prefixAsciiColumns !== -1
-            ? prefixAsciiColumns * this.#ch
-            : this.#measureTextWidth(prefixInSegment));
+            ? prefixAsciiColumns * this.#metrics.ch
+            : this.#metrics.measureTextWidth(prefixInSegment));
 
         if (wrapStartChar === wrapEndChar) {
           segmentWidth = 0;
@@ -1556,12 +1523,12 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           const selectionInSegment = lineText.slice(wrapStartChar, wrapEndChar);
           const selectionAsciiWidth = getExpandedAsciiTextColumns(
             selectionInSegment,
-            this.#tabSize
+            this.#metrics.tabSize
           );
           segmentWidth =
             selectionAsciiWidth !== -1
-              ? selectionAsciiWidth * this.#ch
-              : this.#measureTextWidth(selectionInSegment);
+              ? selectionAsciiWidth * this.#metrics.ch
+              : this.#metrics.measureTextWidth(selectionInSegment);
         }
       }
 
@@ -1603,8 +1570,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       selection.end.line === ln ||
       (startChar === endChar && ln !== selection.start.line)
         ? 0
-        : this.#ch;
-    const css = `width:${width + spacing}px;transform:translateY(${this.#getLineY(ln) + wrapLine * this.#lineHeight}px) translateX(${left}px);`;
+        : this.#metrics.ch;
+    const css = `width:${width + spacing}px;transform:translateY(${this.#getLineY(ln) + wrapLine * this.#metrics.lineHeight}px) translateX(${left}px);`;
     const cacheKey = 'selection-range-' + css;
     const selectionEls = this.#selectionElements;
 
@@ -1655,7 +1622,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       {
         dataset: 'caret',
         style: {
-          transform: `translateY(${this.#getLineY(line) + wrapLine * this.#lineHeight}px) translateX(${left - 1}px)`,
+          transform: `translateY(${this.#getLineY(line) + wrapLine * this.#metrics.lineHeight}px) translateX(${left - 1}px)`,
         },
       },
       renderCtx.fragment
@@ -1692,7 +1659,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
     const quickEditIcon = QuickEditWidget.renderIcon(
       left,
-      this.#getLineY(line) + wrapLine * this.#lineHeight,
+      this.#getLineY(line) + wrapLine * this.#metrics.lineHeight,
       renderCtx.fragment,
       () => {
         const cleanUpQuickEdit = () => {
@@ -1743,7 +1710,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           if (charCode === /* space */ 32) {
             leadingWhitespaces++;
           } else if (charCode === /* tab */ 9) {
-            leadingWhitespaces += this.#tabSize;
+            leadingWhitespaces += this.#metrics.tabSize;
           } else {
             break;
           }
@@ -1984,7 +1951,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       this.#selections,
       edit,
       this.#lineAnnotations,
-      this.#tabSize
+      this.#metrics.tabSize
     );
     if (change !== undefined) {
       this.#applyChange(
@@ -2214,7 +2181,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
 
     const lineText = this.#textDocument?.getLineText(line);
-    const offsetLeft = this.#getGutterWidth() + this.#ch; // gutter width + inline padding (1ch)
+    const offsetLeft = this.#getGutterWidth() + this.#metrics.ch; // gutter width + inline padding (1ch)
     if (lineText === undefined || lineText.length === 0 || char <= 0) {
       return [offsetLeft, 0];
     }
@@ -2226,20 +2193,20 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     const textBeforeCharacter = lineText.slice(0, boundedCharacter);
     const asciiColumns = getExpandedAsciiTextColumns(
       textBeforeCharacter,
-      this.#tabSize
+      this.#metrics.tabSize
     );
 
     let left = 0;
     let wrapLine = 0;
     if (asciiColumns !== -1) {
-      left = offsetLeft + asciiColumns * this.#ch;
+      left = offsetLeft + asciiColumns * this.#metrics.ch;
     } else {
-      left = offsetLeft + this.#measureTextWidth(textBeforeCharacter);
+      left = offsetLeft + this.#metrics.measureTextWidth(textBeforeCharacter);
     }
 
     if (this.#wrap) {
       const contentWidth = this.#getContentWidth();
-      const width = 2 * offsetLeft + this.#measureTextWidth(lineText);
+      const width = 2 * offsetLeft + this.#metrics.measureTextWidth(lineText);
       if (width > contentWidth) {
         const wrapOffsets = this.#wrapLineText(line);
         for (let w = 0; w + 1 < wrapOffsets.length; w++) {
@@ -2253,12 +2220,13 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
             );
             const segmentAsciiColumns = getExpandedAsciiTextColumns(
               prefixInSegment,
-              this.#tabSize
+              this.#metrics.tabSize
             );
             if (segmentAsciiColumns !== -1) {
-              left = offsetLeft + segmentAsciiColumns * this.#ch;
+              left = offsetLeft + segmentAsciiColumns * this.#metrics.ch;
             } else {
-              left = offsetLeft + this.#measureTextWidth(prefixInSegment);
+              left =
+                offsetLeft + this.#metrics.measureTextWidth(prefixInSegment);
             }
             break;
           }
@@ -2276,23 +2244,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     }
 
     return [left, wrapLine];
-  }
-
-  #measureTextWidth(text: string) {
-    const textWithExpandedTabs = text.replaceAll(
-      '\t',
-      ' '.repeat(this.#tabSize)
-    );
-    if (
-      needsDomTextMeasurement(textWithExpandedTabs) &&
-      this.#contentElement !== undefined
-    ) {
-      return measureDomTextWidth(textWithExpandedTabs, this.#contentElement);
-    }
-    if (this.#measureCtx === undefined) {
-      throw new Error('Measure context not initialized');
-    }
-    return this.#measureCtx.measureText(textWithExpandedTabs).width;
   }
 
   // Compute how a logical line of text is broken into visual lines when line
@@ -2324,7 +2275,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           wordBreak: 'break-word',
           font: 'inherit',
           paddingInline: '1ch',
-          tabSize: this.#tabSize.toString(),
+          tabSize: this.#metrics.tabSize.toString(),
         },
         textContent: lineText,
       },

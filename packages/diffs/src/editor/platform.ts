@@ -3,14 +3,13 @@ let _isLinux: boolean | undefined = undefined;
 let _isSafari: boolean | undefined = undefined;
 
 export function isMacLike(): boolean {
-  return (
-    _isMacLike ??
-    (_isMacLike = /macOS|MacIntel|iPhone|iPad|iPod/i.test(getPlatform()))
-  );
+  return (_isMacLike ??= /macOS|MacIntel|iPhone|iPad|iPod/i.test(
+    getPlatform()
+  ));
 }
 
 export function isLinux(): boolean {
-  return _isLinux ?? (_isLinux = /Linux/i.test(getPlatform()));
+  return (_isLinux ??= /Linux/i.test(getPlatform()));
 }
 
 export function isSafari(): boolean {

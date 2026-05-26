@@ -1,4 +1,102 @@
-import { h } from './utils';
+import { h, round } from './utils';
+
+export class Metrics {
+  #root?: HTMLElement;
+  #canvasCtx?: CanvasRenderingContext2D;
+  #font?: string;
+
+  /** Width of the '0' character. */
+  ch: number = -1;
+  /** Size of a tab(\t) character. */
+  tabSize: number = 2;
+  /** Height of the code line. */
+  lineHeight: number = 20;
+
+  init(root: HTMLElement): void {
+    if (
+      this.#root === root &&
+      this.#canvasCtx !== undefined &&
+      this.ch !== -1
+    ) {
+      // already initialized
+      return;
+    }
+
+    this.#root = root;
+    this.#canvasCtx ??=
+      document.createElement('canvas').getContext('2d') ?? undefined;
+    if (this.#canvasCtx === undefined) {
+      throw new Error('Could not get canvas context');
+    }
+
+    const { fontSize, fontFamily, tabSize, lineHeight } =
+      getComputedStyle(root);
+    if (lineHeight.endsWith('px')) {
+      this.lineHeight = Number(lineHeight.slice(0, -2));
+    } else if (fontSize.endsWith('px')) {
+      this.lineHeight = round(
+        Number(fontSize.slice(0, -2)) * Number(lineHeight)
+      );
+    }
+    const font = fontSize + ' ' + fontFamily;
+    if (this.#font !== font || this.ch === -1) {
+      this.#font = font;
+      this.#canvasCtx.font = font;
+      this.ch = this.canvasMeasureTextWidth('0');
+    }
+    this.tabSize = Number(tabSize);
+  }
+
+  measureTextWidth(text: string): number {
+    const textWithExpandedTabs = text.replaceAll(
+      '\t',
+      ' '.repeat(this.tabSize)
+    );
+    if (needsDomTextMeasurement(textWithExpandedTabs)) {
+      return this.domMeasureTextWidth(textWithExpandedTabs);
+    }
+    return this.canvasMeasureTextWidth(textWithExpandedTabs);
+  }
+
+  /** measure the width of the text using the canvas measureText API */
+  canvasMeasureTextWidth(text: string): number {
+    if (this.#canvasCtx === undefined) {
+      throw new Error('Metrics not initialized');
+    }
+    return round(this.#canvasCtx.measureText(text).width);
+  }
+
+  /**
+   * measure the width of the text using the DOM
+   * this is slow because it cause a reflow, use it for non-ascii text
+   */
+  domMeasureTextWidth(text: string): number {
+    if (this.#root === undefined) {
+      throw new Error('Metrics not initialized');
+    }
+    const measureEl = h(
+      'span',
+      {
+        style: {
+          position: 'absolute',
+          top: '0',
+          left: '0',
+          visibility: 'hidden',
+          pointerEvents: 'none',
+          whiteSpace: 'pre',
+          font: 'inherit',
+        },
+        textContent: text,
+      },
+      this.#root
+    );
+    try {
+      return measureEl.getBoundingClientRect().width;
+    } finally {
+      measureEl.remove();
+    }
+  }
+}
 
 /** Check if the text needs DOM text measurement. */
 export function needsDomTextMeasurement(text: string): boolean {
@@ -64,34 +162,6 @@ export function getUnicodeMeasurementOffsets(
     offsets.push(segment.index + segment.segment.length);
   }
   return offsets;
-}
-
-/** measure the width of the text using the DOM */
-export function measureDomTextWidth(
-  text: string,
-  parentElement: HTMLElement
-): number {
-  const measureEl = h(
-    'span',
-    {
-      style: {
-        position: 'absolute',
-        top: '0',
-        left: '0',
-        visibility: 'hidden',
-        pointerEvents: 'none',
-        whiteSpace: 'pre',
-        font: 'inherit',
-      },
-      textContent: text,
-    },
-    parentElement
-  );
-  try {
-    return measureEl.getBoundingClientRect().width;
-  } finally {
-    measureEl.remove();
-  }
 }
 
 /** get the number of columns of the ASCII text */
