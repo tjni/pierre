@@ -24,7 +24,7 @@ import { editorCSS, editorGlobalCSS } from './css';
 import { applyDocumentChangeToLineAnnotations } from './lineAnnotations';
 import { isPrimaryModifier, isSafari } from './platform';
 import { type QuickEditContext, QuickEditWidget } from './quickEdit';
-import { SearchPanelWidget, type SearchParams } from './searchPanel';
+import { SearchPanelWidget } from './searchPanel';
 import type { EditorSelection } from './selection';
 import {
   applyDeleteHardLineForwardToSelections,
@@ -1735,6 +1735,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     renderCtx.elements.set(cacheKey, quickEditIcon);
   }
 
+  // TODO(@ije): render search highlight
   #renderSearchPanel() {
     // cleanup the existing search panel
     this.#searchPanel?.cleanup();
@@ -1772,56 +1773,42 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           ]
         : undefined;
 
-    this.#searchPanel = new SearchPanelWidget(
-      preElement,
+    this.#searchPanel = new SearchPanelWidget({
+      textDocument,
+      containerElement: preElement,
       defaultQuery,
       initialMatch,
-      (kind, params, retainFocus) => this.#search(kind, params, retainFocus),
-      (params) => textDocument.search('findAll', params),
-      () => {
+      getCurrentSearchRange: () => this.#selections?.at(-1),
+      postSearch: (kind, [startOffset, endOffset], retainFocus) => {
+        if (
+          kind === 'findNext' ||
+          kind === 'findPrevious' ||
+          kind === 'replace'
+        ) {
+          const nextSelection = createSelectionFromAnchorAndFocusOffsets(
+            textDocument,
+            startOffset,
+            endOffset
+          );
+          this.#updateSelections([nextSelection]);
+          this.#scrollToPrimaryCaret();
+          if (retainFocus === true) {
+            this.#retainSearchPanelFocus = true;
+            requestAnimationFrame(() => {
+              this.#searchPanel?.focus();
+            });
+          }
+        } else if (kind === 'findAll' || kind === 'replaceAll') {
+          const { line, character } = textDocument.positionAt(startOffset);
+          this.#scrollToLine(line, character);
+        }
+      },
+      onClose: () => {
         this.#searchPanel = undefined;
         this.#retainSearchPanelFocus = false;
-      }
-    );
+      },
+    });
     this.#retainSearchPanelFocus = false;
-  }
-
-  #search(
-    kind: 'findNext' | 'findPrevious' | 'findAll' | 'replace' | 'replaceAll',
-    searchParams: SearchParams,
-    retainSearchPanelFocus: boolean = false
-  ): [number, number] | undefined {
-    const primarySelection = this.#selections?.at(-1);
-    const textDocument = this.#textDocument;
-    if (textDocument === undefined) {
-      return undefined;
-    }
-    const matches = textDocument.search(kind, searchParams, primarySelection);
-    if (matches.length === 0) {
-      return undefined;
-    }
-
-    const [startOffset, endOffset] = matches[0];
-    if (kind === 'findNext' || kind === 'findPrevious' || kind === 'replace') {
-      const nextSelection = createSelectionFromAnchorAndFocusOffsets(
-        textDocument,
-        startOffset,
-        endOffset
-      );
-      this.#updateSelections([nextSelection]);
-      this.#scrollToPrimaryCaret();
-      if (retainSearchPanelFocus) {
-        this.#retainSearchPanelFocus = true;
-        requestAnimationFrame(() => {
-          this.#searchPanel?.focus();
-        });
-      }
-      return [startOffset, endOffset];
-    } else if (kind === 'findAll' || kind === 'replaceAll') {
-      const { line, character } = textDocument.positionAt(startOffset);
-      this.#scrollToLine(line, character);
-    }
-    return undefined;
   }
 
   #getSelectionText() {

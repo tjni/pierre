@@ -1,5 +1,13 @@
 import { isPrimaryModifier } from './platform';
+import type { Range, TextDocument } from './textDocument';
 import { h } from './utils';
+
+export type SearchKind =
+  | 'findNext'
+  | 'findPrevious'
+  | 'findAll'
+  | 'replace'
+  | 'replaceAll';
 
 export interface SearchParams {
   text: string;
@@ -9,46 +17,64 @@ export interface SearchParams {
   regex: boolean;
 }
 
+export interface SearchPanelOptions {
+  textDocument: TextDocument<unknown>;
+  containerElement: HTMLElement;
+  defaultQuery: string;
+  initialMatch?: [number, number];
+  postSearch: (
+    kind: SearchKind,
+    match: [number, number],
+    retainFocus?: boolean
+  ) => void;
+  getCurrentSearchRange: () => Range | undefined;
+  onClose: () => void;
+}
+
 export class SearchPanelWidget {
+  #textDocument: TextDocument<unknown>;
   #container: HTMLDivElement;
   #inputElement: HTMLInputElement;
   #matchesElement: HTMLDivElement;
-  #searchParams: SearchParams;
+  #searchParams: SearchParams = {
+    text: '',
+    replaceText: '',
+    caseSensitive: false,
+    wholeWord: false,
+    regex: false,
+  };
   #allMatches: [number, number][] = [];
 
-  constructor(
-    containerElement: HTMLElement,
-    defaultQuery: string,
-    initialMatch: [number, number] | undefined,
-    search: (
-      action:
-        | 'findNext'
-        | 'findPrevious'
-        | 'findAll'
-        | 'replace'
-        | 'replaceAll',
-      params: SearchParams,
-      retainFocus?: boolean
-    ) => [number, number] | undefined,
-    findAll: (params: SearchParams) => [number, number][],
-    onClose: () => void
-  ) {
-    this.#searchParams = {
-      text: defaultQuery,
-      replaceText: '',
-      caseSensitive: false,
-      wholeWord: false,
-      regex: false,
-    };
+  constructor(options: SearchPanelOptions) {
+    const {
+      textDocument,
+      containerElement,
+      defaultQuery,
+      initialMatch,
+      postSearch,
+      getCurrentSearchRange,
+      onClose,
+    } = options;
 
     const close = () => {
       this.cleanup();
       onClose();
     };
 
+    const updateSearchParam = <K extends keyof SearchParams>(
+      key: K,
+      value: SearchParams[K]
+    ) => {
+      this.#searchParams[key] = value;
+      updateAllMatches();
+      this.updateMatches();
+    };
+
     const updateAllMatches = () => {
       this.#allMatches =
-        this.#searchParams.text !== '' ? findAll(this.#searchParams) : [];
+        this.#searchParams.text !== ''
+          ? this.#textDocument.search('findAll', this.#searchParams)
+          : [];
       this.#container
         .querySelectorAll<HTMLElement>('[data-disabled]')
         .forEach((element) => {
@@ -56,13 +82,18 @@ export class SearchPanelWidget {
         });
     };
 
-    const updatSearchParam = <K extends keyof SearchParams>(
-      key: K,
-      value: SearchParams[K]
-    ) => {
-      this.#searchParams[key] = value;
-      updateAllMatches();
-      this.updateMatches();
+    const search = (kind: SearchKind, retainFocus?: boolean) => {
+      const matches = this.#textDocument.search(
+        kind,
+        this.#searchParams,
+        getCurrentSearchRange()
+      );
+      if (matches.length === 0) {
+        return;
+      }
+      const firstMatch = matches[0];
+      this.updateMatches(firstMatch);
+      postSearch(kind, firstMatch, retainFocus);
     };
 
     const settingsSwitch = h('div', {
@@ -91,7 +122,7 @@ export class SearchPanelWidget {
               type: 'checkbox',
               checked: this.#searchParams.caseSensitive,
               onchange: (e: Event) => {
-                updatSearchParam(
+                updateSearchParam(
                   'caseSensitive',
                   (e.target as HTMLInputElement).checked
                 );
@@ -107,7 +138,7 @@ export class SearchPanelWidget {
               type: 'checkbox',
               checked: this.#searchParams.wholeWord,
               onchange: (e: Event) => {
-                updatSearchParam(
+                updateSearchParam(
                   'wholeWord',
                   (e.target as HTMLInputElement).checked
                 );
@@ -123,7 +154,7 @@ export class SearchPanelWidget {
               type: 'checkbox',
               checked: this.#searchParams.regex,
               onchange: (e: Event) => {
-                updatSearchParam(
+                updateSearchParam(
                   'regex',
                   (e.target as HTMLInputElement).checked
                 );
@@ -143,7 +174,11 @@ export class SearchPanelWidget {
         closeSettingsPanelTimeout = undefined;
       },
     });
+
     let closeSettingsPanelTimeout: ReturnType<typeof setTimeout> | undefined;
+
+    this.#textDocument = textDocument;
+    this.#searchParams.text = defaultQuery;
 
     this.#inputElement = h('input', {
       type: 'text',
@@ -161,17 +196,14 @@ export class SearchPanelWidget {
           close();
         } else if (e.key === 'Enter') {
           e.preventDefault();
-          const match = search('findNext', this.#searchParams, true);
-          this.updateMatches(match);
+          search('findNext', true);
         } else if (e.key === 'f' && isPrimaryModifier(e)) {
           // prevent the default browser search panel open behavior
           e.preventDefault();
         }
       },
     });
-
     this.#matchesElement = h('div', { dataset: 'matches' });
-
     this.#container = h('div', {
       dataset: 'searchPanel',
       children: [
@@ -196,8 +228,7 @@ export class SearchPanelWidget {
                 </svg>
               `,
               onclick: () => {
-                const match = search('findPrevious', this.#searchParams, true);
-                this.updateMatches(match);
+                search('findPrevious');
               },
             }),
             h('div', {
@@ -208,8 +239,7 @@ export class SearchPanelWidget {
                 </svg>
               `,
               onclick: () => {
-                const match = search('findNext', this.#searchParams, true);
-                this.updateMatches(match);
+                search('findNext');
               },
             }),
             h('div', { dataset: 'spacer' }),
@@ -228,7 +258,6 @@ export class SearchPanelWidget {
         }),
       ],
     });
-
     containerElement.before(this.#container);
 
     requestAnimationFrame(() => {
