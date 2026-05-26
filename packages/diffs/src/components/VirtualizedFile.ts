@@ -4,9 +4,11 @@ import type {
   FileContents,
   LineAnnotation,
   NumericScrollLineAnchor,
+  PendingCodeViewLayoutReset,
   RenderRange,
   RenderWindow,
   StickySpecs,
+  ThemeTypes,
   VirtualFileMetrics,
 } from '../types';
 import { areFilesEqual } from '../utils/areFilesEqual';
@@ -67,6 +69,7 @@ export class VirtualizedFile<
   private isSetup: boolean = false;
   private layoutDirty = true;
   private forceRenderOverride: true | undefined;
+  private currentCollapsed: boolean | undefined;
 
   constructor(
     options: FileOptions<LAnnotation> | undefined,
@@ -100,6 +103,12 @@ export class VirtualizedFile<
   }
 
   override setOptions(options: FileOptions<LAnnotation> | undefined): void {
+    if (this.isAdvancedMode()) {
+      throw new Error(
+        'VirtualizedFile.setOptions cannot be used inside CodeView. Update CodeView options instead.'
+      );
+    }
+
     if (options == null) return;
     const { options: previousOptions } = this;
     const optionsChanged = !areOptionsEqual(previousOptions, options);
@@ -115,16 +124,32 @@ export class VirtualizedFile<
     if (optionsChanged) {
       this.forceRenderOverride = true;
     }
-    if (optionsChanged && this.isSimpleMode()) {
+    if (optionsChanged) {
       this.virtualizer.instanceChanged(this, layoutChanged);
     }
   }
 
+  override setThemeType(themeType: ThemeTypes): void {
+    if (this.isAdvancedMode()) {
+      throw new Error(
+        'VirtualizedFile.setThemeType cannot be used inside CodeView. Update CodeView options instead.'
+      );
+    }
+
+    super.setThemeType(themeType);
+  }
+
   private resetLayoutCache(recompute = false): void {
     this.layoutDirty = true;
-    this.cache.heights.clear();
-    this.cache.checkpoints = [];
-    this.renderRange = undefined;
+    if (this.cache.heights.size > 0) {
+      this.cache.heights.clear();
+    }
+    if (this.cache.checkpoints.length > 0) {
+      this.cache.checkpoints.length = 0;
+    }
+    if (this.renderRange != null) {
+      this.renderRange = undefined;
+    }
     // NOTE(amadeus): In CodeView we intentionally batch computes to all happen
     // at the same time, so we shouldn't trigger this there.
     if (recompute && this.isSimpleMode()) {
@@ -226,12 +251,32 @@ export class VirtualizedFile<
   // its virtualized top, and returning an approximate height. This method is
   // called while downstream items are being re-positioned, so later changes
   // should keep clean instances on a cached-height fast path.
-  public prepareVirtualizedItem(file: FileContents): number {
+  public prepareCodeViewItem(
+    file: FileContents,
+    top: number,
+    reset?: PendingCodeViewLayoutReset
+  ): number {
+    let shouldResetLayoutCache = reset?.resetFileLayoutCache === true;
+    if (reset?.metrics != null) {
+      this.metrics = reset.metrics;
+      shouldResetLayoutCache = true;
+    }
+
+    const { collapsed = false } = this.options;
+    if (this.currentCollapsed !== collapsed) {
+      this.currentCollapsed = collapsed;
+      shouldResetLayoutCache = true;
+    }
+
+    if (shouldResetLayoutCache) {
+      this.resetLayoutCache();
+    }
+
     if (this.file !== file) {
       this.layoutDirty = true;
     }
     this.file = file;
-    this.top = this.getVirtualizedTop();
+    this.top = top;
     this.computeApproximateSize();
     return this.height;
   }

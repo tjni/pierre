@@ -235,10 +235,14 @@ export class DiffHunksRenderer<LAnnotation = undefined> {
   public recycle(): void {
     this.highlighter = undefined;
     this.diff = undefined;
-    this.renderCache = undefined;
+    this.clearRenderCache();
     this.additionAnnotations = {};
     this.deletionAnnotations = {};
     this.workerManager?.cleanUpTasks(this);
+  }
+
+  public clearRenderCache(): void {
+    this.renderCache = undefined;
   }
 
   public setOptions(options: DiffHunksRendererOptions): void {
@@ -270,7 +274,7 @@ export class DiffHunksRenderer<LAnnotation = undefined> {
     // NOTE(amadeus): If our render cache is not highlighted, we need to clear
     // it, otherwise we won't have the correct AST lines
     if (this.renderCache?.highlighted !== true) {
-      this.renderCache = undefined;
+      this.clearRenderCache();
     }
     this.expandedHunks.set(index, region);
   }
@@ -1076,9 +1080,24 @@ export class DiffHunksRenderer<LAnnotation = undefined> {
           }
         }
 
-        const noEOFCRDeletion = deletionLine?.noEOFCR ?? false;
-        const noEOFCRAddition = additionLine?.noEOFCR ?? false;
+        const isFinalSplitHunkRow =
+          diffStyle === 'split' &&
+          hunk != null &&
+          splitLineIndex === hunk.splitLineStart + hunk.splitLineCount - 1;
+        const splitNoEOFCRDeletion = isFinalSplitHunkRow
+          ? hunk.noEOFCRDeletions
+          : false;
+        const splitNoEOFCRAddition = isFinalSplitHunkRow
+          ? hunk.noEOFCRAdditions
+          : false;
+        const noEOFCRDeletion =
+          (deletionLine?.noEOFCR ?? false) || splitNoEOFCRDeletion;
+        const noEOFCRAddition =
+          (additionLine?.noEOFCR ?? false) || splitNoEOFCRAddition;
         if (noEOFCRAddition || noEOFCRDeletion) {
+          if (diffStyle === 'split') {
+            pendingSplitContext.flush();
+          }
           if (noEOFCRDeletion) {
             const noEOFType =
               type === 'context' || type === 'context-expanded'

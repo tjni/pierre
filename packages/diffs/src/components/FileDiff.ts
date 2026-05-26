@@ -63,6 +63,7 @@ import {
   wrapThemeCSS,
   wrapUnsafeCSS,
 } from '../utils/cssWrappers';
+import { getDiffHunksRendererOptions } from '../utils/getDiffHunksRendererOptions';
 import { getLineAnnotationName } from '../utils/getLineAnnotationName';
 import { getOrCreateCodeNode } from '../utils/getOrCreateCodeNode';
 import { upsertHostThemeStyle } from '../utils/hostTheme';
@@ -257,15 +258,7 @@ export class FileDiff<
   protected getHunksRendererOptions(
     options: FileDiffOptions<LAnnotation>
   ): DiffHunksRendererOptions {
-    return {
-      ...options,
-      headerRenderMode:
-        options.renderCustomHeader != null ? 'custom' : 'default',
-      hunkSeparators:
-        typeof options.hunkSeparators === 'function'
-          ? 'custom'
-          : options.hunkSeparators,
-    };
+    return getDiffHunksRendererOptions(options);
   }
 
   protected createHunksRenderer(
@@ -369,12 +362,16 @@ export class FileDiff<
     this.options = options;
     this.cachedHeaderHTML = undefined;
     this.hunksRenderer.setOptions(this.getHunksRendererOptions(options));
+    this.syncInteractionOptions();
+  }
+
+  protected syncInteractionOptions(): void {
     this.interactionManager.setOptions(
       pluckInteractionOptions(
-        options,
-        typeof options.hunkSeparators === 'function' ||
-          (options.hunkSeparators ?? 'line-info') === 'line-info' ||
-          options.hunkSeparators === 'line-info-basic'
+        this.options,
+        typeof this.options.hunkSeparators === 'function' ||
+          (this.options.hunkSeparators ?? 'line-info') === 'line-info' ||
+          this.options.hunkSeparators === 'line-info-basic'
           ? this.handleExpandHunk
           : undefined,
         this.getLineIndex
@@ -668,6 +665,7 @@ export class FileDiff<
       return;
     }
 
+    this.syncInteractionOptions();
     this.hunksRenderer.hydrate(this.fileDiff);
     // FIXME(amadeus): not sure how to handle this yet...
     // this.renderSeparators();
@@ -688,6 +686,11 @@ export class FileDiff<
       return;
     }
     this.render({ forceRender: true, renderRange: this.renderRange });
+  }
+
+  public onThemeChange(): void {
+    this.hunksRenderer.clearRenderCache();
+    this.rerender();
   }
 
   // This wrapper must stay separate from `expandHunk` because subclasses like
@@ -792,6 +795,7 @@ export class FileDiff<
       return false;
     }
     this.hunksRenderer.setOptions(this.getHunksRendererOptions(this.options));
+    this.syncInteractionOptions();
 
     this.hunksRenderer.setLineAnnotations(this.lineAnnotations);
 

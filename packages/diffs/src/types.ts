@@ -792,6 +792,13 @@ export interface VirtualFileMetrics {
   paddingBottom?: number;
 }
 
+export interface PendingCodeViewLayoutReset {
+  metrics?: VirtualFileMetrics;
+  resetFileLayoutCache: boolean;
+  resetDiffLayoutCache: boolean;
+  includeEstimatedDiffHeights: boolean;
+}
+
 export interface CodeViewLayout {
   /** Top padding applied to the CodeView sticky container offset. */
   paddingTop: number;

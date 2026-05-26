@@ -133,7 +133,7 @@ export class FileRenderer<LAnnotation = undefined> {
 
   public recycle(): void {
     const renderCache = this.renderCache;
-    this.renderCache = undefined;
+    this.clearRenderCache();
     this.highlighter = undefined;
     this.workerManager?.cleanUpTasks(this);
     if (
@@ -143,6 +143,10 @@ export class FileRenderer<LAnnotation = undefined> {
     ) {
       this.workerManager?.evictFileFromCache(renderCache.file.cacheKey);
     }
+  }
+
+  public clearRenderCache(): void {
+    this.renderCache = undefined;
   }
 
   public hydrate(file: FileContents): void {
