@@ -309,12 +309,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       }
     }
     if (codeElement === undefined) {
-      console.error('[editor] Could not find the code element.');
       return;
     }
     const contentEl = codeElement.children[1] as HTMLElement | undefined;
     if (contentEl === undefined) {
-      console.error('[editor] Could not find the content element.');
       return;
     }
 
@@ -475,8 +473,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
                 });
               }
               this.#shiftKeyPressed = true;
-            } else {
-              this.#selections = undefined;
             }
           },
           { passive: true }
@@ -1727,7 +1723,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
             break;
           }
         }
-        this.#selections = [selection];
         this.#quickEdit = new QuickEditWidget(
           line,
           quickEditElement,
@@ -1735,6 +1730,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           leadingWhitespaces,
           handleWidgetDomResize
         );
+        this.#updateSelections([selection]);
         if (this.#isLineVisible(line) && this.#contentElement !== undefined) {
           this.#quickEdit.render(this.#contentElement);
         }
