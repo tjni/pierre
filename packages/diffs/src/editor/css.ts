@@ -98,7 +98,8 @@ export const editorCSS: string = /* CSS */ `
     display: flex;
     flex-direction: column;
     gap: 4px;
-    margin-inline: 16px;
+    margin-inline: 1ch;
+    margin-bottom: 4px;
     background-color: color-mix(in lab, color-mix(in lab, var(--diffs-fg) 4%, var(--diffs-bg)), transparent 40%);
     border: 1px solid color-mix(in lab, var(--diffs-fg) 8%, var(--diffs-bg));
     padding: 6px;
