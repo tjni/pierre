@@ -1700,13 +1700,12 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           this.#quickEdit = undefined;
         };
 
-        const handleResize = () => {
+        const handleWidgetDomResize = () => {
           // the line y cache is invalidated by the DOM change,
-          // clear the line y cache and rerender the selection
+          // clear the line y cache and re-render the selection
           this.#lineYCache.clear();
           if (this.#selections !== undefined) {
             this.#updateSelections(this.#selections);
-            this.#scrollToPrimaryCaret();
           }
         };
 
@@ -1731,7 +1730,8 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           selection: selection,
           close: () => {
             cleanUpQuickEdit();
-            handleResize();
+            handleWidgetDomResize();
+            this.#scrollToPrimaryCaret();
           },
           replaceSelectionText: (text: string) => {
             this.#replaceSelectionText(text);
@@ -1754,7 +1754,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           quickEditElement,
           fileContainer,
           leadingWhitespaces,
-          handleResize
+          handleWidgetDomResize
         );
         if (this.#isLineVisible(line) && this.#contentElement !== undefined) {
           this.#quickEdit.render(this.#contentElement);
