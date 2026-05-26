@@ -1,0 +1,132 @@
+## Editor
+
+<Notice variant="warning" icon={<IconCiWarningFill />}>
+  The editor API is experimental and subject to change.
+</Notice>
+
+The editor is a pluggable editing layer for `File`-style code surfaces. It adds
+keyboard-driven editing to an already-rendered file or diff while the existing
+renderer continues to own syntax highlighting, layout, annotations, and
+virtualization.
+
+Import it from `@pierre/diffs/editor`. It is intentionally separate from the
+core bundle so you can lazy-load it when editing is optional.
+
+- Text editing with a document model and debounced `onChange` callbacks
+- Selection management, including multiple cursors (Cmd/Ctrl-click to add)
+- Undo and redo
+- Find-in-file search (panel and incremental match)
+- [Quick Edit](#editor-quick-edit) (opt-in, custom UI)
+- Automatic indentation on Tab and Shift+Tab
+- Mobile-friendly input via native `contentEditable` and selection handles
+
+<EditorDemo />
+
+### How It Works
+
+The editor does not replace `File`, `FileDiff`, or their virtualized variants.
+You render the surface first, then attach editing:
+
+1. **Attach** — Call `editor.edit(component)` in vanilla JS, or pass
+   `contentEditable` on a React `File` / `FileDiff` wrapped in `EditorProvider`.
+   The hookup returns a dispose function (vanilla) or runs automatically when
+   `contentEditable` toggles (React).
+2. **Edit surface** — The editor sets `contentEditable` on the code content
+   element so mobile keyboards, paste, and native selection UI work as users
+   expect. Clipboard shortcuts are handled by the browser; editor commands
+   handle structure-aware actions like indent and undo.
+3. **Selections** — Carets and ranges are tracked with the native `Selection`
+   API. Multiple non-overlapping selections are supported; Cmd/Ctrl-click adds
+   another cursor without clearing existing ones.
+4. **Updates** — Keystrokes update an internal `TextDocument`, then changed
+   lines are re-highlighted through the same tokenizer pipeline as read-only
+   mode. Your `onChange` handler receives updated `FileContents` (and line
+   annotations when present), debounced by 500ms.
+
+When attaching, the editor may normalize component options (for example,
+enabling the token transformer and disabling gutter utilities that conflict with
+editing) and trigger a re-render.
+
+### Vanilla JS
+
+For vanilla integrations, render with `VirtualizedFile` or `VirtualizedFileDiff`
+inside a [Virtualizer](#virtualization) scroll region. Virtualization keeps
+large files responsive; the editor cooperates with the virtualizer's visible
+line window instead of assuming the full document is in the DOM.
+
+<EditorComponentTabs
+  fileExample={editorVanillaFileExample}
+  fileDiffExample={editorVanillaFileDiffExample}
+/>
+
+<Notice icon={<IconInfoFill />}>
+  Editing a `FileDiff` requires the full file contents of both sides. The editor
+  targets the addition side (the new version of the file) and cannot reconstruct
+  it from a partial diff. Make sure one of the following is true before attaching
+  the editor:
+
+- You rendered the diff by passing `oldFile` and `newFile` as `FileContents`
+  objects directly (the common case).
+- You rendered from a `FileDiff` object where `isPartial` is `false`, meaning
+  `additionLines` contains the complete new-file contents (not just the patch
+  context lines).
+
+If neither condition is met — for example, when the diff was parsed from a raw
+patch with no accompanying source files — `editor.edit()` will attach but
+editing will have no effect.
+
+</Notice>
+
+### React
+
+Create one `Editor` instance (typically with `useMemo`), wrap your tree in
+`EditorProvider`, and set `contentEditable` on `File` or `FileDiff` when editing
+should be active. The provider cleans up the editor on unmount.
+
+<DocsCodeExample {...editorReactExample} />
+
+### Lazy Loading
+
+Because `@pierre/diffs/editor` is a standalone entry point, you can
+dynamic-import it only when the user enters edit mode. That keeps the initial
+page bundle smaller and can improve LCP on pages where editing is rare.
+
+<DocsCodeExample {...editorLazyFileExample} />
+
+### Quick Edit
+
+Quick Edit is disabled by default. Enable it on the `Editor` constructor with
+`enabledQuickEdit: true` and provide `renderQuickEdit` to return the UI for a
+given line (for example, an inline prompt or form). The editor shows a gutter
+icon on the active line; clicking it mounts your element and exposes helpers
+such as `getSelectionText`, `replaceSelectionText`, and `close` on the context
+object.
+
+<DocsCodeExample {...editorQuickEditExample} />
+
+### Keyboard Shortcuts
+
+Shortcuts use the primary modifier: **⌘ on macOS**, **Ctrl on Windows and
+Linux**. On macOS, document start/end use ↑ and ↓ with the modifier; on other
+platforms, **Home** and **End** are used instead.
+
+| Command                   | Shortcut           |
+| ------------------------- | ------------------ |
+| `selectAll`               | Cmd + A            |
+| `copy`                    | Cmd + C            |
+| `cut`                     | Cmd + X            |
+| `paste`                   | Cmd + V/Y          |
+| `findNextMatch`           | Cmd + D            |
+| `indent`                  | Tab                |
+| `outdent`                 | Shift + Tab        |
+| `moveCursorToDocStart`    | Cmd + Up           |
+| `moveCursorToDocEnd`      | Cmd + Down         |
+| `expandSelectionDocStart` | Cmd + Shift + Up   |
+| `expandSelectionDocEnd`   | Cmd + Shift + Down |
+| `undo`                    | Cmd + Z            |
+| `redo`                    | Cmd + Shift + Z    |
+
+### Planned Features
+
+- Command palette (`Cmd + K`)
+- Language Server Protocol (LSP) integration
