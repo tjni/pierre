@@ -2204,8 +2204,9 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
     if (this.#wrap) {
       const contentWidth = this.#getContentWidth();
-      const width = 2 * offsetLeft + this.#metrics.measureTextWidth(lineText);
-      if (width > contentWidth) {
+      const textWidth =
+        2 * this.#metrics.ch + this.#metrics.measureTextWidth(lineText);
+      if (textWidth > contentWidth) {
         const wrapOffsets = this.#wrapLineText(line);
         for (let w = 0; w + 1 < wrapOffsets.length; w++) {
           const segmentStart = wrapOffsets[w];
@@ -2267,6 +2268,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           top: '0',
           left: '0',
           width: '100%',
+          boxSizing: 'border-box',
           visibility: 'hidden',
           pointerEvents: 'none',
           whiteSpace: 'pre-wrap',
@@ -2285,6 +2287,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
     try {
       const unicodeOffsets = getUnicodeMeasurementOffsets(lineText);
+      const wrapLineStartLeft =
+        div.getBoundingClientRect().left + this.#metrics.ch;
+
+      let previousOffset = 0;
       let lastTop = Number.NEGATIVE_INFINITY;
 
       for (let i = 0, offsetIndex = 0; i < lineText.length; ) {
@@ -2297,11 +2303,19 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
 
         // A new visual line starts whenever the character's top edge moves
         // below the previous character's top edge.
-        const { top } = range.getBoundingClientRect();
+        const { left, top } = range.getBoundingClientRect();
         if (top > lastTop) {
-          starts.push(i);
+          // Safari can report the first range on a wrapped visual line as
+          // starting one character past the visual line start. Use the previous
+          // offset so segment-local caret math begins at the actual wrap point.
+          const startsPastLineStart =
+            isSafari() &&
+            starts.length > 0 &&
+            left - wrapLineStartLeft > this.#metrics.ch / 2;
+          starts.push(startsPastLineStart ? previousOffset : i);
           lastTop = top;
         }
+        previousOffset = i;
         i = nextOffset;
         offsetIndex++;
       }
