@@ -28,6 +28,7 @@ import {
 } from '../docs/CustomHunkSeparators/constants';
 import {
   EDITOR_LAZY_FILE_EXAMPLE,
+  EDITOR_QUICK_EDIT_CONTEXT_TYPE,
   EDITOR_QUICK_EDIT_EXAMPLE,
   EDITOR_REACT_EXAMPLE,
   EDITOR_VANILLA_FILE_DIFF_EXAMPLE,
@@ -384,12 +385,14 @@ async function EditorSection() {
     editorVanillaFileExample,
     editorVanillaFileDiffExample,
     editorLazyFileExample,
+    editorQuickEditContextType,
     editorQuickEditExample,
     editorReactExample,
   ] = await Promise.all([
     preloadFile(EDITOR_VANILLA_FILE_EXAMPLE),
     preloadFile(EDITOR_VANILLA_FILE_DIFF_EXAMPLE),
     preloadFile(EDITOR_LAZY_FILE_EXAMPLE),
+    preloadFile(EDITOR_QUICK_EDIT_CONTEXT_TYPE),
     preloadFile(EDITOR_QUICK_EDIT_EXAMPLE),
     preloadFile(EDITOR_REACT_EXAMPLE),
   ]);
@@ -399,6 +402,7 @@ async function EditorSection() {
       editorVanillaFileExample,
       editorVanillaFileDiffExample,
       editorLazyFileExample,
+      editorQuickEditContextType,
       editorQuickEditExample,
       editorReactExample,
     },

@@ -3,11 +3,17 @@ import type { TextDocument, TextEdit } from './textDocument';
 import { h } from './utils';
 
 export interface QuickEditContext<LAnnotation> {
+  /** The current selection. */
   selection: EditorSelection;
+  /** The text document. */
   textDocument: TextDocument<LAnnotation>;
+  /** Applies the edits to the text document. */
   applyEdits: (edits: TextEdit[]) => void;
+  /** Gets the text of the current selection. */
   getSelectionText: () => string;
+  /** Replaces the text of the current selection. */
   replaceSelectionText: (text: string) => void;
+  /** Closes the quick edit. */
   close: () => void;
 }
 

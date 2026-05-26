@@ -138,21 +138,42 @@ export const EDITOR_QUICK_EDIT_EXAMPLE: PreloadFileOptions<undefined> = {
 
 const editor = new Editor({
   enabledQuickEdit: true,
-  renderQuickEdit: ({ close, replaceSelectionText, getSelectionText }) => {
+  renderQuickEdit: (context) => {
     const container = document.createElement('div');
     const button = document.createElement('button');
 
     button.type = 'button';
     button.textContent = 'Wrap selection in TODO()';
     button.addEventListener('click', () => {
-      replaceSelectionText(\`TODO(\${getSelectionText()})\`);
-      close();
+      context.replaceSelectionText(\`TODO(\${context.getSelectionText()})\`);
+      context.close();
     });
 
     container.appendChild(button);
     return container;
   },
 });`,
+  },
+  options,
+};
+
+export const EDITOR_QUICK_EDIT_CONTEXT_TYPE: PreloadFileOptions<undefined> = {
+  file: {
+    name: 'quick_edit_context.ts',
+    contents: `export interface QuickEditContext<LAnnotation> {
+  /** The current selection. */
+  selection: EditorSelection;
+  /** The text document. */
+  textDocument: TextDocument<LAnnotation>;
+  /** Applies the edits to the text document. */
+  applyEdits: (edits: TextEdit[]) => void;
+  /** Gets the text of the current selection. */
+  getSelectionText: () => string;
+  /** Replaces the text of the current selection. */
+  replaceSelectionText: (text: string) => void;
+  /** Closes the quick edit. */
+  close: () => void;
+}`,
   },
   options,
 };
