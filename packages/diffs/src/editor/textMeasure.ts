@@ -12,6 +12,7 @@ export class Metrics {
   /** Height of the code line. */
   lineHeight: number = 20;
 
+  /** initialize the metrics */
   init(root: HTMLElement): void {
     if (
       this.#root === root &&
@@ -47,6 +48,7 @@ export class Metrics {
     this.tabSize = Number(tabSize);
   }
 
+  /** measure the width of the text */
   measureTextWidth(text: string): number {
     const textWithExpandedTabs = text.replaceAll(
       '\t',

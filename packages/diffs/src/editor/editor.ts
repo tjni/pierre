@@ -87,9 +87,10 @@ export interface EditorOptions<LAnnotation> {
 }
 
 export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
+  #options: EditorOptions<LAnnotation>;
   #editMode: 'simple' | 'advanced' = 'simple';
   #wrap = false;
-  #options: EditorOptions<LAnnotation>;
+  #metrics = new Metrics();
   #tokenizer?: EditorTokenizer;
 
   // event handlers
@@ -97,9 +98,6 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
   #globalEventDisposes?: (() => void)[];
   #mouseUpDisposes?: (() => void)[];
   #removeEditorFromComponent?: () => void;
-
-  // metrics
-  #metrics = new Metrics();
 
   // file
   #component?: DiffsEditableComponent<LAnnotation>;
