@@ -27,6 +27,7 @@ import type {
   BaseCodeOptions,
   FileContents,
   LineAnnotation,
+  PostRenderPhase,
   PrePropertiesConfig,
   RenderFileMetadata,
   RenderRange,
@@ -98,7 +99,11 @@ export interface FileOptions<LAnnotation>
     getHoveredRow: () => GetHoveredLineResult<'file'> | undefined
   ): HTMLElement | null | undefined;
 
-  onPostRender?(node: HTMLElement, instance: File<LAnnotation>): unknown;
+  onPostRender?(
+    node: HTMLElement,
+    instance: File<LAnnotation>,
+    phase: PostRenderPhase
+  ): unknown;
 }
 
 interface AnnotationElementCache<LAnnotation> {
@@ -122,6 +127,7 @@ export class File<LAnnotation = undefined> {
   static LoadedCustomComponent: boolean = DiffsContainerLoaded;
 
   readonly __id: string = `file:${++instanceId}`;
+  readonly type = 'file';
 
   protected fileContainer: HTMLElement | undefined;
   protected spriteSVG: SVGElement | undefined;
@@ -141,6 +147,7 @@ export class File<LAnnotation = undefined> {
   protected cachedHeaderHTML: string | undefined;
   protected appliedPreAttributes: PrePropertiesConfig | undefined;
   protected lastRowCount: number | undefined;
+  private mounted = false;
 
   protected headerElement: HTMLElement | undefined;
   protected headerCustom: HTMLElement | undefined;
@@ -156,7 +163,7 @@ export class File<LAnnotation = undefined> {
   protected lineAnnotations: LineAnnotation<LAnnotation>[] = [];
   protected managersDirty = false;
 
-  protected file: FileContents | undefined;
+  public file: FileContents | undefined;
   protected renderRange: RenderRange | undefined;
   protected enabled = true;
 
@@ -280,6 +287,7 @@ export class File<LAnnotation = undefined> {
   }
 
   public cleanUp(recycle = false): void {
+    this.emitPostRender(true);
     this.resizeManager.cleanUp();
     this.interactionManager.cleanUp();
     this.managersDirty = false;
@@ -291,6 +299,7 @@ export class File<LAnnotation = undefined> {
       this.fileContainer?.remove();
     }
     this.fileContainer = undefined;
+    this.mounted = false;
     this.lineAnnotations = [];
     this.annotationCache.clear();
     this.pre = undefined;
@@ -363,6 +372,9 @@ export class File<LAnnotation = undefined> {
     fileContainer: HTMLElement,
     prerenderedHTML: string | undefined
   ): void {
+    if (this.fileContainer !== fileContainer) {
+      this.emitPostRender(true);
+    }
     prerenderHTMLIfNecessary(fileContainer, prerenderedHTML);
     for (const element of Array.from(
       fileContainer.shadowRoot?.children ?? []
@@ -589,10 +601,31 @@ export class File<LAnnotation = undefined> {
     return true;
   }
 
-  private emitPostRender() {
-    if (this.fileContainer != null) {
-      this.options.onPostRender?.(this.fileContainer, this);
+  private emitPostRender(unmount = false) {
+    const {
+      fileContainer,
+      options: { onPostRender },
+    } = this;
+
+    if (unmount) {
+      if (!this.mounted) {
+        return;
+      }
+      this.mounted = false;
+      if (fileContainer == null) {
+        return;
+      }
+      onPostRender?.(fileContainer, this, 'unmount');
+      return;
     }
+
+    if (fileContainer == null) {
+      return;
+    }
+
+    const phase: PostRenderPhase = this.mounted ? 'update' : 'mount';
+    this.mounted = true;
+    onPostRender?.(fileContainer, this, phase);
   }
 
   private removeRenderedCode(): void {
@@ -639,6 +672,7 @@ export class File<LAnnotation = undefined> {
     if (this.fileContainer == null) {
       return false;
     }
+    this.emitPostRender(true);
     this.cleanChildNodes();
 
     if (this.placeHolder == null) {
@@ -710,6 +744,8 @@ export class File<LAnnotation = undefined> {
 
     this.lastRenderedHeaderHTML = undefined;
     this.lastRowCount = undefined;
+
+    this.mounted = false;
   }
 
   private renderAnnotations(): void {
@@ -1250,12 +1286,16 @@ export class File<LAnnotation = undefined> {
     fileContainer?: HTMLElement,
     parentNode?: HTMLElement
   ): HTMLElement {
-    const previousContainer = this.fileContainer;
-    this.fileContainer =
+    const { fileContainer: previousContainer } = this;
+    const nextContainer =
       fileContainer ??
-      this.fileContainer ??
+      previousContainer ??
       document.createElement(DIFFS_TAG_NAME);
-    const containerChanged = previousContainer !== this.fileContainer;
+    const containerChanged = previousContainer !== nextContainer;
+    if (containerChanged) {
+      this.emitPostRender(true);
+    }
+    this.fileContainer = nextContainer;
     if (previousContainer != null && containerChanged) {
       this.lastRenderedHeaderHTML = undefined;
       this.headerElement = undefined;
