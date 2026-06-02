@@ -655,6 +655,7 @@ export interface ObservedGridNodes {
   numberElement: HTMLElement | null;
   codeWidth: number | 'auto';
   numberWidth: number;
+  applyColumnVariables: boolean;
 }
 
 export type CodeColumnType = 'unified' | 'additions' | 'deletions';
