@@ -475,10 +475,20 @@ interface SpringStepResult {
   velocity: number;
 }
 
+let forceOptimize = false;
+
+if (typeof window !== 'undefined') {
+  // @ts-expect-error
+  window.__OPTIMIZE = () => {
+    forceOptimize = !forceOptimize;
+    console.log('Optimized:', forceOptimize);
+  };
+}
+
 // A vibe slopped heuristic to detect WebKit browsers without matching
 // Chromium, which includes AppleWebKit in its user agent for compatibility.
-const IS_WEBKIT = (() => {
-  return true;
+let IS_WEBKIT = () => {
+  return forceOptimize;
   // const { navigator } = globalThis;
   //
   // const userAgent = navigator.userAgent;
@@ -487,7 +497,7 @@ const IS_WEBKIT = (() => {
   //   /AppleWebKit/.test(userAgent) &&
   //   !/(Chrome|Chromium|CriOS|Edg|EdgiOS|OPR|OPiOS)/.test(userAgent)
   // );
-})();
+};
 
 type PendingAlignTypes = Exclude<CodeViewLineScrollTarget['align'], 'nearest'>;
 
@@ -765,7 +775,7 @@ export class CodeView<LAnnotation = undefined> {
     // scrollable, so while aggressively scrolling, we disable scrolling. We
     // don't want to apply this fix to other browsers since in those cases it
     // can fuck with layout in ways that aren't appropriate
-    if (IS_WEBKIT && !this.codeOverflowFix) {
+    if (IS_WEBKIT() && !this.codeOverflowFix) {
       this.stickyContainer.style.setProperty(
         SCROLLING_CODE_OVERFLOW_FIX_VARIABLE,
         'hidden'
