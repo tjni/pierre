@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
-import { VirtualizedFileDiff } from '../src/components/VirtualizedFileDiff';
+import {
+  VIRTUALIZED_FILE_DIFF_LAYOUT_CHECKPOINT_INTERVAL,
+  VirtualizedFileDiff,
+} from '../src/components/VirtualizedFileDiff';
 import { DEFAULT_CODE_VIEW_FILE_METRICS } from '../src/constants';
 import type {
   FileDiffMetadata,
@@ -11,10 +14,6 @@ import type {
 } from '../src/types';
 import { iterateOverDiff } from '../src/utils/iterateOverDiff';
 import { parseDiffFromFile } from '../src/utils/parseDiffFromFile';
-
-// Mirrors LAYOUT_CHECKPOINT_INTERVAL in src/components/VirtualizedFileDiff.ts:
-// the source emits one layout checkpoint per this many diff rows.
-const LAYOUT_CHECKPOINT_INTERVAL = 5_000;
 
 const metrics: VirtualFileMetrics = {
   ...DEFAULT_CODE_VIEW_FILE_METRICS,
@@ -841,7 +840,9 @@ describe('VirtualizedFileDiff estimated height cache', () => {
     });
     expect(inspect(instance).cache.totalLines).toBe(lineCount);
     expect(inspect(instance).cache.checkpoints.length).toBe(
-      Math.floor((lineCount - 1) / LAYOUT_CHECKPOINT_INTERVAL) + 1
+      Math.floor(
+        (lineCount - 1) / VIRTUALIZED_FILE_DIFF_LAYOUT_CHECKPOINT_INTERVAL
+      ) + 1
     );
   });
 });
