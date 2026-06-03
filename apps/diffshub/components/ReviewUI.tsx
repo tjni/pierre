@@ -271,6 +271,7 @@ function ReviewUIInner({ domain, initialUrl, path }: ReviewUIProps) {
             source={treeSource}
             streaming={loadState === 'streaming'}
             themeCycle={themeCycle}
+            viewerRef={viewerRef}
             onSelectItem={handleSelectTreeItem}
           />
           <DiffsHubViewer
