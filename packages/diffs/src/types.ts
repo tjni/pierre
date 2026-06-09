@@ -749,6 +749,7 @@ export interface RenderedDiffASTCache {
   options: RenderDiffOptions;
   result: ThemedDiffResult | undefined;
   renderRange: RenderRange | undefined;
+  isDirty?: boolean;
 }
 
 export interface RenderRange {
@@ -890,6 +891,7 @@ export interface DiffsComponentOptions extends BaseCodeOptions {
   enableGutterUtility?: boolean;
   enableLineSelection?: boolean;
   expandUnchanged?: boolean;
+  diffStyle?: 'unified' | 'split';
   lineHoverHighlight?: 'disabled' | 'both' | 'number' | 'line';
 }
 
@@ -906,23 +908,24 @@ export interface DiffsEditableComponent<
   LAnnotation,
 > extends DiffsBaseComponent {
   attachEditor: (editor: DiffsEditor<LAnnotation>) => () => void;
-  applyLayoutChange: (
+  applyDocumentChange: (
     textDocument: DiffsTextDocument,
     newLineAnnotations?: DiffLineAnnotation<LAnnotation>[],
     shouldUpdateBuffer?: boolean
   ) => void;
-  applyLineChange?: (
+  updateRenderCache: (
     lines: Map<number, Array<HighlightedToken>>,
-    themeType: 'dark' | 'light'
+    themeType: 'dark' | 'light',
+    shouldRerender?: boolean
   ) => void;
 }
 
 export interface DiffsEditor<LAnnotation> {
   syncToRenderedView(
     highlighter: DiffsHighlighter,
-    fileInstanceType: 'file' | 'diff',
     fileContainer: HTMLElement,
     fileContents: FileContents,
+    didFileChange: boolean,
     lineAnnotations:
       | LineAnnotation<LAnnotation>[]
       | DiffLineAnnotation<LAnnotation>[]
@@ -947,6 +950,6 @@ export interface DiffsEditorSelection {
 
 export interface DiffsTextDocument {
   readonly lineCount: number;
-  getLineText: (lineNumber: number) => string;
+  getLineText: (lineNumber: number, includeLineBreak?: boolean) => string;
   getText: () => string;
 }
