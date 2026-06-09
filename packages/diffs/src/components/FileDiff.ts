@@ -1244,6 +1244,28 @@ export class FileDiff<LAnnotation = undefined> {
     for (const element of shadowRoot.children) {
       if (element instanceof SVGElement) {
         this.spriteSVG ??= element;
+      } else if (element instanceof HTMLPreElement) {
+        this.pre ??= element;
+        this.codeUnified = undefined;
+        this.codeDeletions = undefined;
+        this.codeAdditions = undefined;
+        this.appliedPreAttributes = undefined;
+      } else if (
+        element instanceof HTMLElement &&
+        'diffsHeader' in element.dataset
+      ) {
+        this.headerElement ??= element;
+        this.lastRenderedHeaderHTML = undefined;
+      } else if (
+        element instanceof HTMLElement &&
+        element.dataset.virtualizerBuffer === 'before'
+      ) {
+        this.bufferBefore ??= element;
+      } else if (
+        element instanceof HTMLElement &&
+        element.dataset.virtualizerBuffer === 'after'
+      ) {
+        this.bufferAfter ??= element;
       } else if (
         isStyleNode(element) &&
         element.hasAttribute(THEME_CSS_ATTRIBUTE)

@@ -1,5 +1,4 @@
 import {
-  CORE_CSS_ATTRIBUTE,
   DEFAULT_CODE_VIEW_FILE_METRICS,
   DEFAULT_CODE_VIEW_LAYOUT,
   DEFAULT_COLLAPSED_CONTEXT_THRESHOLD,
@@ -7,8 +6,6 @@ import {
   DEFAULT_THEMES,
   DIFFS_DEVELOPMENT_BUILD,
   DIFFS_TAG_NAME,
-  THEME_CSS_ATTRIBUTE,
-  UNSAFE_CSS_ATTRIBUTE,
 } from '../constants';
 import type { SelectionWriteOptions } from '../managers/InteractionManager';
 import {
@@ -39,7 +36,6 @@ import { areOptionsEqual } from '../utils/areOptionsEqual';
 import { areSelectionsEqual } from '../utils/areSelectionsEqual';
 import { areThemesEqual } from '../utils/areThemesEqual';
 import { createWindowFromScrollPosition } from '../utils/createWindowFromScrollPosition';
-import { isStyleNode } from '../utils/isStyleNode';
 import { prefersReducedMotion } from '../utils/prefersReducedMotion';
 import { roundToDevicePixel } from '../utils/roundToDevicePixel';
 import type { WorkerPoolManager } from '../worker';
@@ -978,10 +974,12 @@ export class CodeView<LAnnotation = undefined> {
     this.promotePendingPooledElements();
     let element = this.elementPool.pop();
     while (element != null && !this.isElementPoolGenerationCurrent(element)) {
+      this.discardPooledElement(element);
       element = this.elementPool.pop();
     }
     element ??= document.createElement(DIFFS_TAG_NAME);
     this.markElementPoolGenerationCurrent(element);
+    element.style.removeProperty('display');
     return element;
   }
 
@@ -990,6 +988,9 @@ export class CodeView<LAnnotation = undefined> {
     if (element != null && this.renderedItemOwnsFocus(element)) {
       this.shouldFixContainerFocus = true;
     }
+    if (element != null) {
+      element.style.display = 'none';
+    }
 
     item.instance.cleanUp(true);
     item.element = undefined;
@@ -997,8 +998,6 @@ export class CodeView<LAnnotation = undefined> {
       return;
     }
 
-    element.remove();
-    this.cleanElement(element);
     this.queueElementForPool(element);
   }
 
@@ -1018,30 +1017,9 @@ export class CodeView<LAnnotation = undefined> {
     }
   }
 
-  // Strip item-specific DOM while keeping the expensive shared shell assets
-  // that are valid for every item in this CodeView until shared options
-  // change.
-  private cleanElement(element: HTMLElement): void {
-    const { shadowRoot } = element;
-    if (shadowRoot != null) {
-      for (const child of Array.from(shadowRoot.children)) {
-        if (!isPooledShadowChild(child)) {
-          child.remove();
-        }
-      }
-    }
-
-    if (!this.isContainerManaged) {
-      element.replaceChildren();
-    }
-  }
-
   private queueElementForPool(element: HTMLElement): void {
-    const poolLimit = this.getElementPoolLimit();
-    if (
-      !this.isElementPoolGenerationCurrent(element) ||
-      this.getElementPoolSize() >= poolLimit
-    ) {
+    if (!this.isElementPoolGenerationCurrent(element)) {
+      this.discardPooledElement(element);
       return;
     }
 
@@ -1059,21 +1037,49 @@ export class CodeView<LAnnotation = undefined> {
 
     const { pendingElementPool: pendingElements } = this;
     this.pendingElementPool = [];
-    const poolLimit = this.getElementPoolLimit();
     for (const element of pendingElements) {
-      if (
-        this.isElementPoolGenerationCurrent(element) &&
-        this.isElementClean(element) &&
-        this.elementPool.length < poolLimit
-      ) {
+      if (!this.isElementPoolGenerationCurrent(element)) {
+        this.discardPooledElement(element);
+      } else if (this.isElementClean(element)) {
         this.elementPool.push(element);
-      } else if (
-        this.isElementPoolGenerationCurrent(element) &&
-        this.getElementPoolSize() < poolLimit
-      ) {
+      } else {
         this.pendingElementPool.push(element);
       }
     }
+  }
+
+  private trimElementPoolToLimit(): void {
+    let overflow = this.getElementPoolSize() - this.getElementPoolLimit();
+    if (overflow <= 0) {
+      return;
+    }
+
+    const pendingDiscardCount = Math.min(
+      overflow,
+      this.pendingElementPool.length
+    );
+    const pendingDiscarded = this.pendingElementPool.splice(
+      0,
+      pendingDiscardCount
+    );
+    overflow -= pendingDiscarded.length;
+    for (const element of pendingDiscarded) {
+      this.discardPooledElement(element);
+    }
+
+    if (overflow <= 0) {
+      return;
+    }
+
+    const pooledDiscarded = this.elementPool.splice(0, overflow);
+    for (const element of pooledDiscarded) {
+      this.discardPooledElement(element);
+    }
+  }
+
+  private discardPooledElement(element: HTMLElement): void {
+    this.elementPoolTracker.delete(element);
+    element.remove();
   }
 
   private isElementClean(element: HTMLElement): boolean {
@@ -1085,6 +1091,12 @@ export class CodeView<LAnnotation = undefined> {
   }
 
   private clearElementPool(): void {
+    for (const element of this.elementPool) {
+      this.discardPooledElement(element);
+    }
+    for (const element of this.pendingElementPool) {
+      this.discardPooledElement(element);
+    }
     this.elementPool.length = 0;
     this.pendingElementPool.length = 0;
   }
@@ -2676,6 +2688,7 @@ export class CodeView<LAnnotation = undefined> {
     this.reconcileRenderedItems(updatedItems);
     this.syncContainerHeight();
     this.updateStickyPositioning();
+    this.trimElementPoolToLimit();
 
     // Now that the dom has been flushed and we've computed our updated
     // item/line metrics, we should attempt to resolve any scroll anchors and
@@ -3418,18 +3431,6 @@ function hasCodeViewDiffEstimateOptionChanged<LAnnotation>(
       DEFAULT_COLLAPSED_CONTEXT_THRESHOLD) !==
       (nextOptions.collapsedContextThreshold ??
         DEFAULT_COLLAPSED_CONTEXT_THRESHOLD)
-  );
-}
-
-function isPooledShadowChild(child: Element): boolean {
-  if (child instanceof SVGElement) {
-    return true;
-  }
-  return (
-    isStyleNode(child) &&
-    (child.hasAttribute(CORE_CSS_ATTRIBUTE) ||
-      child.hasAttribute(THEME_CSS_ATTRIBUTE) ||
-      child.hasAttribute(UNSAFE_CSS_ATTRIBUTE))
   );
 }
 
