@@ -218,6 +218,7 @@
   pre,
   code,
   [data-error-wrapper] {
+    box-sizing: border-box;
     isolation: isolate;
     margin: 0;
     padding: 0;
@@ -235,12 +236,6 @@
     contain: content;
   }
 
-  *,
-  *::before,
-  *::after {
-    box-sizing: border-box;
-  }
-
   [data-icon-sprite] {
     display: none;
   }
@@ -255,6 +250,10 @@
     );
   }
 
+  [data-diffs-header] {
+    box-sizing: border-box;
+  }
+
   [data-diffs-header][data-sticky] {
     position: sticky;
     top: 0;
@@ -263,6 +262,7 @@
   }
 
   [data-file-info] {
+    box-sizing: border-box;
     padding: 10px;
     font-weight: 700;
     color: var(--fg);
@@ -275,6 +275,7 @@
 
   [data-diff],
   [data-file] {
+    box-sizing: border-box;
     /* This feels a bit crazy to me... so I need to think about it a bit more... */
     --diffs-grid-number-column-width: minmax(min-content, max-content);
     --diffs-code-grid: var(--diffs-grid-number-column-width) 1fr;
@@ -356,6 +357,8 @@
 
   [data-line],
   [data-no-newline] {
+    box-sizing: border-box;
+
     &[data-decoration-bg] {
       --mix-deco-light: 92%;
       --mix-deco-dark: 85%;
@@ -757,19 +760,23 @@
   }
 
   [data-diff-type='split'][data-overflow='scroll'] {
+    box-sizing: border-box;
     display: grid;
     grid-template-columns: 1fr 1fr;
 
     [data-additions] {
+      box-sizing: border-box;
       border-left: 1px solid var(--diffs-bg);
     }
 
     [data-deletions] {
+      box-sizing: border-box;
       border-right: 1px solid var(--diffs-bg);
     }
   }
 
   [data-code] {
+    box-sizing: border-box;
     display: grid;
     grid-auto-flow: dense;
     grid-template-columns: var(--diffs-code-grid);
@@ -789,6 +796,7 @@
   }
 
   [data-diffs-scrollbar-measure] {
+    box-sizing: border-box;
     position: absolute;
     top: -200px;
     left: -200px;
@@ -847,6 +855,7 @@
   }
 
   [data-gutter] {
+    box-sizing: border-box;
     display: grid;
     grid-template-rows: subgrid;
     grid-template-columns: subgrid;
@@ -862,6 +871,7 @@
   }
 
   [data-content] {
+    box-sizing: border-box;
     display: grid;
     grid-template-rows: subgrid;
     grid-template-columns: subgrid;
@@ -871,6 +881,7 @@
   }
 
   [data-diff-type='split'][data-overflow='wrap'] {
+    box-sizing: border-box;
     display: grid;
     grid-auto-flow: dense;
     grid-template-columns: repeat(2, var(--diffs-code-grid));
@@ -919,6 +930,7 @@
 
   [data-content-buffer],
   [data-gutter-buffer] {
+    box-sizing: border-box;
     position: relative;
     user-select: none;
     min-height: 1lh;
@@ -929,6 +941,7 @@
     padding-right: 1ch;
 
     &::before {
+      box-sizing: border-box;
       content: '';
       display: block;
       min-width: var(
@@ -989,6 +1002,7 @@
   }
 
   [data-separator-wrapper] {
+    box-sizing: border-box;
     user-select: none;
     fill: currentColor;
     position: absolute;
@@ -1047,6 +1061,7 @@
 
   [data-expand-button],
   [data-separator-content] {
+    box-sizing: border-box;
     display: flex;
     flex: 0 0 auto;
     align-items: center;
@@ -1304,11 +1319,13 @@
   }
 
   [data-line-annotation] {
+    box-sizing: border-box;
     min-height: var(--diffs-annotation-min-height, 0);
     z-index: 2;
   }
 
   [data-merge-conflict-actions] {
+    box-sizing: border-box;
     z-index: 2;
   }
 
@@ -1334,6 +1351,7 @@
       &[data-no-newline],
       &[data-line] {
         &::before {
+          box-sizing: border-box;
           display: inline-block;
           width: 1ch;
           height: 1lh;
@@ -1371,6 +1389,7 @@
     [data-line-type='change-addition'] {
       &[data-column-number] {
         &::before {
+          box-sizing: border-box;
           content: '';
           display: block;
           width: 4px;
@@ -1492,6 +1511,7 @@
   [data-merge-conflict='marker-base'],
   [data-merge-conflict='marker-separator'],
   [data-merge-conflict='marker-end'] {
+    box-sizing: border-box;
     padding-left: 1ch;
     color: var(--diffs-fg);
   }
@@ -1502,6 +1522,7 @@
     align-items: center;
 
     &::after {
+      box-sizing: border-box;
       color: var(--diffs-fg-conflict-marker);
       font-style: normal;
       font-size: 0.75rem;
@@ -1523,6 +1544,7 @@
   }
 
   [data-merge-conflict-actions-content] {
+    box-sizing: border-box;
     display: flex;
     align-items: center;
     gap: 0.25rem;
@@ -1538,6 +1560,7 @@
   }
 
   [data-merge-conflict-action] {
+    box-sizing: border-box;
     appearance: none;
     border: 0;
     background: transparent;
@@ -1585,6 +1608,7 @@
   }
 
   [data-header-content] {
+    box-sizing: border-box;
     display: flex;
     flex-direction: row;
     align-items: center;
@@ -1653,6 +1677,7 @@
   }
 
   [data-annotation-content] {
+    box-sizing: border-box;
     position: relative;
     display: flow-root;
     align-self: flex-start;
@@ -1683,6 +1708,7 @@
   }
 
   [data-gutter-utility-slot] {
+    box-sizing: border-box;
     position: absolute;
     top: 0;
     bottom: 0;
@@ -1693,6 +1719,7 @@
   }
 
   [data-utility-button] {
+    box-sizing: border-box;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1714,6 +1741,7 @@
     touch-action: none;
 
     &::before {
+      box-sizing: border-box;
       content: '';
       display: block;
       position: absolute;
