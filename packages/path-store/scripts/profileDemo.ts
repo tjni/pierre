@@ -409,7 +409,7 @@ const AGGREGATE_METRIC_DEFINITIONS: Array<{
 ];
 
 function printHelpAndExit(): never {
-  console.log('Usage: bun ws path-store profile:demo -- [options]');
+  console.log('Usage: bun ws path-store:profile:demo -- [options]');
   console.log('');
   console.log(
     'Assumes Chrome is already running with --remote-debugging-port enabled.'

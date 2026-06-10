@@ -313,15 +313,26 @@ if (runModeFlag) {
   args.splice(args.indexOf(runModeFlag), 1);
 }
 
-const [pkgArg, ...scriptArgs] = args;
+// The first positional argument is the `<workspace>:<script>` target; every
+// argument after it is forwarded verbatim to the underlying script.
+const [target, ...scriptArgs] = args;
 
-if (!pkgArg || scriptArgs.length === 0) {
-  console.log('Usage: bun ws <package> <script> [args...] [--verbose]');
+function printUsage() {
+  console.log('Usage: bun ws <workspace>:<script> [args...] [--verbose]');
   console.log('');
-  console.log('Filters:');
+  console.log('Target:');
+  console.log('  <workspace>:<script>  Run <script> in one workspace');
+  console.log(
+    '  :<script>             Run <script> in every workspace that defines it'
+  );
+  console.log('');
+  console.log('Workspace part:');
   console.log('  <name>           Matches @pierre/<name> in package.json');
   console.log('  packages/<name>  Matches directory on filesystem');
   console.log('  apps/<name>      Matches directory on filesystem');
+  console.log('  packages/*       Every package (glob)');
+  console.log('  apps/*           Every app (glob)');
+  console.log('  *  (or empty)    Every workspace');
   console.log('');
   console.log('Options:');
   console.log('  -v, --verbose    Show full output (no line elision)');
@@ -333,14 +344,50 @@ if (!pkgArg || scriptArgs.length === 0) {
   );
   console.log('');
   console.log('Examples:');
-  console.log('  bun ws diffs build');
-  console.log('  bun ws diffs test');
-  console.log('  bun ws diffs test --verbose    # full output');
-  console.log('  bun ws packages/diffs build    # path-based');
-  console.log("  bun ws 'packages/*' test       # all packages");
-  console.log("  bun ws 'apps/*' dev            # all apps");
-  console.log("  bun ws '*' build               # all workspaces");
+  console.log('  bun ws diffs:build');
+  console.log('  bun ws diffs:test');
+  console.log('  bun ws diffs:test --verbose       # full output');
+  console.log('  bun ws packages/diffs:build       # path-based');
+  console.log("  bun ws 'packages/*:test'          # all packages");
+  console.log("  bun ws 'apps/*:dev'               # all apps");
+  console.log(
+    '  bun ws :test                      # every workspace with test'
+  );
+  console.log(
+    "  bun ws '*:build'                  # every workspace (explicit)"
+  );
+}
+
+if (!target) {
+  printUsage();
   process.exit(0);
+}
+
+// Targets are `<workspace>:<script>`. Splitting on the first colon keeps script
+// names that themselves contain colons intact (e.g. `docs:trees:dev`,
+// `:test:e2e`). An empty workspace part (`:test`) fans out to every workspace.
+const colonIndex = target.indexOf(':');
+if (colonIndex === -1) {
+  console.error(
+    `Invalid target "${target}". The ws syntax is now <workspace>:<script>.`
+  );
+  const suggestedScript = scriptArgs.find((arg) => !arg.startsWith('-'));
+  if (suggestedScript) {
+    console.error(`Did you mean: bun ws ${target}:${suggestedScript}`);
+  } else {
+    console.error(`For example: bun ws ${target}:build`);
+  }
+  process.exit(1);
+}
+
+const pkgArg = target.slice(0, colonIndex);
+const scriptName = target.slice(colonIndex + 1);
+
+if (!scriptName) {
+  console.error(
+    `Missing script name in "${target}". Expected <workspace>:<script>.`
+  );
+  process.exit(1);
 }
 
 // Resolve package directory for direct execution
@@ -358,11 +405,13 @@ function resolvePackageDir(pkg: string): string | null {
   return null;
 }
 
-// Glob patterns (e.g. '*', 'packages/*') must use bun run -F
-if (pkgArg.includes('*')) {
+// An empty workspace part (`:test`) or a glob (`*`, `packages/*`) fans out via
+// `bun run -F`, which already runs the script only in the workspaces that
+// define it and silently skips the rest.
+if (pkgArg === '' || pkgArg.includes('*')) {
   const isPath = pkgArg.startsWith('packages/') || pkgArg.startsWith('apps/');
   let filter: string;
-  if (pkgArg === '*') {
+  if (pkgArg === '' || pkgArg === '*') {
     filter = '*';
   } else if (isPath) {
     filter = `./${pkgArg}`;
@@ -376,7 +425,7 @@ if (pkgArg.includes('*')) {
 
   const proc = spawn(
     'bun',
-    ['run', '-F', filter, ...outputFlags, ...scriptArgs],
+    ['run', '-F', filter, ...outputFlags, scriptName, ...scriptArgs],
     {
       stdio: 'inherit',
       cwd,
@@ -394,7 +443,6 @@ if (pkgArg.includes('*')) {
 
   const pkgJsonPath = resolve(pkgDir, 'package.json');
   const pkgJson = JSON.parse(await Bun.file(pkgJsonPath).text());
-  const scriptName = scriptArgs[0];
   const scriptCmd = pkgJson.scripts?.[scriptName];
 
   if (!scriptCmd) {
@@ -402,7 +450,7 @@ if (pkgArg.includes('*')) {
     process.exit(1);
   }
 
-  const restArgs = scriptArgs.slice(1); // args after script name (e.g., -- --update-snapshots)
+  const restArgs = scriptArgs; // forwarded args (e.g., -- --update-snapshots)
 
   // If the script contains shell operators, run via shell
   const needsShell = /&&|\|\||[|;]/.test(scriptCmd);

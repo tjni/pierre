@@ -34,8 +34,8 @@ If a unit test can prove behavior, write a unit test instead.
 From repo root:
 
 ```bash
-bun ws trees test
-bun ws trees test:e2e
+bun ws trees:test
+bun ws trees:test:e2e
 ```
 
 `test:e2e` automatically:

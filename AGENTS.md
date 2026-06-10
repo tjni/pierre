@@ -18,7 +18,7 @@ export AGENT=1
   package intentionally needs its own range.
 - Run commands from the monorepo root when they operate across the repo. Use
   package directories for package-local scripts, or use
-  `bun ws <project> <task>` as the root shortcut when that fits the task.
+  `bun ws <project>:<task>` as the root shortcut when that fits the task.
 - Preserve trailing newlines at the end of files.
 
 ## Skills

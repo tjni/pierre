@@ -494,7 +494,7 @@ const AGGREGATE_METRIC_DEFINITIONS: Array<{
 const INTEGER_FORMATTER = new Intl.NumberFormat('en-US');
 
 function printHelpAndExit(): never {
-  console.log('Usage: bun ws trees profile:file-tree -- [options]');
+  console.log('Usage: bun ws trees:profile:file-tree -- [options]');
   console.log('');
   console.log(
     'Assumes Chrome is already running with --remote-debugging-port enabled.'

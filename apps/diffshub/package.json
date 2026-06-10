@@ -5,7 +5,7 @@
   "scripts": {
     "build": "bun run build:deps && bun run build:next",
     "build:next": "next build",
-    "build:deps": "cd ../.. && bun ws \"packages/*\" build",
+    "build:deps": "cd ../.. && bun ws 'packages/*:build'",
     "dev": "export PORT=$((${PIERRE_PORT_OFFSET:-0} + 3692)) && bash ../../scripts/run-dev.sh \"$PORT\" -- bun run _dev",
     "prod": "export PORT=$((${PIERRE_PORT_OFFSET:-0} + 3692)) && bash ../../scripts/run-dev.sh \"$PORT\" -- bun run _prod",
     "_dev": "bun run build:deps && bun concurrently \"bun run dev:deps:diffs\" \"bun run dev:deps:tree\" \"bun run dev:deps:truncate\" \"bun run dev:next\" --names \"diffs,trees,truncate,diffshub\" --prefix-colors \"blue,green,yellow,purple\"",

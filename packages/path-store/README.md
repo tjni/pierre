@@ -45,12 +45,12 @@ Private engine types stay in `internal-types.ts` or implementation files.
 Run these commands from the repository root:
 
 ```bash
-bun ws path-store test
-bun ws path-store tsc
-bun ws path-store benchmark -- --preset mutation
-bun ws path-store benchmark -- --preset cleanup
-bun ws path-store benchmark -- --preset static
-bun ws path-store benchmark:visible-tree-projection
-bun ws path-store profile:demo
-bun ws path-store profile:visible-tree-projection
+bun ws path-store:test
+bun ws path-store:tsc
+bun ws path-store:benchmark -- --preset mutation
+bun ws path-store:benchmark -- --preset cleanup
+bun ws path-store:benchmark -- --preset static
+bun ws path-store:benchmark:visible-tree-projection
+bun ws path-store:profile:demo
+bun ws path-store:profile:visible-tree-projection
 ```

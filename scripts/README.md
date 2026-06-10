@@ -22,7 +22,7 @@ most common workflows.
 
 ## `bun ws` — the workspace script runner
 
-`bun ws <package> <script> [args…]` runs an npm script inside a specific
+`bun ws <package>:<script> [args…]` runs an npm script inside a specific
 workspace. It exists for three reasons:
 
 1. You can run it from anywhere in the monorepo — you don't have to `cd` into
@@ -35,15 +35,23 @@ workspace. It exists for three reasons:
 ### Syntax
 
 ```bash
-bun ws <package> <script> [args...]
-bun ws <package> <script> --verbose        # don't elide lines in output
-bun ws 'packages/*' <script>                # fan out across a glob
-bun ws '*' <script>                         # every workspace (apps + packages)
+bun ws <package>:<script> [args...]
+bun ws <package>:<script> --verbose         # don't elide lines in output
+bun ws 'packages/*:<script>'                # fan out across a glob
+bun ws ':<script>'                          # every workspace that defines it
 ```
 
-`ws` forwards every argument after the script name to the underlying `bun run`
+The target is a single `<package>:<script>` token. The package part comes before
+the first colon; everything after it is the script name (so script names that
+contain colons, like `trees:dev` → `docs:trees:dev`, stay intact). An empty
+package part (`:test`) fans out to every workspace, equivalent to `'*:test'`.
+
+`ws` forwards every argument after the target to the underlying `bun run`
 invocation. You do **not** need `--` to separate them unless a downstream tool
 requires it. The only flag `ws` itself eats is `-v` / `--verbose`.
+
+When fanning out across a glob or the empty package part, `ws` runs the script
+only in the workspaces that actually define it and silently skips the rest.
 
 ### Package name resolution
 
@@ -57,11 +65,11 @@ In priority order:
 ### Examples
 
 ```bash
-bun ws diffs build           # build packages/diffs
-bun ws docs trees:dev        # run the docs trees dev server
-bun ws trees test            # bun test in packages/trees
-bun ws 'packages/*' build    # build every package
-bun ws '*' tsc               # typecheck everything
+bun ws diffs:build           # build packages/diffs
+bun ws docs:trees:dev        # run the docs trees dev server
+bun ws trees:test            # bun test in packages/trees
+bun ws 'packages/*:build'    # build every package
+bun ws :tsc                  # typecheck everything
 ```
 
 ### How `ws` interacts with worktrees
@@ -271,7 +279,7 @@ no central registry file.
    PIERRE_WORKTREE_SLUG=drag-drop-fix
    PIERRE_PORT_OFFSET=30
    ```
-2. When you run `bun ws docs trees:dev`, `ws` walks up from your cwd, finds
+2. When you run `bun ws docs:trees:dev`, `ws` walks up from your cwd, finds
    `.env.worktree`, and injects its keys into the child env.
 3. The package.json script itself uses shell arithmetic to derive the final
    port:
@@ -326,7 +334,7 @@ permissions dialog hadn't finished resolving yet.
 ```bash
 bun run wt new drag-drop-fix
 cd ~/pierre/pierre-worktrees/drag-drop-fix
-bun ws docs trees:dev
+bun ws docs:trees:dev
 # → serves on http://localhost:<3691 + offset>, tab title prefixed with
 #   an emoji + "[drag-drop-fix]"
 ```

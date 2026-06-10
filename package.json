@@ -101,7 +101,7 @@
   "scripts": {
     "ws": "bun --silent scripts/ws.ts",
     "wt": "bun --silent scripts/wt.ts",
-    "tsc": "bun run ws \"*\" tsc",
+    "tsc": "bun ws :tsc",
     "clean": "bunx del-cli 'apps/*/.{next,source}' 'packages/*/dist' 'apps/*/tsconfig.tsbuildinfo' 'packages/*/tsconfig.tsbuildinfo'",
     "clean:all": "bun run clean && bunx del-cli '**/node_modules'",
     "icons:sprite": "node scripts/build-sprite.js && bun run format",
