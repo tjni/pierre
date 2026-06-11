@@ -16,7 +16,14 @@ tasks:
   lint:
     command: 'oxlint --type-aware --tsconfig tsconfig.oxlint.json .'
     inputs:
+      # Explicit input globs are filesystem-walked (gitignore is not
+      # applied), so installed and generated trees must be negated or every
+      # node_modules file gets hashed into the task inputs.
       - '**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}'
+      - '!**/node_modules/**'
+      - '!**/dist/**'
+      - '!**/.next/**'
+      - '!**/.source/**'
       - '.oxlintrc.json'
       - 'tsconfig.oxlint.json'
     options:
@@ -31,6 +38,10 @@ tasks:
     script: 'stylelint "**/*.css"'
     inputs:
       - '**/*.css'
+      - '!**/node_modules/**'
+      - '!**/dist/**'
+      - '!**/.next/**'
+      - '!**/.source/**'
       - 'stylelint.config.js'
     options:
       runInCI: 'always'
@@ -47,6 +58,10 @@ tasks:
     command: 'oxfmt --check .'
     inputs:
       - '**/*'
+      - '!**/node_modules/**'
+      - '!**/dist/**'
+      - '!**/.next/**'
+      - '!**/.source/**'
     options:
       runInCI: 'always'
 

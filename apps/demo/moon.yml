@@ -3,6 +3,11 @@ $schema: 'https://moonrepo.dev/schemas/project.json'
 language: 'typescript'
 layer: 'application'
 
+workspace:
+  inheritedTasks:
+    # No test suite in this app.
+    exclude: ['test']
+
 tasks:
   build:
     command: 'vite build'

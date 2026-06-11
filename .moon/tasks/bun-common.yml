@@ -12,8 +12,12 @@ implicitInputs:
   - 'package.json'
 
 tasks:
+  # Tests import workspace dependencies through their published dist (same
+  # resolution as typecheck), so dependency builds must complete first.
   test:
     command: 'bun test'
+    deps:
+      - '^:build'
 
   # Cross-package imports resolve through each dependency's published `dist`
   # (no TypeScript project references between packages), so typechecking a
@@ -23,5 +27,12 @@ tasks:
     deps:
       - '^:build'
     inputs:
+      # Whole project minus installed and generated trees: explicit input
+      # globs are filesystem-walked (gitignore is not applied), so without
+      # the negations every node_modules file would be hashed.
       - '**/*'
+      - '!node_modules/**'
+      - '!dist/**'
+      - '!.next/**'
+      - '!.source/**'
       - '/tsconfig.options.json'

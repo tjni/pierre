@@ -5,9 +5,9 @@ layer: 'application'
 
 tasks:
   # Both site builds regenerate the shared `public/llms*.txt` (its content is
-  # site-dependent) and `.source`, so they share a mutex: never run them
-  # concurrently. Their .next outputs are disjoint (`distDir: .next/<site>`),
-  # which keeps the two tasks independently cacheable.
+  # site-dependent), so they share a mutex: never run them concurrently.
+  # Their .next outputs are disjoint (`distDir: .next/<site>`), which keeps
+  # the two tasks independently cacheable.
   build:
     script: 'bun scripts/generate-llms-txt.ts && next build'
     env:
@@ -16,7 +16,6 @@ tasks:
       - '^:build'
     outputs:
       - '.next/diffs'
-      - '.source'
       - 'public/llms.txt'
       - 'public/llms-full.txt'
     options:
@@ -30,7 +29,6 @@ tasks:
       - '^:build'
     outputs:
       - '.next/trees'
-      - '.source'
       - 'public/llms.txt'
       - 'public/llms-full.txt'
     options:
@@ -69,7 +67,12 @@ tasks:
   # have run build-trees-site) to serve the trees build. PORT passes through.
   start:
     command: 'next start'
-    preset: 'server'
+    options:
+      # Spawned by playwright's webServer (docs test-e2e); see
+      # trees:test-e2e-server for why this is not a server preset task.
+      cache: false
+      persistent: true
+      runInCI: 'always'
 
   prod:
     script: 'next start -p "${PORT:-3000}"'
