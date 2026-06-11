@@ -7,138 +7,58 @@ on:
   pull_request:
 
 jobs:
-  build:
-    name: Build Dependencies
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+  # Everything except browser e2e: moon computes the affected projects from
+  # the VCS diff (PR base, or the push range on main) and runs only their
+  # tasks, in graph order, restoring unchanged build outputs from the moon
+  # cache on the sticky disk. The target list below is every CI-relevant
+  # task except trees:test-e2e, which runs in its own lane so the slowest
+  # suite never serializes behind builds (moon ci has no exclude flag, so
+  # the list is explicit — add new CI tasks here).
+  ci:
+    name: Build, test, lint
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     steps:
       - name: Checkout code
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-
-      - name: Set up Bun and install dependencies
-        uses: ./.github/actions/setup
-
-      - name: Build workspace packages
-        run: bun ws "packages/*" build
-
-      # Build each docs site variant so both are build-verified. Every variant
-      # writes to the same `.next/` dir (the per-site `distDir` in
-      # next.config.mjs is dev-only), so these run sequentially.
-      - name: Build docs (diffs, generates .source)
-        run: bun ws docs build
-
-      - name: Build docs (trees)
-        run: NEXT_PUBLIC_SITE=trees bun ws docs build
-
-      # diffshub is now its own standalone app rather than a docs site variant.
-      - name: Build diffshub
-        run: bun ws diffshub build
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: build-output
-          path: |
-            packages/*/dist/
-            apps/docs/.source/
-            apps/docs/.next/
-            apps/diffshub/.next/
-          retention-days: 1
+          # moon diffs against the merge base to compute affected projects.
+          fetch-depth: 0
 
-  lint:
-    name: Lint
-    runs-on: blacksmith-4vcpu-ubuntu-2404
-    needs: build
+      - name: Set up moon and caches
+        uses: ./.github/actions/setup
+
+      - name: Run affected tasks
+        run: >-
+          moon ci --include-relations :build docs:build-trees-site
+          path-store:build-demo :test :typecheck root:lint root:lint-css
+          root:format-check
+
+  e2e:
+    name: E2E (trees)
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     steps:
       - name: Checkout code
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-
-      - name: Set up Bun and install dependencies
-        uses: ./.github/actions/setup
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: build-output
+          fetch-depth: 0
 
-      - name: Run Lint
-        run: bun run lint
-
-  stylelint:
-    name: Stylelint
-    runs-on: blacksmith-4vcpu-ubuntu-2404
-    needs: build
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-
-      - name: Set up Bun and install dependencies
+      - name: Set up moon and caches
         uses: ./.github/actions/setup
-
-      - name: Run Stylelint
-        run: bun run lint:css
-
-  format:
-    name: Format
-    runs-on: blacksmith-4vcpu-ubuntu-2404
-    needs: build
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-
-      - name: Set up Bun and install dependencies
-        uses: ./.github/actions/setup
-
-      - name: Run Format check
-        run: bun run format:check
-
-  test:
-    name: Tests
-    runs-on: blacksmith-4vcpu-ubuntu-2404
-    needs: build
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-
-      - name: Set up Bun and install dependencies
-        uses: ./.github/actions/setup
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: build-output
-
-      - name: Run unit tests (all packages)
-        run: bun ws "packages/*" test --sequential
 
       - name: Mount Playwright browsers
         uses: useblacksmith/stickydisk@2b7a836cbb2b48f4780ae76a7b6fd79d545fb54a # v1.3.0
         with:
           key: ${{ github.repository }}-playwright-browsers-${{ runner.os }}
           path: ~/.cache/ms-playwright
-      - name: Install Playwright browser - trees
+
+      # System libraries are per-runner and not covered by the browser cache.
+      - name: Install Playwright browser
         run: bunx playwright@1.51.1 install --with-deps chromium
 
-      - name: Run tests - trees e2e
-        run: bun ws trees test:e2e
-
-  typecheck:
-    name: TypeScript
-    runs-on: blacksmith-4vcpu-ubuntu-2404
-    needs: build
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-
-      - name: Set up Bun and install dependencies
-        uses: ./.github/actions/setup
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: build-output
-
-      - name: Type check all workspaces
-        run: bun run ws "*" tsc
+      # Affected-aware: skips itself (and the build chain it depends on)
+      # when trees is untouched.
+      - name: Run trees e2e
+        run: moon ci --include-relations trees:test-e2e
 
   actions-pinned:
     name: Actions pinned to SHA
