@@ -2,11 +2,14 @@
 
 ## Agent Environment
 
-Set `AGENT=1` at the start of every terminal session so Bun's test runner emits
-AI-friendly output:
+Set up every terminal session so Bun's test runner emits AI-friendly output and
+moon treats the session as local development (harnesses often export `CI=1`,
+which makes moon refuse to run local-only tasks like dev servers, formatters,
+and benchmarks):
 
 ```bash
 export AGENT=1
+unset CI
 ```
 
 ## Core Rules
@@ -16,9 +19,9 @@ export AGENT=1
 - Dependencies use Bun's root `workspaces.catalog`. Never add dependency
   versions directly to package-level `package.json` files unless a published
   package intentionally needs its own range.
-- Run commands from the monorepo root when they operate across the repo. Use
-  package directories for package-local scripts, or use
-  `bun ws <project> <task>` as the root shortcut when that fits the task.
+- Run tasks through moon: `moon run <project>:<task>` (or the `moonx` shorthand)
+  works from anywhere in the repo. `moonx <project>:<task> -- args` forwards
+  arguments. Discover tasks with `moon tasks <project>`.
 - Preserve trailing newlines at the end of files.
 
 ## Skills
@@ -46,16 +49,17 @@ documentation there.
 ## Verification Baseline
 
 After code changes, verification is not complete until you have run these from
-the monorepo root:
+anywhere in the repo:
 
 ```bash
-bun run format
-bun run lint
+moon run root:format root:lint
 ```
 
-Also run the relevant package-level `bun run tsc` and focused tests for the
-changed area. For docs-only or AGENTS/skill-only changes, formatting and linting
-are sufficient unless the edit touches executable code or package config.
+Also run the affected typecheck and focused tests for the changed area, e.g.
+`moonx <project>:typecheck` and `moonx <project>:test` (or
+`moon exec :typecheck --affected`). For docs-only or AGENTS/skill-only changes,
+formatting and linting are sufficient unless the edit touches executable code or
+package config.
 
 ## Code Readability
 

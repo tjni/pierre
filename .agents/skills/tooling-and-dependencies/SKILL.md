@@ -32,18 +32,25 @@ This monorepo uses Bun's `workspaces.catalog` in the root `package.json`.
   `apps/docs` should use catalog versions; published packages such as
   `packages/diffs` may use ranges only when that is intentional.
 
-## Scripts
+## Tasks
 
-- Package scripts should work from the package directory.
-- Common scripts may be mirrored at the root as shortcuts. A root mirror should
-  not behave differently from the package script it wraps.
-- Use the workspace runner when convenient:
+- All build/dev/test/lint entrypoints are moon tasks; package.json scripts exist
+  only for npm lifecycle hooks (`prepublishOnly`). Never add task scripts back
+  to a package.json.
+- Tasks are defined in `.moon/tasks/*.yml` (inherited) and each project's
+  `moon.yml`. Repo-wide tooling (format, lint, icons, clean) lives on the `root`
+  project.
+- Run tasks from anywhere in the repo:
 
 ```bash
-bun ws <project> <task>
-bun ws <project> <task> --some --flag
+moon run <project>:<task>
+moonx <project>:<task>             # shorthand for moon exec
+moonx <project>:<task> -- --flags  # forward arguments after --
+moon run :test                     # a task across every project that has it
+moon tasks <project>               # discover a project's tasks
 ```
 
-`bun ws` forwards arguments to the target script and does not require a
-standalone `--` separator. The only special handling is that `-v` and
-`--verbose` are consumed by `scripts/ws.ts`.
+moon builds dependency projects first (`deps: ['^:build']`), caches outputs, and
+skips tasks whose inputs have not changed. Sessions must `unset CI` (see
+AGENTS.md) or moon will refuse to run local-only tasks like dev servers and
+formatters.
