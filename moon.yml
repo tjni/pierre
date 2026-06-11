@@ -7,9 +7,10 @@ $schema: 'https://moonrepo.dev/schemas/project.json'
 #
 # Local-only tasks avoid presets and set options explicitly: presets force
 # `runInCI: skip`, and moon refuses to run such tasks in CI-detected shells —
-# which includes agent harnesses that export CI=1. The CI lanes only run
-# explicitly targeted tasks, so `runInCI: 'always'` here never adds work to
-# the CI pipeline.
+# which includes agent harnesses that export CI=1. moon ci executes every
+# affected runInCI-enabled task, so `runInCI: 'always'` is reserved for tasks
+# with no graph edges (no deps, no dependents) — they can never be affected
+# through the graph and so never join the CI pipeline uninvited.
 language: 'typescript'
 
 # Type-aware lint resolves @pierre/* imports through each package's built

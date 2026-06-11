@@ -1,12 +1,13 @@
 $schema: 'https://moonrepo.dev/schemas/project.json'
 
 # Local-only tasks avoid presets and set options explicitly. Rule of thumb:
-# `runInCI: 'always'` keeps a task runnable in CI-marked shells (agent
-# harnesses export CI=1) and is safe ONLY for tasks with no `deps` into the
-# build graph — `moon ci --include-relations` pulls runInCI-enabled
-# dependents of affected tasks into the pipeline. Graph-connected local
-# tasks (dev/prod/e2e variants) stay `runInCI: 'skip'`; run those with a
-# `CI=` prefix in CI-marked shells, e.g. `CI= moonx docs:dev-diffs`.
+# moon ci executes EVERY affected runInCI-enabled task (requested targets
+# only add, never subtract), so `runInCI: 'always'` — which keeps a task
+# runnable in CI-marked shells like agent harnesses (CI=1) — is safe only
+# for tasks that can never be affected through the graph (no deps, no
+# dependents). Graph-connected local tasks (dev/prod/e2e variants) stay
+# `runInCI: 'skip'`; run those with a `CI=` prefix, e.g.
+# `CI= moonx docs:dev-diffs`.
 language: 'typescript'
 layer: 'application'
 
@@ -14,13 +15,23 @@ tasks:
   # Both site builds regenerate the shared `public/llms*.txt` (its content is
   # site-dependent), so they share a mutex: never run them concurrently.
   # Their .next outputs are disjoint (`distDir: .next/<site>`), which keeps
-  # the two tasks independently cacheable.
+  # the two tasks independently cacheable. Inputs are explicit because the
+  # default project glob would hash the SIBLING task's llms output (moon only
+  # filters a task's own outputs), making the two hashes ping-pong and
+  # forcing rebuilds on every pipeline.
   build:
     script: 'bun scripts/generate-llms-txt.ts && next build'
     env:
       NEXT_PUBLIC_SITE: 'diffs'
     deps:
       - '^:build'
+    inputs:
+      - '**/*'
+      - '!node_modules/**'
+      - '!.next/**'
+      - '!public/llms.txt'
+      - '!public/llms-full.txt'
+      - '/tsconfig.options.json'
     outputs:
       - '.next/diffs'
       - 'public/llms.txt'
@@ -34,6 +45,13 @@ tasks:
       NEXT_PUBLIC_SITE: 'trees'
     deps:
       - '^:build'
+    inputs:
+      - '**/*'
+      - '!node_modules/**'
+      - '!.next/**'
+      - '!public/llms.txt'
+      - '!public/llms-full.txt'
+      - '/tsconfig.options.json'
     outputs:
       - '.next/trees'
       - 'public/llms.txt'

@@ -1,12 +1,13 @@
 $schema: 'https://moonrepo.dev/schemas/project.json'
 
 # Local-only tasks avoid presets and set options explicitly. Rule of thumb:
-# `runInCI: 'always'` keeps a task runnable in CI-marked shells (agent
-# harnesses export CI=1) and is safe ONLY for tasks with no `deps` into the
-# build graph — `moon ci --include-relations` pulls runInCI-enabled
-# dependents of affected tasks into the pipeline. Graph-connected local
-# tasks (dev/prod/e2e variants) stay `runInCI: 'skip'`; run those with a
-# `CI=` prefix in CI-marked shells, e.g. `CI= moonx docs:dev-diffs`.
+# moon ci executes EVERY affected runInCI-enabled task (requested targets
+# only add, never subtract), so `runInCI: 'always'` — which keeps a task
+# runnable in CI-marked shells like agent harnesses (CI=1) — is safe only
+# for tasks that can never be affected through the graph (no deps, no
+# dependents). Graph-connected local tasks (dev/prod/e2e variants) stay
+# `runInCI: 'skip'`; run those with a `CI=` prefix, e.g.
+# `CI= moonx docs:dev-diffs`.
 language: 'typescript'
 layer: 'library'
 tags: ['tsdown', 'publishable']

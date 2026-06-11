@@ -21,3 +21,10 @@ tasks:
       - 'dist'
     options:
       merge: 'replace'
+
+  # The dist-guards suite reads dist directly; the dep (merged with the
+  # inherited ^:build) guarantees freshness so the test never builds or
+  # restores dist itself, which would clear it mid-pipeline for siblings.
+  test:
+    deps:
+      - 'build'

@@ -57,7 +57,8 @@ run in CI-detected shells; agent harnesses export `CI=1`):
 
 - No graph edges at all (formatters, benchmarks, wt, servers spawned by
   playwright): use `runInCI: 'always'` — runnable everywhere, and never in the
-  CI pipeline because the CI lanes only target specific tasks.
+  CI pipeline because a task with no deps or dependents is never affected
+  through the graph.
 - Connected to the build graph (dev/prod, e2e variants, publish guards): keep
   `runInCI: 'skip'` — `moon ci --include-relations` runs affected
   runInCI-enabled tasks even when unrequested, which would pull them into CI.
