@@ -8,6 +8,7 @@
         "@pierre/vscode-icons": "^0.0.9",
       },
       "devDependencies": {
+        "@moonrepo/cli": "catalog:",
         "@pierre/icons": "^0.5.0",
         "@types/bun": "catalog:",
         "@typescript/native-preview": "catalog:",
@@ -330,6 +331,7 @@
   "catalog": {
     "@arethetypeswrong/core": "0.18.2",
     "@icons-pack/react-simple-icons": "13.8.0",
+    "@moonrepo/cli": "2.3.3",
     "@octokit/app": "16.1.1",
     "@octokit/auth-app": "8.1.1",
     "@octokit/openapi-types": "26.0.0",
@@ -617,6 +619,22 @@
     "@mdx-js/react": ["@mdx-js/react@3.1.1", "", { "dependencies": { "@types/mdx": "^2.0.0" }, "peerDependencies": { "@types/react": ">=16", "react": ">=16" } }, "sha512-f++rKLQgUVYDAtECQ6fn/is15GkEH9+nZPM3MS0RcxVqoTfawHvDlSCH7JbMhAM6uJ32v3eXLvLmLvjGu7PTQw=="],
 
     "@modelcontextprotocol/sdk": ["@modelcontextprotocol/sdk@1.29.0", "", { "dependencies": { "@hono/node-server": "^1.19.9", "ajv": "^8.17.1", "ajv-formats": "^3.0.1", "content-type": "^1.0.5", "cors": "^2.8.5", "cross-spawn": "^7.0.5", "eventsource": "^3.0.2", "eventsource-parser": "^3.0.0", "express": "^5.2.1", "express-rate-limit": "^8.2.1", "hono": "^4.11.4", "jose": "^6.1.3", "json-schema-typed": "^8.0.2", "pkce-challenge": "^5.0.0", "raw-body": "^3.0.0", "zod": "^3.25 || ^4.0", "zod-to-json-schema": "^3.25.1" }, "peerDependencies": { "@cfworker/json-schema": "^4.1.1" }, "optionalPeers": ["@cfworker/json-schema"] }, "sha512-zo37mZA9hJWpULgkRpowewez1y6ML5GsXJPY8FI0tBBCd77HEvza4jDqRKOXgHNn867PVGCyTdzqpz0izu5ZjQ=="],
+
+    "@moonrepo/cli": ["@moonrepo/cli@2.3.3", "", { "dependencies": { "detect-libc": "^2.1.2" }, "optionalDependencies": { "@moonrepo/core-linux-arm64-gnu": "2.3.3", "@moonrepo/core-linux-arm64-musl": "2.3.3", "@moonrepo/core-linux-x64-gnu": "2.3.3", "@moonrepo/core-linux-x64-musl": "2.3.3", "@moonrepo/core-macos-arm64": "2.3.3", "@moonrepo/core-macos-x64": "2.3.3", "@moonrepo/core-windows-x64-msvc": "2.3.3" }, "bin": { "moon": "moon.js", "moonx": "moonx.js" } }, "sha512-TmHbQFJH1+vqIsXn7WpPXQtPlgwgyfWUjUBWWQCR2dj3UHg/0IGD4KDlqNg1VPmcyXnuDmlcHtqZ2bkxZx+RhQ=="],
+
+    "@moonrepo/core-linux-arm64-gnu": ["@moonrepo/core-linux-arm64-gnu@2.3.3", "", { "os": "linux", "cpu": "arm64" }, "sha512-AzovoQPizmwGe5nLd9s0UnN/IUnol81la2vNH+U7vSyh24NzVirT1iOLEcajwtbNvJpl3aXzbhbjrXp35fKVWg=="],
+
+    "@moonrepo/core-linux-arm64-musl": ["@moonrepo/core-linux-arm64-musl@2.3.3", "", { "os": "linux", "cpu": "arm64" }, "sha512-2jJLXAIUiqdFdw3hxuMefGB3DenQN/CC2mbqL44jC4uZNH6pX1mvjlguubBwUvGHfGbACjh9W9JjavpSMKY9cw=="],
+
+    "@moonrepo/core-linux-x64-gnu": ["@moonrepo/core-linux-x64-gnu@2.3.3", "", { "os": "linux", "cpu": "x64" }, "sha512-17WZG59QUJhw8wepo1Oe5lmh/q0ax0EQzVk7/EbRe2uBRFsN24oR+R6MyVvuEqmG71x5EFwfPbuH/R48dcRROQ=="],
+
+    "@moonrepo/core-linux-x64-musl": ["@moonrepo/core-linux-x64-musl@2.3.3", "", { "os": "linux", "cpu": "x64" }, "sha512-IaE5qN/QOi85SMdhpTtwrDVmIu1MHKznQZxB+jl8dUbQj5iWKyY/DusXXNs9zRR45jBNUlyE4FhrY9rwf2SqtQ=="],
+
+    "@moonrepo/core-macos-arm64": ["@moonrepo/core-macos-arm64@2.3.3", "", { "os": "darwin", "cpu": "arm64" }, "sha512-UiO8QuICnxD1XglNDCjkTBwL0YOHvfcj37m5yeIrBjyvkytlWNek4Us7jqr15gbYT+z9pU02Um8k+S1p7y+BkA=="],
+
+    "@moonrepo/core-macos-x64": ["@moonrepo/core-macos-x64@2.3.3", "", { "os": "darwin", "cpu": "x64" }, "sha512-FteLklMxJ4cUuZnhrt5lFsYnQMqdzMiAaTFOQDVpUkd6llgrwxIJbUMnPOFHZe4jVJCjpmacEsG7j9/Oxg7HqQ=="],
+
+    "@moonrepo/core-windows-x64-msvc": ["@moonrepo/core-windows-x64-msvc@2.3.3", "", { "os": "win32", "cpu": "x64" }, "sha512-qxXvgnqkE4yu6m0vcgDNmRBLnxfAVXq7F7ebaHAOmj7cK0DNnQpZBaxNB3LrIuxhyFdviKVTsUT7F7CpLsVjlw=="],
 
     "@mswjs/interceptors": ["@mswjs/interceptors@0.41.9", "", { "dependencies": { "@open-draft/deferred-promise": "^2.2.0", "@open-draft/logger": "^0.3.0", "@open-draft/until": "^2.0.0", "is-node-process": "^1.2.0", "outvariant": "^1.4.3", "strict-event-emitter": "^0.5.1" } }, "sha512-VVPPgHyQ6ShqnrmDWuxjmUIsO9gWyOZFmuOfLd9LfBGQJwZfy0gvv9pbHSJuoFNIYC7ZDX9aoFwowjcdSC4E8w=="],
 

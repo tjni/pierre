@@ -27,7 +27,7 @@ export default defineConfig({
     viewport: { width: 1200, height: 900 },
   },
   webServer: {
-    command: `PATH_STORE_DEMO_E2E_PORT=${e2ePort} bun run test:demo:server`,
+    command: `PATH_STORE_DEMO_E2E_PORT=${e2ePort} moon run path-store:test-demo-server`,
     url: `${e2eBaseUrl}/`,
     reuseExistingServer: false,
     timeout: 60_000,

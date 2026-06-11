@@ -1,0 +1,4 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "moon run docs:$([ \"$NEXT_PUBLIC_SITE\" = \"trees\" ] && echo build-trees-site || echo build)"
+}

@@ -31,7 +31,7 @@ export default defineConfig({
     viewport: { width: 1200, height: 800 },
   },
   webServer: {
-    command: `FILE_TREE_E2E_PORT=${e2ePort} bun run test:e2e:server`,
+    command: `FILE_TREE_E2E_PORT=${e2ePort} moon run trees:test-e2e-server`,
     url: `${e2eBaseUrl}/test/e2e/fixtures/file-tree-style-isolation.html`,
     reuseExistingServer: false,
     timeout: 60_000,

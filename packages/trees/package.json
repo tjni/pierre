@@ -67,7 +67,7 @@
     "generate-icons": "bun scripts/generate-built-in-icons.ts",
     "publish-package": "bun run ./scripts/publish.ts",
     "assert:safe-publish": "bun scripts/assert-safe-publish.ts",
-    "prepublishOnly": "bun run assert:safe-publish && bun run build"
+    "prepublishOnly": "moon run trees:prepublish"
   },
   "dependencies": {
     "@pierre/path-store": "workspace:*",

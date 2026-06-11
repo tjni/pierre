@@ -27,7 +27,7 @@ export default defineConfig({
     viewport: { width: 1400, height: 1000 },
   },
   webServer: {
-    command: `PORT=${e2ePort} bun run start`,
+    command: `PORT=${e2ePort} moon run docs:start`,
     url: `${e2eBaseUrl}/trees-dev/react`,
     reuseExistingServer: false,
     timeout: 60_000,
