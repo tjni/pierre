@@ -2,15 +2,19 @@
 
 ## Agent Environment
 
-Set up every terminal session so Bun's test runner emits AI-friendly output and
-moon treats the session as local development (harnesses often export `CI=1`,
-which makes moon refuse to run local-only tasks like dev servers, formatters,
-and benchmarks):
+Set `AGENT=1` at the start of every terminal session so Bun's test runner emits
+AI-friendly output:
 
 ```bash
 export AGENT=1
-unset CI
 ```
+
+Most local moon tasks (formatters, benchmarks, worktree management) are
+configured with `runInCI: 'always'` so they keep working in CI-marked shells
+like agent harnesses. Tasks connected to the build graph (dev servers, prod
+serves, e2e variants, publish guards) stay CI-skipped — prefix those with `CI=`
+to run them here, e.g. `CI= moonx docs:dev-diffs` or
+`CI= bun publish --dry-run`.
 
 ## Core Rules
 

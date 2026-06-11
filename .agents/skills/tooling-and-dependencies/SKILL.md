@@ -51,6 +51,15 @@ moon tasks <project>               # discover a project's tasks
 ```
 
 moon builds dependency projects first (`deps: ['^:build']`), caches outputs, and
-skips tasks whose inputs have not changed. Sessions must `unset CI` (see
-AGENTS.md) or moon will refuse to run local-only tasks like dev servers and
-formatters.
+skips tasks whose inputs have not changed. Local-only tasks set explicit options
+instead of moon presets (presets force `runInCI: skip`, which moon refuses to
+run in CI-detected shells; agent harnesses export `CI=1`):
+
+- No graph edges at all (formatters, benchmarks, wt, servers spawned by
+  playwright): use `runInCI: 'always'` — runnable everywhere, and never in the
+  CI pipeline because the CI lanes only target specific tasks.
+- Connected to the build graph (dev/prod, e2e variants, publish guards): keep
+  `runInCI: 'skip'` — `moon ci --include-relations` runs affected
+  runInCI-enabled tasks even when unrequested, which would pull them into CI.
+  Run them in CI-marked shells with a `CI=` prefix, e.g.
+  `CI= moonx docs:dev-diffs` or `CI= bun publish --dry-run`.

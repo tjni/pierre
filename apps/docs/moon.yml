@@ -1,5 +1,12 @@
 $schema: 'https://moonrepo.dev/schemas/project.json'
 
+# Local-only tasks avoid presets and set options explicitly. Rule of thumb:
+# `runInCI: 'always'` keeps a task runnable in CI-marked shells (agent
+# harnesses export CI=1) and is safe ONLY for tasks with no `deps` into the
+# build graph — `moon ci --include-relations` pulls runInCI-enabled
+# dependents of affected tasks into the pipeline. Graph-connected local
+# tasks (dev/prod/e2e variants) stay `runInCI: 'skip'`; run those with a
+# `CI=` prefix in CI-marked shells, e.g. `CI= moonx docs:dev-diffs`.
 language: 'typescript'
 layer: 'application'
 
@@ -36,7 +43,9 @@ tasks:
 
   generate-llms-txt:
     command: 'bun scripts/generate-llms-txt.ts'
-    preset: 'utility'
+    options:
+      cache: false
+      runInCI: 'always'
 
   # Build deps run to completion first, then dependency watchers (`^:dev`)
   # run alongside next dev. run-dev.sh kills stale listeners on the port
@@ -45,42 +54,50 @@ tasks:
     script:
       'export NEXT_PUBLIC_SITE=diffs PORT=$(( ${PIERRE_PORT_OFFSET:-0} + 3690 ))
       && bash ../../scripts/run-dev.sh "$PORT" -- next dev'
-    preset: 'server'
     deps:
       - '^:build'
       - '^:dev'
     options:
+      cache: false
+      persistent: true
+      runInCI: 'skip'
       envFile: '/.env.worktree'
 
   dev-trees:
     script:
       'export NEXT_PUBLIC_SITE=trees PORT=$(( ${PIERRE_PORT_OFFSET:-0} + 3691 ))
       && bash ../../scripts/run-dev.sh "$PORT" -- next dev'
-    preset: 'server'
     deps:
       - '^:build'
       - '^:dev'
     options:
+      cache: false
+      persistent: true
+      runInCI: 'skip'
       envFile: '/.env.worktree'
 
   # Serves the diffs-site build by default; set NEXT_PUBLIC_SITE=trees (and
   # have run build-trees-site) to serve the trees build. PORT passes through.
+  # Spawned by playwright's webServer (docs test-e2e).
   start:
     command: 'next start'
     options:
-      # Spawned by playwright's webServer (docs test-e2e); see
-      # trees:test-e2e-server for why this is not a server preset task.
       cache: false
       persistent: true
       runInCI: 'always'
 
   prod:
     script: 'next start -p "${PORT:-3000}"'
-    preset: 'server'
     deps:
       - 'build'
+    options:
+      cache: false
+      persistent: true
+      runInCI: 'skip'
 
-  # Not part of CI today; enable deliberately if that changes.
+  # Deliberately out of CI (parity with the pre-moon pipeline) and a graph
+  # dependent of `build`, so it must stay runInCI skip. In CI-marked shells:
+  # `CI= moonx docs:test-e2e`.
   test-e2e:
     script:
       '(bun ./test/e2e/check-playwright-binary.ts || bunx playwright@1.51.1
@@ -88,14 +105,16 @@ tasks:
     deps:
       - 'build'
     options:
-      runInCI: 'skip'
       cache: false
+      runInCI: 'skip'
       envFile: '/.env.worktree'
 
   test-e2e-server:
     script:
       'PORT=$(( ${PIERRE_PORT_OFFSET:-0} + 4174 )) && bash
       ../../scripts/run-dev.sh "$PORT" -- next start'
-    preset: 'server'
     options:
+      cache: false
+      persistent: true
+      runInCI: 'always'
       envFile: '/.env.worktree'

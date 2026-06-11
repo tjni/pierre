@@ -1125,7 +1125,7 @@ async function isUrlReachable(
 /** Builds dist output so the fixture always reflects the current tree implementation. */
 function ensureProductionDistBuild(): void {
   const buildResult = Bun.spawnSync({
-    cmd: ['bun', 'run', 'build'],
+    cmd: ['moon', 'run', 'trees:build'],
     cwd: packageRoot,
     env: {
       ...process.env,
@@ -1292,7 +1292,7 @@ async function startFixtureServerIfNeeded(
   }
 
   const serverProcess = Bun.spawn({
-    cmd: ['bun', 'run', 'test:e2e:server'],
+    cmd: ['moon', 'run', 'trees:test-e2e-server'],
     cwd: packageRoot,
     env: {
       ...process.env,

@@ -1,5 +1,12 @@
 $schema: 'https://moonrepo.dev/schemas/project.json'
 
+# Local-only tasks avoid presets and set options explicitly. Rule of thumb:
+# `runInCI: 'always'` keeps a task runnable in CI-marked shells (agent
+# harnesses export CI=1) and is safe ONLY for tasks with no `deps` into the
+# build graph — `moon ci --include-relations` pulls runInCI-enabled
+# dependents of affected tasks into the pipeline. Graph-connected local
+# tasks (dev/prod/e2e variants) stay `runInCI: 'skip'`; run those with a
+# `CI=` prefix in CI-marked shells, e.g. `CI= moonx docs:dev-diffs`.
 language: 'typescript'
 layer: 'application'
 
@@ -18,23 +25,30 @@ tasks:
     script:
       'export PORT=$(( ${PIERRE_PORT_OFFSET:-0} + 3692 )) && bash
       ../../scripts/run-dev.sh "$PORT" -- next dev'
-    preset: 'server'
     deps:
       - '^:build'
       - '^:dev'
     options:
+      cache: false
+      persistent: true
+      runInCI: 'skip'
       envFile: '/.env.worktree'
 
   start:
     command: 'next start'
-    preset: 'server'
+    options:
+      cache: false
+      persistent: true
+      runInCI: 'always'
 
   prod:
     script:
       'export PORT=$(( ${PIERRE_PORT_OFFSET:-0} + 3692 )) && bash
       ../../scripts/run-dev.sh "$PORT" -- next start -p "$PORT"'
-    preset: 'server'
     deps:
       - 'build'
     options:
+      cache: false
+      persistent: true
+      runInCI: 'skip'
       envFile: '/.env.worktree'

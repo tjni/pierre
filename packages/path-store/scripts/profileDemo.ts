@@ -983,7 +983,7 @@ async function startDemoServerIfNeeded(
   }
 
   const serverProcess = Bun.spawn({
-    cmd: ['bun', 'run', 'dev'],
+    cmd: ['moon', 'run', 'path-store:dev-demo'],
     cwd: packageRoot,
     env: {
       ...process.env,

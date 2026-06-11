@@ -24,11 +24,20 @@ runs:
         key: ${{ github.repository }}-bun-install-${{ runner.os }}
         path: ~/.bun/install/cache
 
-    - name: Mount moon cache
+    # Persist only the portable parts of moon's cache: moon documents
+    # `hashes` and `outputs` as safe to share between environments, while
+    # `states` holds machine-specific run state that must be rebuilt per run.
+    - name: Mount moon hash cache
       uses: useblacksmith/stickydisk@2b7a836cbb2b48f4780ae76a7b6fd79d545fb54a # v1.3.0
       with:
-        key: ${{ github.repository }}-moon-cache-${{ runner.os }}
-        path: ${{ github.workspace }}/.moon/cache
+        key: ${{ github.repository }}-moon-hashes-${{ runner.os }}
+        path: ${{ github.workspace }}/.moon/cache/hashes
+
+    - name: Mount moon output cache
+      uses: useblacksmith/stickydisk@2b7a836cbb2b48f4780ae76a7b6fd79d545fb54a # v1.3.0
+      with:
+        key: ${{ github.repository }}-moon-outputs-${{ runner.os }}
+        path: ${{ github.workspace }}/.moon/cache/outputs
 
     # Installs proto, then `proto install` provisions every tool pinned in
     # .prototools (bun, node, moon, gh). The action's own actions/cache layer

@@ -35,4 +35,6 @@ tasks:
       - '!dist/**'
       - '!.next/**'
       - '!.source/**'
+      - '!demo/dist/**'
+      - '!**/*.tsbuildinfo'
       - '/tsconfig.options.json'

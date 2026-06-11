@@ -11,7 +11,7 @@ description:
 ## Baseline Commands
 
 After code changes, run the required baseline (moon tasks run from anywhere in
-the repo; make sure the session has `unset CI` per AGENTS.md):
+the repo, including CI-marked agent shells):
 
 ```bash
 moon run root:format root:lint

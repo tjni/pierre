@@ -27,9 +27,11 @@ function distUrl(entry: string): string {
 }
 
 // Build the package once before running all guard assertions. This ensures
-// the dist reflects the current source, not a stale previous build.
+// the dist reflects the current source, not a stale previous build. Run
+// through moon so the task graph (and its cache) stays the single build
+// entrypoint; `theming:build` is cache-skipped when dist is already fresh.
 beforeAll(() => {
-  const result = Bun.spawnSync(['bun', 'run', 'build'], {
+  const result = Bun.spawnSync(['moon', 'run', 'theming:build'], {
     cwd: PKG_DIR,
     env: { ...process.env, AGENT: '1' },
   });

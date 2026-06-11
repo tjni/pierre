@@ -15,6 +15,8 @@ tasks:
       - 'src/**/*'
       - 'scripts/assert-core-clean.ts'
       - 'tsdown.config.ts'
+      - 'tsconfig.json'
+      - '/tsconfig.options.json'
     outputs:
       - 'dist'
     options:

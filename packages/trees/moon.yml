@@ -1,5 +1,12 @@
 $schema: 'https://moonrepo.dev/schemas/project.json'
 
+# Local-only tasks avoid presets and set options explicitly. Rule of thumb:
+# `runInCI: 'always'` keeps a task runnable in CI-marked shells (agent
+# harnesses export CI=1) and is safe ONLY for tasks with no `deps` into the
+# build graph — `moon ci --include-relations` pulls runInCI-enabled
+# dependents of affected tasks into the pipeline. Graph-connected local
+# tasks (dev/prod/e2e variants) stay `runInCI: 'skip'`; run those with a
+# `CI=` prefix in CI-marked shells, e.g. `CI= moonx docs:dev-diffs`.
 language: 'typescript'
 layer: 'library'
 tags: ['tsdown', 'publishable']
@@ -15,6 +22,8 @@ tasks:
       - 'src/**/*'
       - 'scripts/assert-no-path-store.ts'
       - 'tsdown.config.ts'
+      - 'tsconfig.json'
+      - '/tsconfig.options.json'
       - '/packages/path-store/src/**/*'
     outputs:
       - 'dist'
@@ -24,15 +33,21 @@ tasks:
   # Replaces the tsdown tag dev: also watch the inlined path-store sources.
   dev:
     command: 'tsdown --watch src --watch ../path-store/src --log-level error'
-    preset: 'server'
     deps:
       - '^:build'
     options:
       merge: 'replace'
+      cache: false
+      persistent: true
+      runInCI: 'skip'
 
   coverage:
     command: 'bun test --coverage'
-    preset: 'utility'
+    deps:
+      - '^:build'
+    options:
+      cache: false
+      runInCI: 'skip'
 
   test-e2e:
     script:
@@ -54,21 +69,19 @@ tasks:
       test/e2e/file-tree-sticky-context-menu-scroll-drift.pw.ts'
     deps:
       - 'build'
-    preset: 'utility'
     options:
+      cache: false
+      runInCI: 'skip'
       envFile: '/.env.worktree'
 
-  # Playwright's webServer spawns this; FILE_TREE_E2E_PORT is provided by the
-  # playwright config, with a worktree-offset default for manual runs.
+  # Spawned by playwright's webServer (also under CI) and by the profiler;
+  # FILE_TREE_E2E_PORT is provided by the caller, with a worktree-offset
+  # default for manual runs.
   test-e2e-server:
     script:
       'FILE_TREE_E2E_PORT=${FILE_TREE_E2E_PORT:-$(( ${PIERRE_PORT_OFFSET:-0} +
       9221 ))} vite --config test/e2e/vite.config.ts'
     options:
-      # Spawned by playwright's webServer (also under CI), so it must not be
-      # CI-skipped like a server preset task: moon run refuses runInCI-
-      # disabled tasks in CI environments. Nothing depends on it and no CI
-      # lane targets it, so it never enters a moon ci pipeline.
       cache: false
       persistent: true
       runInCI: 'always'
@@ -76,29 +89,42 @@ tasks:
 
   benchmark:
     command: 'bun scripts/benchmark.ts'
-    preset: 'utility'
+    options:
+      cache: false
+      runInCI: 'always'
 
   benchmark-file-tree-get-item:
     command: 'bun scripts/benchmark.ts --preset get-item'
-    preset: 'utility'
+    options:
+      cache: false
+      runInCI: 'always'
 
   benchmark-sticky-scroll:
     command: 'bun scripts/benchmark.ts --preset sticky-scroll'
-    preset: 'utility'
+    options:
+      cache: false
+      runInCI: 'always'
 
   profile-file-tree:
     command: 'bun scripts/profileFileTree.ts'
-    preset: 'utility'
+    options:
+      cache: false
+      runInCI: 'always'
 
   generate-icons:
     command: 'bun scripts/generate-built-in-icons.ts'
-    preset: 'utility'
+    options:
+      cache: false
+      runInCI: 'always'
 
+  # Fails by design outside the trees publish flow (package.json still
+  # depends on @pierre/path-store); must never enter a CI pipeline.
   assert-safe-publish:
     command: 'bun scripts/assert-safe-publish.ts'
-    preset: 'utility'
     options:
+      cache: false
       internal: true
+      runInCI: 'skip'
 
   # Appends to the publishable tag's guard chain (assert-bun-version, build).
   prepublish:
@@ -107,4 +133,6 @@ tasks:
 
   publish:
     command: 'bun scripts/publish.ts'
-    preset: 'utility'
+    options:
+      cache: false
+      runInCI: 'skip'

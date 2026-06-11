@@ -1,4 +1,4 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "moon run docs:$([ \"$NEXT_PUBLIC_SITE\" = \"trees\" ] && echo build-trees-site || echo build)"
+  "buildCommand": "PATH=\"$PWD/node_modules/.bin:$PWD/../../node_modules/.bin:$PATH\" moon run docs:$([ \"$NEXT_PUBLIC_SITE\" = \"trees\" ] && echo build-trees-site || echo build)"
 }
