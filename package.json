@@ -114,7 +114,6 @@
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
     "lint-staged": "lint-staged",
-    "prepare": "husky",
     "demo:build": "(cd apps/demo && bun run build)",
     "docs:build": "(cd apps/docs && bun run build)",
     "chrome": "./scripts/chrome-remote-debug.sh"
@@ -127,7 +126,6 @@
     "@pierre/icons": "^0.5.0",
     "@types/bun": "catalog:",
     "@typescript/native-preview": "catalog:",
-    "husky": "^9.1.7",
     "lint-staged": "catalog:",
     "oxfmt": "catalog:",
     "oxlint": "catalog:",
