@@ -1,0 +1,26 @@
+$schema: 'https://moonrepo.dev/schemas/tasks.json'
+
+# Build/watch tasks for packages bundled with tsdown. Projects that deviate
+# (theming/trees append post-build asserts, trees watches extra paths)
+# override these tasks in their own moon.yml with `merge: replace`.
+inheritedBy:
+  tags: ['tsdown']
+
+tasks:
+  build:
+    command: 'tsdown --clean'
+    deps:
+      - '^:build'
+    inputs:
+      - 'src/**/*'
+      - 'tsdown.config.ts'
+    outputs:
+      - 'dist'
+
+  # Initial build runs on watcher start, but dependencies must already have
+  # valid dist output for the bundle to resolve them.
+  dev:
+    command: 'tsdown --watch --log-level error'
+    preset: 'server'
+    deps:
+      - '^:build'

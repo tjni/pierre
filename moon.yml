@@ -1,0 +1,81 @@
+$schema: 'https://moonrepo.dev/schemas/project.json'
+
+# Root project: repo-wide tooling that intentionally runs over the whole
+# workspace in one pass (type-aware oxlint, oxfmt, stylelint, codegen).
+# These are fast enough that we always run them in CI rather than sharding
+# them per project.
+language: 'typescript'
+
+workspace:
+  inheritedTasks:
+    # The root manifest matches the bun toolchain, but `bun test` here would
+    # run every suite in the repo and there is no root tsconfig to typecheck.
+    exclude: ['test', 'typecheck']
+
+tasks:
+  lint:
+    command: 'oxlint --type-aware --tsconfig tsconfig.oxlint.json .'
+    inputs:
+      - '**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}'
+      - '.oxlintrc.json'
+      - 'tsconfig.oxlint.json'
+    options:
+      runInCI: 'always'
+
+  lint-fix:
+    command: 'oxlint --type-aware --tsconfig tsconfig.oxlint.json --fix .'
+    preset: 'utility'
+
+  # Quoted glob is expanded by stylelint itself, not the shell.
+  lint-css:
+    script: 'stylelint "**/*.css"'
+    inputs:
+      - '**/*.css'
+      - 'stylelint.config.js'
+    options:
+      runInCI: 'always'
+
+  lint-css-fix:
+    script: 'stylelint "**/*.css" --fix'
+    preset: 'utility'
+
+  format:
+    command: 'oxfmt .'
+    preset: 'utility'
+
+  format-check:
+    command: 'oxfmt --check .'
+    inputs:
+      - '**/*'
+    options:
+      runInCI: 'always'
+
+  # Regenerates the committed icon sprite module from @pierre/icons sources,
+  # then formats just the generated file.
+  icons:
+    script: 'node scripts/build-sprite.js && oxfmt packages/diffs/src/sprite.ts'
+    inputs:
+      - 'sprite.config.js'
+      - 'scripts/build-sprite.js'
+    outputs:
+      - 'packages/diffs/src/sprite.ts'
+    options:
+      runInCI: 'skip'
+
+  chrome:
+    command: './scripts/chrome-remote-debug.sh'
+    preset: 'utility'
+
+  # Worktree manager (create/list/remove Pierre worktrees with port offsets).
+  # Forward arguments with `moonx root:wt -- <args>`.
+  wt:
+    command: 'bun --silent scripts/wt.ts'
+    preset: 'utility'
+
+  clean:
+    script: 'rm -rf apps/*/.next apps/*/.source packages/*/dist apps/*/tsconfig.tsbuildinfo packages/*/tsconfig.tsbuildinfo'
+    preset: 'utility'
+
+  clean-all:
+    script: 'rm -rf apps/*/.next apps/*/.source packages/*/dist apps/*/tsconfig.tsbuildinfo packages/*/tsconfig.tsbuildinfo node_modules packages/*/node_modules apps/*/node_modules'
+    preset: 'utility'

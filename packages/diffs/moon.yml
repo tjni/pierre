@@ -1,0 +1,10 @@
+$schema: 'https://moonrepo.dev/schemas/project.json'
+
+language: 'typescript'
+layer: 'library'
+tags: ['tsdown', 'publishable']
+
+tasks:
+  benchmark-parse-merge-conflict:
+    command: 'bun scripts/benchmarkParseMergeConflictDiffFromFile.ts'
+    preset: 'utility'

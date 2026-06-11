@@ -1,0 +1,36 @@
+$schema: 'https://moonrepo.dev/schemas/project.json'
+
+language: 'typescript'
+layer: 'application'
+
+tasks:
+  build:
+    command: 'next build'
+    deps:
+      - '^:build'
+    outputs:
+      - '.next'
+
+  # Build deps run to completion first, then dependency watchers (`^:dev`)
+  # run alongside next dev. run-dev.sh kills stale listeners on the port
+  # before starting (crashed terminals leak servers).
+  dev:
+    script: 'export PORT=$(( ${PIERRE_PORT_OFFSET:-0} + 3692 )) && bash ../../scripts/run-dev.sh "$PORT" -- next dev'
+    preset: 'server'
+    deps:
+      - '^:build'
+      - '^:dev'
+    options:
+      envFile: '/.env.worktree'
+
+  start:
+    command: 'next start'
+    preset: 'server'
+
+  prod:
+    script: 'export PORT=$(( ${PIERRE_PORT_OFFSET:-0} + 3692 )) && bash ../../scripts/run-dev.sh "$PORT" -- next start -p "$PORT"'
+    preset: 'server'
+    deps:
+      - 'build'
+    options:
+      envFile: '/.env.worktree'

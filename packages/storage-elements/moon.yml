@@ -1,0 +1,25 @@
+$schema: 'https://moonrepo.dev/schemas/project.json'
+
+language: 'typescript'
+layer: 'library'
+
+workspace:
+  inheritedTasks:
+    # No test suite; building IS the typecheck for this tsgo --build package.
+    exclude: ['test']
+
+tasks:
+  build:
+    command: 'tsgo --build'
+    deps:
+      - '^:build'
+    outputs:
+      - 'dist'
+
+  # Same command as build: tsgo --build both checks and emits declarations.
+  typecheck:
+    command: 'tsgo --build'
+    deps:
+      - '^:build'
+    options:
+      merge: 'replace'

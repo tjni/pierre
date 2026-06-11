@@ -1,0 +1,21 @@
+$schema: 'https://moonrepo.dev/schemas/project.json'
+
+language: 'typescript'
+layer: 'library'
+tags: ['tsdown', 'publishable']
+
+tasks:
+  # Replaces the tsdown tag build: the core entrypoints must stay free of
+  # heavyweight imports, asserted after every build.
+  build:
+    script: 'tsdown --clean && bun scripts/assert-core-clean.ts'
+    deps:
+      - '^:build'
+    inputs:
+      - 'src/**/*'
+      - 'scripts/assert-core-clean.ts'
+      - 'tsdown.config.ts'
+    outputs:
+      - 'dist'
+    options:
+      merge: 'replace'

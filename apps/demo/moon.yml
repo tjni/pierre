@@ -1,0 +1,31 @@
+$schema: 'https://moonrepo.dev/schemas/project.json'
+
+language: 'typescript'
+layer: 'application'
+
+tasks:
+  build:
+    command: 'vite build'
+    deps:
+      - '^:build'
+    outputs:
+      - 'dist'
+
+  # Build deps run to completion first, then dependency watchers (`^:dev`)
+  # run alongside the vite server.
+  dev:
+    command: 'vite --host --clearScreen=false'
+    preset: 'server'
+    deps:
+      - '^:build'
+      - '^:dev'
+
+  start:
+    command: 'vite preview'
+    preset: 'server'
+
+  prod:
+    command: 'vite preview'
+    preset: 'server'
+    deps:
+      - 'build'

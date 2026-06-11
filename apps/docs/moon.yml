@@ -1,0 +1,90 @@
+$schema: 'https://moonrepo.dev/schemas/project.json'
+
+language: 'typescript'
+layer: 'application'
+
+tasks:
+  # Both site builds regenerate the shared `public/llms*.txt` (its content is
+  # site-dependent) and `.source`, so they share a mutex: never run them
+  # concurrently. Their .next outputs are disjoint (`distDir: .next/<site>`),
+  # which keeps the two tasks independently cacheable.
+  build:
+    script: 'bun scripts/generate-llms-txt.ts && next build'
+    env:
+      NEXT_PUBLIC_SITE: 'diffs'
+    deps:
+      - '^:build'
+    outputs:
+      - '.next/diffs'
+      - '.source'
+      - 'public/llms.txt'
+      - 'public/llms-full.txt'
+    options:
+      mutex: 'docs-build'
+
+  build-trees-site:
+    script: 'bun scripts/generate-llms-txt.ts && next build'
+    env:
+      NEXT_PUBLIC_SITE: 'trees'
+    deps:
+      - '^:build'
+    outputs:
+      - '.next/trees'
+      - '.source'
+      - 'public/llms.txt'
+      - 'public/llms-full.txt'
+    options:
+      mutex: 'docs-build'
+
+  generate-llms-txt:
+    command: 'bun scripts/generate-llms-txt.ts'
+    preset: 'utility'
+
+  # Build deps run to completion first, then dependency watchers (`^:dev`)
+  # run alongside next dev. run-dev.sh kills stale listeners on the port
+  # before starting (crashed terminals leak servers).
+  dev-diffs:
+    script: 'export NEXT_PUBLIC_SITE=diffs PORT=$(( ${PIERRE_PORT_OFFSET:-0} + 3690 )) && bash ../../scripts/run-dev.sh "$PORT" -- next dev'
+    preset: 'server'
+    deps:
+      - '^:build'
+      - '^:dev'
+    options:
+      envFile: '/.env.worktree'
+
+  dev-trees:
+    script: 'export NEXT_PUBLIC_SITE=trees PORT=$(( ${PIERRE_PORT_OFFSET:-0} + 3691 )) && bash ../../scripts/run-dev.sh "$PORT" -- next dev'
+    preset: 'server'
+    deps:
+      - '^:build'
+      - '^:dev'
+    options:
+      envFile: '/.env.worktree'
+
+  # Serves the diffs-site build by default; set NEXT_PUBLIC_SITE=trees (and
+  # have run build-trees-site) to serve the trees build. PORT passes through.
+  start:
+    command: 'next start'
+    preset: 'server'
+
+  prod:
+    script: 'next start -p "${PORT:-3000}"'
+    preset: 'server'
+    deps:
+      - 'build'
+
+  # Not part of CI today; enable deliberately if that changes.
+  test-e2e:
+    script: '(bun ./test/e2e/check-playwright-binary.ts || bunx playwright@1.51.1 install chromium) && bunx playwright test -c test/e2e/playwright.config.ts'
+    deps:
+      - 'build'
+    options:
+      runInCI: 'skip'
+      cache: false
+      envFile: '/.env.worktree'
+
+  test-e2e-server:
+    script: 'PORT=$(( ${PIERRE_PORT_OFFSET:-0} + 4174 )) && bash ../../scripts/run-dev.sh "$PORT" -- next start'
+    preset: 'server'
+    options:
+      envFile: '/.env.worktree'

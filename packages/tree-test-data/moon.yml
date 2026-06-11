@@ -1,0 +1,9 @@
+$schema: 'https://moonrepo.dev/schemas/project.json'
+
+language: 'javascript'
+layer: 'library'
+
+workspace:
+  inheritedTasks:
+    # Plain JS package with a hand-written index.d.ts; no tsconfig to check.
+    exclude: ['typecheck']

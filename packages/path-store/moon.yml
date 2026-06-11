@@ -1,0 +1,51 @@
+$schema: 'https://moonrepo.dev/schemas/project.json'
+
+language: 'typescript'
+layer: 'library'
+
+tasks:
+  # This package ships its `src` directly (consumers inline it); the only
+  # thing to build is the demo site, so the task is named for what it does
+  # and `^:build` from consumers never drags it in.
+  build-demo:
+    command: 'vite build demo'
+    outputs:
+      - 'demo/dist'
+
+  dev-demo:
+    script: 'PORT=$(( ${PIERRE_PORT_OFFSET:-0} + 4175 )) && bash ../../scripts/run-dev.sh "$PORT" -- vite demo --host 127.0.0.1 --port "$PORT"'
+    preset: 'server'
+    options:
+      envFile: '/.env.worktree'
+
+  # Not part of CI today; enable deliberately if that changes.
+  test-demo:
+    script: '(bun ./test/e2e/check-playwright-binary.js || bunx playwright@1.51.1 install chromium) && bunx playwright test -c test/e2e/playwright.config.js'
+    options:
+      runInCI: 'skip'
+      cache: false
+      envFile: '/.env.worktree'
+
+  # Playwright's webServer spawns this; PATH_STORE_DEMO_E2E_PORT is provided
+  # by the playwright config.
+  test-demo-server:
+    command: 'vite --config test/e2e/vite.config.js'
+    preset: 'server'
+    options:
+      envFile: '/.env.worktree'
+
+  benchmark:
+    command: 'bun scripts/benchmark.ts'
+    preset: 'utility'
+
+  benchmark-visible-tree-projection:
+    command: 'bun scripts/benchmarkVisibleTreeProjection.ts'
+    preset: 'utility'
+
+  profile-demo:
+    command: 'bun scripts/profileDemo.ts'
+    preset: 'utility'
+
+  profile-visible-tree-projection:
+    command: 'bun scripts/profileVisibleTreeProjection.ts'
+    preset: 'utility'
