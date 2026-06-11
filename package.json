@@ -55,12 +55,10 @@
       "class-variance-authority": "0.7.1",
       "clsx": "2.1.1",
       "cmdk": "1.1.1",
-      "concurrently": "9.2.1",
       "diff": "8.0.3",
       "hast-util-heading-rank": "3.0.0",
       "hast-util-to-html": "9.0.5",
       "hast-util-to-string": "3.0.1",
-      "husky": "^9.1.7",
       "lint-staged": "16.2.7",
       "jsdom": "26.1.0",
       "lightningcss": "1.32.0",
@@ -99,25 +97,6 @@
     }
   },
   "type": "module",
-  "scripts": {
-    "ws": "bun --silent scripts/ws.ts",
-    "wt": "bun --silent scripts/wt.ts",
-    "tsc": "bun run ws \"*\" tsc",
-    "clean": "bunx del-cli 'apps/*/.{next,source}' 'packages/*/dist' 'apps/*/tsconfig.tsbuildinfo' 'packages/*/tsconfig.tsbuildinfo'",
-    "clean:all": "bun run clean && bunx del-cli '**/node_modules'",
-    "icons:sprite": "node scripts/build-sprite.js && bun run format",
-    "icons": "bun run icons:sprite",
-    "lint": "oxlint --type-aware --tsconfig tsconfig.oxlint.json .",
-    "lint:fix": "oxlint --type-aware --tsconfig tsconfig.oxlint.json --fix .",
-    "lint:css": "stylelint \"**/*.css\"",
-    "lint:css:fix": "stylelint \"**/*.css\" --fix",
-    "format": "oxfmt .",
-    "format:check": "oxfmt --check .",
-    "lint-staged": "lint-staged",
-    "demo:build": "(cd apps/demo && bun run build)",
-    "docs:build": "(cd apps/docs && bun run build)",
-    "chrome": "./scripts/chrome-remote-debug.sh"
-  },
   "dependencies": {
     "@pierre/vscode-icons": "^0.0.9"
   },

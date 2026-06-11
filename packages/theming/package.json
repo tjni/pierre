@@ -47,10 +47,6 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsdown --clean && bun scripts/assert-core-clean.ts",
-    "dev": "echo 'Watching for changes…' && tsdown --watch --log-level error",
-    "test": "bun test",
-    "tsc": "tsgo --noEmit --pretty",
     "prepublishOnly": "moon run theming:prepublish"
   },
   "dependencies": {},

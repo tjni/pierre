@@ -27,5 +27,7 @@ vcs:
       - 'bun lint-staged'
     pre-push:
       # Git LFS guard: forwards the hook arguments and stdin to git-lfs.
-      - 'command -v git-lfs >/dev/null 2>&1 || { echo >&2 "This repository is configured for Git LFS but git-lfs was not found on your path. Install it from https://git-lfs.com"; exit 2; }'
+      - 'command -v git-lfs >/dev/null 2>&1 || { echo >&2 "This repository is
+        configured for Git LFS but git-lfs was not found on your path. Install
+        it from https://git-lfs.com"; exit 2; }'
       - 'git lfs pre-push "$@"'
