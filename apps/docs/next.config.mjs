@@ -24,12 +24,12 @@ const isDiffs = !isTrees;
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // In dev only, give each site its own build dir so `diffs:dev` and
-  // `trees:dev` can run concurrently (Next 16's dev lockfile is per-directory,
-  // not per-port). Production keeps the default `.next` so Vercel finds it.
-  ...(process.env.NODE_ENV === 'development' && {
-    distDir: `.next/${site}`,
-  }),
+  // Each site variant gets its own build dir, in every mode. Dev needs it so
+  // `dev-diffs` and `dev-trees` can run concurrently (Next 16's dev lockfile
+  // is per-directory, not per-port); prod needs it so the two site builds can
+  // run in parallel and be cached independently. Vercel reads the resolved
+  // `distDir` from this config, with `NEXT_PUBLIC_SITE` set per project.
+  distDir: `.next/${site}`,
   reactStrictMode: true,
   reactCompiler: true,
   devIndicators: false,
