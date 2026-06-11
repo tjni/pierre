@@ -13,14 +13,19 @@ tasks:
       - 'demo/dist'
 
   dev-demo:
-    script: 'PORT=$(( ${PIERRE_PORT_OFFSET:-0} + 4175 )) && bash ../../scripts/run-dev.sh "$PORT" -- vite demo --host 127.0.0.1 --port "$PORT"'
+    script:
+      'PORT=$(( ${PIERRE_PORT_OFFSET:-0} + 4175 )) && bash
+      ../../scripts/run-dev.sh "$PORT" -- vite demo --host 127.0.0.1 --port
+      "$PORT"'
     preset: 'server'
     options:
       envFile: '/.env.worktree'
 
   # Not part of CI today; enable deliberately if that changes.
   test-demo:
-    script: '(bun ./test/e2e/check-playwright-binary.js || bunx playwright@1.51.1 install chromium) && bunx playwright test -c test/e2e/playwright.config.js'
+    script:
+      '(bun ./test/e2e/check-playwright-binary.js || bunx playwright@1.51.1
+      install chromium) && bunx playwright test -c test/e2e/playwright.config.js'
     options:
       runInCI: 'skip'
       cache: false

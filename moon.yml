@@ -73,9 +73,14 @@ tasks:
     preset: 'utility'
 
   clean:
-    script: 'rm -rf apps/*/.next apps/*/.source packages/*/dist apps/*/tsconfig.tsbuildinfo packages/*/tsconfig.tsbuildinfo'
+    script:
+      'rm -rf apps/*/.next apps/*/.source packages/*/dist
+      apps/*/tsconfig.tsbuildinfo packages/*/tsconfig.tsbuildinfo'
     preset: 'utility'
 
   clean-all:
-    script: 'rm -rf apps/*/.next apps/*/.source packages/*/dist apps/*/tsconfig.tsbuildinfo packages/*/tsconfig.tsbuildinfo node_modules packages/*/node_modules apps/*/node_modules'
+    script:
+      'rm -rf apps/*/.next apps/*/.source packages/*/dist
+      apps/*/tsconfig.tsbuildinfo packages/*/tsconfig.tsbuildinfo node_modules
+      packages/*/node_modules apps/*/node_modules'
     preset: 'utility'

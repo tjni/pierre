@@ -15,7 +15,9 @@ tasks:
   # run alongside next dev. run-dev.sh kills stale listeners on the port
   # before starting (crashed terminals leak servers).
   dev:
-    script: 'export PORT=$(( ${PIERRE_PORT_OFFSET:-0} + 3692 )) && bash ../../scripts/run-dev.sh "$PORT" -- next dev'
+    script:
+      'export PORT=$(( ${PIERRE_PORT_OFFSET:-0} + 3692 )) && bash
+      ../../scripts/run-dev.sh "$PORT" -- next dev'
     preset: 'server'
     deps:
       - '^:build'
@@ -28,7 +30,9 @@ tasks:
     preset: 'server'
 
   prod:
-    script: 'export PORT=$(( ${PIERRE_PORT_OFFSET:-0} + 3692 )) && bash ../../scripts/run-dev.sh "$PORT" -- next start -p "$PORT"'
+    script:
+      'export PORT=$(( ${PIERRE_PORT_OFFSET:-0} + 3692 )) && bash
+      ../../scripts/run-dev.sh "$PORT" -- next start -p "$PORT"'
     preset: 'server'
     deps:
       - 'build'

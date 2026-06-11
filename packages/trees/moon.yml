@@ -35,7 +35,10 @@ tasks:
     preset: 'utility'
 
   test-e2e:
-    script: '(bun ./test/e2e/check-playwright-binary.ts || bunx playwright@1.51.1 install chromium) && bunx playwright test -c test/e2e/playwright.config.ts --grep-invert @diagnostic'
+    script:
+      '(bun ./test/e2e/check-playwright-binary.ts || bunx playwright@1.51.1
+      install chromium) && bunx playwright test -c test/e2e/playwright.config.ts
+      --grep-invert @diagnostic'
     deps:
       - 'build'
     inputs:
@@ -45,7 +48,10 @@ tasks:
       envFile: '/.env.worktree'
 
   test-e2e-sticky-drift:
-    script: '(bun ./test/e2e/check-playwright-binary.ts || bunx playwright@1.51.1 install chromium) && bunx playwright test -c test/e2e/playwright.config.ts test/e2e/file-tree-sticky-context-menu-scroll-drift.pw.ts'
+    script:
+      '(bun ./test/e2e/check-playwright-binary.ts || bunx playwright@1.51.1
+      install chromium) && bunx playwright test -c test/e2e/playwright.config.ts
+      test/e2e/file-tree-sticky-context-menu-scroll-drift.pw.ts'
     deps:
       - 'build'
     preset: 'utility'
@@ -55,7 +61,9 @@ tasks:
   # Playwright's webServer spawns this; FILE_TREE_E2E_PORT is provided by the
   # playwright config, with a worktree-offset default for manual runs.
   test-e2e-server:
-    script: 'FILE_TREE_E2E_PORT=${FILE_TREE_E2E_PORT:-$(( ${PIERRE_PORT_OFFSET:-0} + 9221 ))} vite --config test/e2e/vite.config.ts'
+    script:
+      'FILE_TREE_E2E_PORT=${FILE_TREE_E2E_PORT:-$(( ${PIERRE_PORT_OFFSET:-0} +
+      9221 ))} vite --config test/e2e/vite.config.ts'
     preset: 'server'
     options:
       envFile: '/.env.worktree'

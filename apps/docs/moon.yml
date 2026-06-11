@@ -44,7 +44,9 @@ tasks:
   # run alongside next dev. run-dev.sh kills stale listeners on the port
   # before starting (crashed terminals leak servers).
   dev-diffs:
-    script: 'export NEXT_PUBLIC_SITE=diffs PORT=$(( ${PIERRE_PORT_OFFSET:-0} + 3690 )) && bash ../../scripts/run-dev.sh "$PORT" -- next dev'
+    script:
+      'export NEXT_PUBLIC_SITE=diffs PORT=$(( ${PIERRE_PORT_OFFSET:-0} + 3690 ))
+      && bash ../../scripts/run-dev.sh "$PORT" -- next dev'
     preset: 'server'
     deps:
       - '^:build'
@@ -53,7 +55,9 @@ tasks:
       envFile: '/.env.worktree'
 
   dev-trees:
-    script: 'export NEXT_PUBLIC_SITE=trees PORT=$(( ${PIERRE_PORT_OFFSET:-0} + 3691 )) && bash ../../scripts/run-dev.sh "$PORT" -- next dev'
+    script:
+      'export NEXT_PUBLIC_SITE=trees PORT=$(( ${PIERRE_PORT_OFFSET:-0} + 3691 ))
+      && bash ../../scripts/run-dev.sh "$PORT" -- next dev'
     preset: 'server'
     deps:
       - '^:build'
@@ -75,7 +79,9 @@ tasks:
 
   # Not part of CI today; enable deliberately if that changes.
   test-e2e:
-    script: '(bun ./test/e2e/check-playwright-binary.ts || bunx playwright@1.51.1 install chromium) && bunx playwright test -c test/e2e/playwright.config.ts'
+    script:
+      '(bun ./test/e2e/check-playwright-binary.ts || bunx playwright@1.51.1
+      install chromium) && bunx playwright test -c test/e2e/playwright.config.ts'
     deps:
       - 'build'
     options:
@@ -84,7 +90,9 @@ tasks:
       envFile: '/.env.worktree'
 
   test-e2e-server:
-    script: 'PORT=$(( ${PIERRE_PORT_OFFSET:-0} + 4174 )) && bash ../../scripts/run-dev.sh "$PORT" -- next start'
+    script:
+      'PORT=$(( ${PIERRE_PORT_OFFSET:-0} + 4174 )) && bash
+      ../../scripts/run-dev.sh "$PORT" -- next start'
     preset: 'server'
     options:
       envFile: '/.env.worktree'
