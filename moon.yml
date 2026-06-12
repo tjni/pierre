@@ -38,8 +38,13 @@ tasks:
     inputs:
       # Explicit input globs are filesystem-walked (gitignore is not
       # applied), so installed and generated trees must be negated or every
-      # node_modules file gets hashed into the task inputs.
+      # node_modules file gets hashed into the task inputs. moon's own cache
+      # is the critical one: its hash manifests are .js files that moon
+      # writes WHILE the pipeline runs, and hashing them races git
+      # ("short read while indexing .moon/cache/hashes/...").
       - '**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}'
+      - '!.moon/cache/**'
+      - '!.moon/hooks/**'
       - '!**/node_modules/**'
       - '!**/dist/**'
       - '!**/.next/**'
@@ -93,7 +98,11 @@ tasks:
   format-check:
     command: 'oxfmt --check .'
     inputs:
+      # .moon/*.yml configs stay included (oxfmt formats them); only moon's
+      # generated state is excluded — see the lint inputs note.
       - '**/*'
+      - '!.moon/cache/**'
+      - '!.moon/hooks/**'
       - '!**/node_modules/**'
       - '!**/dist/**'
       - '!**/.next/**'
