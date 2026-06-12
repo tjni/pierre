@@ -57,11 +57,19 @@ jobs:
       # task's outputs mid-pipeline (tests never build; builds own their
       # dist exclusively) — that invariant is what makes the parallel
       # pipeline safe.
+      #
+      # `:task` shapes only bind to projects affected by changed FILES;
+      # tasks that are affected through graph relations (e.g. docs:build
+      # when packages/diffs changes) only run when named explicitly, and
+      # explicit targets are still affected-filtered (they skip when their
+      # project is untouched). So every cross-project consumer build is
+      # listed by name — that is what catches Next/transpilePackages
+      # regressions in apps when a package changes.
       - name: Run affected tasks
         run: >-
-          moon ci --include-relations :build docs:build-trees-site
-          path-store:build-demo :test :typecheck trees:test-e2e root:lint
-          root:lint-css root:format-check
+          moon ci --include-relations :build demo:build diffshub:build
+          docs:build docs:build-trees-site path-store:build-demo :test
+          :typecheck trees:test-e2e root:lint root:lint-css root:format-check
 
   actions-pinned:
     name: Actions pinned to SHA
