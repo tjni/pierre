@@ -16,6 +16,15 @@ serves, e2e variants, publish guards) stay CI-skipped — prefix those with `CI=
 to run them here, e.g. `CI= moonx docs:dev-diffs` or
 `CI= bun publish --dry-run`.
 
+## Toolchain
+
+- Tool versions (bun, node, moon, gh) are pinned in `.prototools` and managed by
+  [proto](https://moonrepo.dev/docs/proto); run `proto use` if a tool is missing
+  or a pin changed. Never install toolchain versions globally; bump pins only in
+  `.prototools`.
+- [moon](https://moonrepo.dev/docs) is the task runner; `package.json` scripts
+  are npm lifecycle hooks only.
+
 ## Core Rules
 
 - Use `bun` for commands and dependency work. Do not use `npm`, `pnpm`, `npx`,
@@ -27,6 +36,7 @@ to run them here, e.g. `CI= moonx docs:dev-diffs` or
   works from anywhere in the repo. `moonx <project>:<task> -- args` forwards
   arguments. Discover tasks with `moon tasks <project>`.
 - Preserve trailing newlines at the end of files.
+- Setup steps for a fresh clone live in `CONTRIBUTING.md`.
 
 ## Skills
 

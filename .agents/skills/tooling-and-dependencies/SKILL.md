@@ -8,6 +8,20 @@ description:
 
 # Tooling and Dependencies
 
+## Toolchain (proto)
+
+- Tool versions (bun, node, moon, gh) are pinned in `.prototools` and managed by
+  [proto](https://moonrepo.dev/docs/proto); its shims put the pinned versions on
+  PATH inside the repo. `proto use` installs everything after a pin changes.
+- Bump a tool by editing `.prototools` only — never install tools globally or
+  pin versions elsewhere. moon's version is additionally enforced by
+  `versionConstraint` in `.moon/workspace.yml` and mirrored as the
+  `@moonrepo/cli` catalog entry (for Vercel builders without proto); keep all
+  three in sync.
+- CI and local shells resolve the same toolchain: CI installs it with
+  `moonrepo/setup-toolchain`, which runs `proto install` against the same
+  `.prototools`.
+
 ## Bun
 
 - Use `bun` exclusively for commands and package operations.
