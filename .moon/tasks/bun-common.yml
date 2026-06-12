@@ -7,9 +7,16 @@ $schema: 'https://moonrepo.dev/schemas/tasks.json'
 inheritedBy:
   toolchains: ['bun']
 
-# Manifest changes (deps, exports) should always re-trigger tasks.
+# Inputs added to every task of every inheriting project (including tasks
+# defined in project moon.yml files):
+# - package.json: manifest changes (deps, exports) must re-trigger tasks.
+# - /tsconfig.options.json: every package tsconfig extends the shared root
+#   options, and several builds emit type declarations (tsgo --build, tsdown
+#   dts, next build), so compiler-option changes must re-key everything or
+#   stale declarations get restored from cache.
 implicitInputs:
   - 'package.json'
+  - '/tsconfig.options.json'
 
 tasks:
   # Tests import workspace dependencies through their published dist (same
@@ -37,4 +44,3 @@ tasks:
       - '!.source/**'
       - '!demo/dist/**'
       - '!**/*.tsbuildinfo'
-      - '/tsconfig.options.json'

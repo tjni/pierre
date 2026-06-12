@@ -22,7 +22,6 @@ tasks:
       - 'src/**/*'
       - 'tsdown.config.ts'
       - 'tsconfig.json'
-      - '/tsconfig.options.json'
     outputs:
       - 'dist'
 

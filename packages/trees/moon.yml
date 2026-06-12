@@ -24,7 +24,6 @@ tasks:
       - 'scripts/assert-no-path-store.ts'
       - 'tsdown.config.ts'
       - 'tsconfig.json'
-      - '/tsconfig.options.json'
       - '/packages/path-store/src/**/*'
     outputs:
       - 'dist'

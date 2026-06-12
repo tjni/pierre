@@ -33,7 +33,6 @@ tasks:
       - '!.next/**'
       - '!public/llms.txt'
       - '!public/llms-full.txt'
-      - '/tsconfig.options.json'
     outputs:
       - '.next/diffs'
       - 'public/llms.txt'
@@ -53,7 +52,6 @@ tasks:
       - '!.next/**'
       - '!public/llms.txt'
       - '!public/llms-full.txt'
-      - '/tsconfig.options.json'
     outputs:
       - '.next/trees'
       - 'public/llms.txt'

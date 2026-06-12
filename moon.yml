@@ -51,9 +51,6 @@ tasks:
       - '!**/.source/**'
       - '.oxlintrc.json'
       - 'tsconfig.oxlint.json'
-      # tsconfig.oxlint.json extends the shared options, so type-aware lint
-      # results change when they do.
-      - 'tsconfig.options.json'
     options:
       runInCI: 'always'
 
