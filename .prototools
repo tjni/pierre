@@ -8,6 +8,9 @@ moon = "2.3.3"
 gh = "file://./.proto/plugins/gh.toml"
 
 [settings]
-auto-clean = true
+# No auto-clean: it deletes stale versions from the user-global ~/.proto store
+# as a side effect of `proto use`, and one unwritable leftover dir (e.g. a
+# root-owned tool from a sudo'd install) hard-fails repo bootstrap. Clean
+# explicitly with `proto clean` instead.
 auto-install = true
 telemetry = false
