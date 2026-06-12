@@ -18,9 +18,9 @@ tasks:
   # the two tasks independently cacheable. Inputs are explicit because the
   # default project glob would hash the SIBLING task's llms output (moon only
   # filters a task's own outputs), making the two hashes ping-pong and
-  # forcing rebuilds on every pipeline. The .next outputs are globs because
-  # globs are optional: on Vercel the build writes plain `.next` (see
-  # next.config.mjs) and exact-dir outputs would fail moon's validation.
+  # forcing rebuilds on every pipeline. Vercel does not run these tasks
+  # (its builder writes plain `.next`, which would fail the declared
+  # outputs): vercel.json runs build-deps below, then next build directly.
   build:
     script: 'bun scripts/generate-llms-txt.ts && next build'
     env:
@@ -35,7 +35,7 @@ tasks:
       - '!public/llms-full.txt'
       - '/tsconfig.options.json'
     outputs:
-      - '.next/diffs/**'
+      - '.next/diffs'
       - 'public/llms.txt'
       - 'public/llms-full.txt'
     options:
@@ -55,11 +55,23 @@ tasks:
       - '!public/llms-full.txt'
       - '/tsconfig.options.json'
     outputs:
-      - '.next/trees/**'
+      - '.next/trees'
       - 'public/llms.txt'
       - 'public/llms-full.txt'
     options:
       mutex: 'docs-build'
+
+  # Aggregator for environments that run `next build` outside moon (Vercel):
+  # builds the workspace dependencies, nothing else. runInCI must be enabled
+  # because Vercel builders set CI=1 and moon run refuses CI-skipped tasks
+  # there; it is a noop in the CI pipeline (its deps already run).
+  build-deps:
+    command: 'noop'
+    deps:
+      - '^:build'
+    options:
+      cache: false
+      runInCI: 'always'
 
   generate-llms-txt:
     command: 'bun scripts/generate-llms-txt.ts'

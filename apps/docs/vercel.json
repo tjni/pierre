@@ -1,4 +1,4 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "PATH=\"$PWD/node_modules/.bin:$PWD/../../node_modules/.bin:$PATH\" moon run docs:$([ \"$NEXT_PUBLIC_SITE\" = \"trees\" ] && echo build-trees-site || echo build)"
+  "buildCommand": "set -e; export PATH=\"$PWD/node_modules/.bin:$PWD/apps/docs/node_modules/.bin:$PWD/../../node_modules/.bin:$PATH\"; moon run docs:build-deps; if [ -d apps/docs ]; then cd apps/docs; fi; bun scripts/generate-llms-txt.ts; next build"
 }
