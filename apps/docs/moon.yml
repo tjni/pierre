@@ -18,7 +18,9 @@ tasks:
   # the two tasks independently cacheable. Inputs are explicit because the
   # default project glob would hash the SIBLING task's llms output (moon only
   # filters a task's own outputs), making the two hashes ping-pong and
-  # forcing rebuilds on every pipeline.
+  # forcing rebuilds on every pipeline. The .next outputs are globs because
+  # globs are optional: on Vercel the build writes plain `.next` (see
+  # next.config.mjs) and exact-dir outputs would fail moon's validation.
   build:
     script: 'bun scripts/generate-llms-txt.ts && next build'
     env:
@@ -33,7 +35,7 @@ tasks:
       - '!public/llms-full.txt'
       - '/tsconfig.options.json'
     outputs:
-      - '.next/diffs'
+      - '.next/diffs/**'
       - 'public/llms.txt'
       - 'public/llms-full.txt'
     options:
@@ -53,7 +55,7 @@ tasks:
       - '!public/llms-full.txt'
       - '/tsconfig.options.json'
     outputs:
-      - '.next/trees'
+      - '.next/trees/**'
       - 'public/llms.txt'
       - 'public/llms-full.txt'
     options:
