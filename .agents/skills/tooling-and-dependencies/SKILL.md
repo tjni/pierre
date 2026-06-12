@@ -58,11 +58,19 @@ This monorepo uses Bun's `workspaces.catalog` in the root `package.json`.
 
 ```bash
 moon run <project>:<task>
-moonx <project>:<task>             # shorthand for moon exec
+moonx <project>:<task>             # same engine; shorthand for moon exec
 moonx <project>:<task> -- --flags  # forward arguments after --
 moon run :test                     # a task across every project that has it
 moon tasks <project>               # discover a project's tasks
 ```
+
+`moon run` and `moonx` (an alias binary for `moon exec`) execute the same action
+pipeline: identical dependency resolution, caching, and affected support. Use
+them interchangeably; docs write `moon run` for canonical commands and `moonx`
+in interactive examples. The one practical difference: `moonx`/`moon exec`
+exposes CI-behavior overrides (`--ignore-ci-checks`, `--ci <bool>`) that
+`moon run` lacks. `moon ci` is a third thing — the affected-aware orchestrator
+used only by `.github/workflows/ci.yml`; never reach for it locally.
 
 moon builds dependency projects first (`deps: ['^:build']`), caches outputs, and
 skips tasks whose inputs have not changed. Local-only tasks set explicit options
@@ -76,5 +84,6 @@ run in CI-detected shells; agent harnesses export `CI=1`):
 - Connected to the build graph (dev/prod, e2e variants, publish guards): keep
   `runInCI: 'skip'` — `moon ci --include-relations` runs affected
   runInCI-enabled tasks even when unrequested, which would pull them into CI.
-  Run them in CI-marked shells with a `CI=` prefix, e.g.
-  `CI= moonx docs:dev-diffs` or `CI= bun publish --dry-run`.
+  Run them in CI-marked shells with `moonx <target> --ignore-ci-checks` (works
+  regardless of the shell's CI env). For non-moon commands that CI-gate
+  themselves, unset the var instead: `CI= bun publish --dry-run`.
