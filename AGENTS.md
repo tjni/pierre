@@ -12,9 +12,10 @@ export AGENT=1
 Most local moon tasks (formatters, benchmarks, worktree management) are
 configured with `runInCI: 'always'` so they keep working in CI-marked shells
 like agent harnesses. Tasks connected to the build graph (dev servers, prod
-serves, e2e variants, publish guards) stay CI-skipped — prefix those with `CI=`
-to run them here, e.g. `CI= moonx docs:dev-diffs` or
-`CI= bun publish --dry-run`.
+serves, e2e variants, publish guards) stay CI-skipped — run those with
+`moonx <target> --ignore-ci-checks`, e.g.
+`moonx docs:dev-diffs --ignore-ci-checks`. For non-moon commands that CI-gate
+themselves, unset the var: `CI= bun publish --dry-run`.
 
 ## Toolchain
 
@@ -71,7 +72,7 @@ moon run root:format root:lint
 
 Also run the affected typecheck and focused tests for the changed area, e.g.
 `moonx <project>:typecheck` and `moonx <project>:test` (or
-`moon exec :typecheck --affected`). For docs-only or AGENTS/skill-only changes,
+`moonx :typecheck --affected`). For docs-only or AGENTS/skill-only changes,
 formatting and linting are sufficient unless the edit touches executable code or
 package config.
 

@@ -34,7 +34,7 @@ dependencies first automatically):
 ```bash
 moonx <project>:typecheck
 # or, scoped to what actually changed:
-moon exec :typecheck --affected
+moonx :typecheck --affected
 ```
 
 ## Unit and Integration Tests
