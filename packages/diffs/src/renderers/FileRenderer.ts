@@ -43,6 +43,12 @@ import {
   createGutterWrapper,
   createHastElement,
 } from '../utils/hast_utils';
+import {
+  FILE_ANNOTATION_HUNK_INDEX,
+  FILE_ANNOTATION_LINE_INDEX,
+  getFileAnnotations,
+  shouldRenderFileAnnotations,
+} from '../utils/includesFileAnnotations';
 import { isFilePlainText } from '../utils/isFilePlainText';
 import { iterateOverFile } from '../utils/iterateOverFile';
 import { renderFileWithHighlighter } from '../utils/renderFileWithHighlighter';
@@ -403,6 +409,24 @@ export class FileRenderer<LAnnotation = undefined> {
     const gutter = createGutterWrapper();
     const lines = this.getOrCreateLineCache(file);
     let rowCount = 0;
+
+    const fileLevelAnnotations = shouldRenderFileAnnotations(renderRange)
+      ? getFileAnnotations(this.lineAnnotations)
+      : undefined;
+    if (fileLevelAnnotations != null) {
+      gutter.children.push(createGutterGap('context', 'annotation', 1));
+      contentArray.push(
+        createAnnotationElement({
+          type: 'annotation',
+          hunkIndex: FILE_ANNOTATION_HUNK_INDEX,
+          lineIndex: FILE_ANNOTATION_LINE_INDEX,
+          annotations: fileLevelAnnotations.map((annotation) =>
+            getLineAnnotationName(annotation)
+          ),
+        })
+      );
+      rowCount++;
+    }
 
     iterateOverFile({
       lines,

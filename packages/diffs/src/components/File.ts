@@ -300,7 +300,9 @@ export class File<LAnnotation = undefined> {
     }
     this.fileContainer = undefined;
     this.mounted = false;
-    this.lineAnnotations = [];
+    if (!recycle) {
+      this.lineAnnotations = [];
+    }
     this.annotationCache.clear();
     this.pre = undefined;
     this.bufferBefore = undefined;
@@ -1082,6 +1084,12 @@ export class File<LAnnotation = undefined> {
     let boundaryIndex = 0;
     let nextBoundary = sortedBoundaries[boundaryIndex];
     const { children } = container;
+
+    if (nextBoundary === 0) {
+      boundaryIndices.set(0, 0);
+      boundaryIndex += 1;
+      nextBoundary = sortedBoundaries[boundaryIndex];
+    }
 
     for (let i = 0; i < children.length; i += 1) {
       const child = children[i];
