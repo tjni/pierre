@@ -1,10 +1,10 @@
+import {
+  type MatchRange,
+  searchLineByLine,
+  type SearchParams,
+} from '../search';
 import { computeLineOffsets } from '../utils/computeFileOffsets';
-import type { SearchParams } from './searchPanel';
 import type { Position, Range, ResolvedTextEdit } from './textDocument';
-
-const MAX_FIND_MATCHES = 100000;
-// TODO(ije): use Intl.Segmenter instead of regex for word separators
-const WORD_SEPARATORS = '`~!@#$%^&*()-=+[{]}\\|;:\'",.<>/?' as const;
 
 // A piece is a segment of text that is either original or added.
 class Piece {
@@ -280,78 +280,17 @@ export class PieceTable {
     return foundOffset ?? wrappedOffset;
   }
 
-  search(searchParams: SearchParams): [start: number, end: number][] {
-    if (searchParams.text.length === 0 || this.#length === 0) {
-      return [];
-    }
-
-    // Search currently operates line-by-line, so newline-spanning patterns are unsupported.
-    if (
-      searchParams.text.includes('\n') ||
-      searchParams.text.includes('\r') ||
-      (searchParams.regex &&
-        (searchParams.text.includes('\\n') ||
-          searchParams.text.includes('\\r')))
-    ) {
-      return [];
-    }
-
-    let pattern: RegExp;
-    try {
-      pattern = compileSearchRegExp(
-        searchParams.text,
-        searchParams.regex,
-        searchParams.caseSensitive
-      );
-    } catch {
-      return [];
-    }
-
-    return this.#collectSearchMatchesLineByLine(
-      pattern,
-      searchParams.wholeWord,
-      MAX_FIND_MATCHES
+  search(searchParams: SearchParams): MatchRange[] {
+    return searchLineByLine(
+      {
+        textLength: this.#length,
+        lineCount: this.#lineCount,
+        getLineText: (line) => this.getLineText(line),
+        getLineStartOffset: (line) => this.offsetAt({ line, character: 0 }),
+        charAt: (offset) => this.charAt(offset),
+      },
+      searchParams
     );
-  }
-
-  #collectSearchMatchesLineByLine(
-    pattern: RegExp,
-    wholeWord: boolean,
-    limit: number
-  ): [number, number][] {
-    const out: [number, number][] = [];
-    const docLength = this.#length;
-    const charAt = (offset: number) => this.charAt(offset);
-
-    for (let line = 0; line < this.#lineCount; line++) {
-      const lineText = this.getLineText(line);
-      const lineStart = this.offsetAt({ line, character: 0 });
-      const re = new RegExp(pattern.source, pattern.flags);
-      re.lastIndex = 0;
-      let match: RegExpExecArray | null;
-      while ((match = re.exec(lineText)) !== null) {
-        const rel = match.index;
-        const fragment = match[0];
-        if (fragment.length === 0) {
-          re.lastIndex = advancePastEmptyMatch(lineText, rel);
-          continue;
-        }
-        const docStart = lineStart + rel;
-        if (
-          !wholeWord ||
-          isWholeWordAtDocOffsets(docStart, fragment.length, docLength, charAt)
-        ) {
-          out.push([docStart, docStart + fragment.length]);
-          if (out.length >= limit) {
-            return out;
-          }
-        }
-        if (rel === re.lastIndex) {
-          re.lastIndex = advancePastEmptyMatch(lineText, rel);
-        }
-      }
-    }
-    return out;
   }
 
   insert(text: string, offset: number): void {
@@ -916,125 +855,4 @@ function upperBound(values: number[], target: number): number {
     }
   }
   return lo;
-}
-
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function isWordSeparatorCharCode(charCode: number): boolean {
-  if (charCode <= 32 || charCode === 127) {
-    return true;
-  }
-  const ch = String.fromCharCode(charCode);
-  return WORD_SEPARATORS.includes(ch);
-}
-
-// Checks if the given text is a whole word by checking if the
-// characters before and after are word separators.
-function isWholeWordAtDocOffsets(
-  docStart: number,
-  length: number,
-  docLength: number,
-  charAt: (offset: number) => string
-): boolean {
-  const beforeOk =
-    docStart <= 0 ||
-    isWordSeparatorCharCode(charCodeUnitAt(charAt, docStart - 1));
-  const afterOk =
-    docStart + length >= docLength ||
-    isWordSeparatorCharCode(charCodeUnitAt(charAt, docStart + length));
-  return beforeOk && afterOk;
-}
-
-function charCodeUnitAt(
-  charAt: (offset: number) => string,
-  offset: number
-): number {
-  const unit = charAt(offset);
-  return unit.length === 0 ? 0 : unit.charCodeAt(0);
-}
-
-function compileSearchRegExp(
-  source: string,
-  isRegex: boolean,
-  caseSensitive: boolean
-): RegExp {
-  const body = isRegex ? source : escapeRegExp(source);
-  const flags = `g${caseSensitive ? '' : 'i'}${isRegex ? 'm' : ''}`;
-  return new RegExp(body, flags);
-}
-
-/** Expands `$&`, `$1`, `$$`, etc. in a regex replace string using a match. */
-function expandReplaceString(
-  replacement: string,
-  match: RegExpExecArray
-): string {
-  return replacement.replace(/\$([$&]|\d+)/g, (_token, group: string) => {
-    if (group === '$') {
-      return '$';
-    }
-    if (group === '&') {
-      return match[0] ?? '';
-    }
-    const index = Number(group);
-    return match[index] ?? '';
-  });
-}
-
-/**
- * Builds the text to insert for one search match, including regex capture
- * substitution when regex mode is enabled.
- */
-export function buildSearchReplacementText(
-  positionAt: (offset: number) => Position,
-  offsetAt: (position: Position) => number,
-  getLineText: (line: number) => string,
-  searchParams: SearchParams,
-  matchStart: number,
-  matchEnd: number
-): string {
-  if (!searchParams.regex) {
-    return searchParams.replaceText;
-  }
-
-  const position = positionAt(matchStart);
-  const lineText = getLineText(position.line);
-  const lineStart = offsetAt({ line: position.line, character: 0 });
-  const relStart = matchStart - lineStart;
-  const matched = lineText.slice(relStart, relStart + (matchEnd - matchStart));
-
-  let pattern: RegExp;
-  try {
-    pattern = compileSearchRegExp(
-      searchParams.text,
-      true,
-      searchParams.caseSensitive
-    );
-  } catch {
-    return searchParams.replaceText;
-  }
-
-  const re = new RegExp(pattern.source, pattern.flags.replace('g', ''));
-  const match = re.exec(matched);
-  if (match === null || match[0].length !== matched.length) {
-    return searchParams.replaceText;
-  }
-  return expandReplaceString(searchParams.replaceText, match);
-}
-
-function advancePastEmptyMatch(text: string, index: number): number {
-  if (index + 1 < text.length) {
-    const first = text.charCodeAt(index);
-    const second = text.charCodeAt(index + 1);
-    if (
-      first >= 0xd800 &&
-      first <= 0xdbff &&
-      second >= 0xdc00 &&
-      second <= 0xdfff
-    ) {
-      return index + 2;
-    }
-  }
-  return index + 1;
 }

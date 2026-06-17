@@ -1,20 +1,16 @@
-import { buildSearchReplacementText } from './pieceTable';
+import {
+  buildSearchReplacementText,
+  type MatchRange,
+  type SearchParams,
+} from '../search';
 import { isPrimaryModifier } from './platform';
 import { getEditorIconSvg, type SVGSpriteNames } from './sprite';
 import type { ResolvedTextEdit, TextDocument } from './textDocument';
 import { h } from './utils';
 
-export type MatchRange = [startOffset: number, endOffset: number];
-
 export type SearchPanelMode = 'find' | 'replace';
 
-export interface SearchParams {
-  text: string;
-  replaceText: string;
-  caseSensitive: boolean;
-  wholeWord: boolean;
-  regex: boolean;
-}
+export type { MatchRange, SearchParams } from '../search';
 
 export interface SearchPanelOptions {
   textDocument: TextDocument<unknown>;
