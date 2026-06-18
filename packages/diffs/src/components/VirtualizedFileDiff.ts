@@ -5,6 +5,7 @@ import type {
   ExpansionDirections,
   FileDiffMetadata,
   Hunk,
+  HunkExpansionRegion,
   HunkSeparators,
   NumericScrollLineAnchor,
   PendingCodeViewLayoutReset,
@@ -742,6 +743,10 @@ export class VirtualizedFileDiff<
     }
     this.virtualizer.instanceChanged(this, true);
   };
+
+  public getExpandedHunksForSearch(): Map<number, HunkExpansionRegion> {
+    return this.hunksRenderer.getExpandedHunksMap();
+  }
 
   public setVisibility(visible: boolean): void {
     if (this.isAdvancedMode() || this.fileContainer == null) {

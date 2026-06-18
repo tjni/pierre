@@ -17,6 +17,14 @@ function createContainer(): HTMLElement {
   return container;
 }
 
+function getSearchPanelRoot(): ShadowRoot {
+  const host = document.querySelector<HTMLElement>('[data-search-panel]');
+  if (host?.shadowRoot === undefined || host.shadowRoot === null) {
+    throw new Error('Expected search panel shadow root');
+  }
+  return host.shadowRoot;
+}
+
 function searchParams(overrides: Partial<SearchParams>): SearchParams {
   return {
     text: '',
@@ -54,13 +62,16 @@ describe('SearchPanelWidget', () => {
 
       await waitForAnimationFrame();
 
-      const panel = document.querySelector<HTMLElement>('[data-search-panel]');
+      const panel = getSearchPanelRoot();
       const grid = panel?.querySelector<HTMLElement>('[data-search-grid]');
 
       expect(searchCalls).toEqual([searchParams({ text: 'foo' })]);
       expect(updates).toEqual([[[0, 3]]]);
       expect(grid?.dataset.mode).toBe('find');
       expect(panel?.querySelector('[data-replace]')).toBeNull();
+      expect(
+        panel.querySelector('#diffs-editor-icon-arrow-down')
+      ).not.toBeNull();
 
       widget.setMode('replace');
       expect(grid?.dataset.mode).toBe('find');
@@ -108,7 +119,7 @@ describe('SearchPanelWidget', () => {
 
       await waitForAnimationFrame();
 
-      const panel = document.querySelector<HTMLElement>('[data-search-panel]')!;
+      const panel = getSearchPanelRoot();
       const replaceInput = panel.querySelector<HTMLInputElement>(
         'input[data-replace]'
       )!;

@@ -1,6 +1,11 @@
 import { type MatchRange, type SearchParams } from '../search';
 import { isPrimaryModifier } from './platform';
-import { getEditorIconSvg, type SVGSpriteNames } from './sprite';
+import searchPanelCSS from './searchPanel.css';
+import {
+  getEditorIconSvg,
+  type SVGSpriteNames,
+  SVGSpriteSheet,
+} from './sprite';
 import { h } from './utils';
 
 export type SearchPanelMode = 'find' | 'replace';
@@ -32,6 +37,7 @@ export interface SearchPanelOptions<TMatch = MatchRange> {
 }
 
 export class SearchPanelWidget<TMatch = MatchRange> {
+  #host: HTMLDivElement;
   #container: HTMLDivElement;
   #inputElement: HTMLInputElement;
   #updateMatches?: (options?: { syncSelection?: boolean }) => void;
@@ -101,6 +107,8 @@ export class SearchPanelWidget<TMatch = MatchRange> {
       if (searchParams.text === '') {
         matchResultElement.textContent = 'No results';
         matchResultElement.dataset.noMatches = '';
+        matches.current = undefined;
+        onUpdate([]);
         return;
       }
 
@@ -369,18 +377,34 @@ export class SearchPanelWidget<TMatch = MatchRange> {
     };
     this.#applyMode = applyMode;
 
-    this.#container = h('div', {
+    this.#host = h('div', {
       dataset: 'searchPanel',
-      children: [
-        h('div', {
-          dataset: 'editorWidget',
-          children: [gridElement],
-        }),
-      ],
     });
+    const shadowRoot = this.#host.attachShadow({ mode: 'open' });
+    const spriteContainer = document.createElement('div');
+    spriteContainer.innerHTML = SVGSpriteSheet;
+    const spriteElement = spriteContainer.firstElementChild;
+    if (spriteElement instanceof SVGElement) {
+      shadowRoot.appendChild(spriteElement);
+    }
+    h('style', { textContent: searchPanelCSS }, shadowRoot);
+
+    this.#container = h(
+      'div',
+      {
+        dataset: 'searchPanel',
+        children: [
+          h('div', {
+            dataset: 'editorWidget',
+            children: [gridElement],
+          }),
+        ],
+      },
+      shadowRoot
+    );
 
     matches.current = initialMatch;
-    containerElement.before(this.#container);
+    containerElement.before(this.#host);
 
     requestAnimationFrame(() => {
       if (initialMatch !== undefined) {
@@ -405,6 +429,6 @@ export class SearchPanelWidget<TMatch = MatchRange> {
   }
 
   cleanup(): void {
-    this.#container.remove();
+    this.#host.remove();
   }
 }

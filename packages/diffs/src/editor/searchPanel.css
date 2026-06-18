@@ -1,0 +1,210 @@
+:host {
+  --diffs-search-panel-fg: var(--diffs-fg, light-dark(#000, #fff));
+  --diffs-search-panel-bg: var(--diffs-bg, light-dark(#fff, #000));
+  --diffs-search-panel-modified: light-dark(
+    var(--diffs-modified-light, #009fff),
+    var(--diffs-modified-dark, #69b1ff)
+  );
+  color-scheme: light dark;
+  position: sticky;
+  top: 12px;
+  right: 12px;
+  z-index: 100;
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+  height: fit-content;
+  margin-bottom: 4px;
+  box-sizing: border-box;
+}
+
+:host([data-search-panel-overlay]) {
+  height: 0;
+  margin-bottom: 0;
+  pointer-events: none;
+}
+
+[data-search-panel] {
+  display: flex;
+  justify-content: flex-end;
+  flex-direction: column;
+  width: 100%;
+  height: fit-content;
+}
+
+[data-editor-widget] {
+  --diffs-widget-bg: color-mix(
+    in lab,
+    var(--diffs-search-panel-fg) 4%,
+    var(--diffs-search-panel-bg)
+  );
+  --diffs-widget-border: color-mix(
+    in lab,
+    var(--diffs-search-panel-fg) 20%,
+    transparent
+  );
+  --diffs-widget-shadow:
+    inset 0 0 0 1px var(--diffs-search-panel-bg), 0 4px 8px rgb(0 0 0 / 0.075),
+    0 6px 18px rgb(0 0 0 / 0.075);
+  position: relative;
+  z-index: 100;
+  width: fit-content;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px;
+  max-width: 100%;
+  margin-inline: auto 12px;
+  border: 1px solid var(--diffs-widget-border);
+  border-radius: 9px;
+  background-color: var(--diffs-widget-bg);
+  background-clip: padding-box;
+  box-shadow: var(--diffs-widget-shadow);
+  font-family: var(
+    --diffs-header-font-fallback,
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    'Helvetica Neue',
+    Arial,
+    sans-serif
+  );
+  font-size: 14px;
+}
+
+:host([data-search-panel-overlay]) [data-editor-widget] {
+  pointer-events: auto;
+}
+
+/* The two input rows form a grid: column 1 holds the find/replace inputs,
+   column 2 holds the results text / replace actions, and column 3 holds the
+   find navigation buttons on the first row only. DOM order auto-places items. */
+[data-search-grid] {
+  display: grid;
+  grid-template-columns: auto auto auto;
+  align-items: center;
+  gap: 4px 6px;
+}
+
+[data-search-grid][data-mode='find'] [data-replace-cell] {
+  display: none;
+}
+
+[data-input-box] {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 200px;
+}
+
+[data-input-box] input {
+  flex-grow: 1;
+  width: 100%;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 24px;
+  padding-inline: 6px;
+  color: var(--diffs-search-panel-fg);
+  background-color: var(--diffs-search-panel-bg);
+  border: 1px solid
+    color-mix(
+      in lab,
+      var(--diffs-search-panel-fg) 12%,
+      var(--diffs-search-panel-bg)
+    );
+  border-radius: 6px;
+  outline: none;
+}
+
+/* Reserve room on the right of the find input for the overlaid toggles. */
+[data-input-box][data-find] input {
+  padding-inline-end: 72px;
+}
+
+[data-input-box] input::selection {
+  background-color: color-mix(
+    in lab,
+    var(--diffs-search-panel-fg) 8%,
+    var(--diffs-search-panel-bg)
+  );
+}
+
+[data-search-toggles] {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+
+[data-matches] {
+  flex-shrink: 0;
+  min-width: 50px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+  white-space: nowrap;
+  color: color-mix(
+    in lab,
+    var(--diffs-search-panel-fg) 50%,
+    var(--diffs-search-panel-bg)
+  );
+}
+
+[data-matches][data-no-matches] {
+  color: color-mix(
+    in lab,
+    var(--diffs-search-panel-fg) 35%,
+    var(--diffs-search-panel-bg)
+  );
+}
+
+[data-replace-actions],
+[data-search-nav] {
+  display: flex;
+  align-items: center;
+}
+
+svg {
+  display: block;
+  fill: currentColor;
+}
+
+[data-icon] {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  color: color-mix(
+    in lab,
+    var(--diffs-search-panel-fg) 65%,
+    var(--diffs-search-panel-bg)
+  );
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  cursor: pointer;
+  transition:
+    background-color 0.1s ease-in-out,
+    color 0.1s ease-in-out;
+}
+
+[data-input-box] [data-icon] {
+  width: 20px;
+}
+
+[data-icon][data-disabled='true'] {
+  opacity: 0.25;
+  pointer-events: none;
+}
+
+[data-icon]:hover {
+  color: var(--diffs-search-panel-fg);
+}
+
+[data-icon][data-active='true'] {
+  color: var(--diffs-search-panel-modified);
+}
