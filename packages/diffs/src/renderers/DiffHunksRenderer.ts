@@ -909,6 +909,8 @@ export class DiffHunksRenderer<LAnnotation = undefined> {
 
     this.diff = fileDiff;
     const unified = diffStyle === 'unified';
+    const isExpandableDiff =
+      !fileDiff.isPartial || this.options.loadDiffFiles != null;
 
     let additionsContentAST: ElementContent[] | undefined = [];
     let deletionsContentAST: ElementContent[] | undefined = [];
@@ -1046,7 +1048,7 @@ export class DiffHunksRenderer<LAnnotation = undefined> {
             hunkSpecs: hunk?.hunkSpecs,
             isFirstHunk: hunkIndex === 0,
             isLastHunk: false,
-            isExpandable: !fileDiff.isPartial,
+            isExpandable: isExpandableDiff,
           });
         }
 
@@ -1367,7 +1369,7 @@ export class DiffHunksRenderer<LAnnotation = undefined> {
             hunkSpecs: undefined,
             isFirstHunk: false,
             isLastHunk: true,
-            isExpandable: !fileDiff.isPartial,
+            isExpandable: isExpandableDiff,
           });
         }
         context.incrementRowCount(1);
