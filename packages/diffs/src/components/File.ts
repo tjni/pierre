@@ -782,7 +782,7 @@ export class File<
     ) {
       return;
     }
-    workerManager.primeFileHighlightCache(file);
+    void workerManager.primeFileHighlightCache(file).catch(() => undefined);
   }
 
   private cleanChildNodes() {

@@ -1231,7 +1231,7 @@ export class FileDiff<
     ) {
       return;
     }
-    workerManager.primeDiffHighlightCache(fileDiff);
+    void workerManager.primeDiffHighlightCache(fileDiff).catch(() => undefined);
   }
 
   private cleanChildNodes() {
