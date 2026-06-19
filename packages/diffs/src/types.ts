@@ -685,6 +685,7 @@ export interface HunkData {
   slotName: string;
   hunkIndex: number;
   lines: number;
+  lineCountKnown: boolean;
   type: CodeColumnType;
   expandable?: {
     chunked: boolean;
