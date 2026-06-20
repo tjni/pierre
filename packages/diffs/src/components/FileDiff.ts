@@ -602,7 +602,7 @@ export class FileDiff<
       )
     ) {
       this.render({
-        ...fileInput,
+        ...fileInputProps,
         fileContainer,
         lineAnnotations,
         fileDiff,
