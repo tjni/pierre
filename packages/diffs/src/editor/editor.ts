@@ -568,13 +568,17 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
       }
     }
 
-    if (
+    // Whether this sync replaces the document with a freshly parsed one (a new
+    // file, language, or cache key) versus reusing the existing one. A reused
+    // document keeps any edits the host's file contents do not have, which the
+    // rebuilt line DOM below must be reconciled against.
+    const documentReplaced =
       this.#textDocument === undefined ||
       this.#fileInfo === undefined ||
       this.#fileInfo.name !== fileOrDiff.name ||
       this.#fileInfo.lang !== fileOrDiff.lang ||
-      this.#fileInfo.cacheKey !== fileOrDiff.cacheKey
-    ) {
+      this.#fileInfo.cacheKey !== fileOrDiff.cacheKey;
+    if (documentReplaced) {
       let contents = '';
       if ('contents' in fileOrDiff) {
         contents = fileOrDiff.contents;
@@ -674,6 +678,18 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     this.#lineAnnotations = lineAnnotations;
     this.#renderRange = renderRange;
     this.#tokenizer?.prebuildStateStack(renderRange);
+
+    // A host-driven full re-render (theme, diff style, wrap, or line-number
+    // toggle) rebuilds the line DOM from the original file contents the host
+    // passes in. When the editor's document survived that re-render it stays the
+    // source of truth and may hold edits the host contents do not, so the
+    // rebuilt rows would show the pre-edit text until the next keystroke
+    // repainted them. Repaint any editable row whose text drifted from the
+    // document so those edits remain visible.
+    if (!documentReplaced) {
+      this.#repaintLinesFromDocument();
+    }
+
     this.#markerRenderer?.removePopup();
 
     // re-render the existing selections, matches, and markers
@@ -725,7 +741,7 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         'RenderRange:',
         startingLine + '-' + (startingLine + totalLines),
         'of',
-        this.#textDocument.lineCount,
+        this.#textDocument?.lineCount,
         'lines'
       );
     }
@@ -1765,6 +1781,64 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
         `[diffs/editor] re-render in: ${round(performance.now() - t2)}ms,`,
         `tokenize in: ${round(t2 - t)}ms (${dirtyLines.size} dirty lines)`
       );
+    }
+  }
+
+  // Reconciles the editable line rows in the DOM with the editor's document
+  // after a host re-render rebuilt them from the original file contents. Any
+  // editable row whose rendered text no longer matches its document line is
+  // repainted from freshly tokenized document tokens; rows that already match
+  // (every row when the document has no edits) are left untouched. Deletion and
+  // annotation rows are skipped because they are not editable and their text
+  // never comes from the document's addition side.
+  #repaintLinesFromDocument(): void {
+    const textDocument = this.#textDocument;
+    const tokenizer = this.#tokenizer;
+    const contentEl = this.#contentElement;
+    if (
+      textDocument === undefined ||
+      tokenizer === undefined ||
+      contentEl === undefined
+    ) {
+      return;
+    }
+
+    const staleRows: Array<[line: number, element: HTMLElement]> = [];
+    let minLine = Infinity;
+    let maxLine = -1;
+    for (const child of contentEl.children) {
+      const el = child as HTMLElement;
+      const lineType = el.dataset.lineType;
+      const lineNumber = getLineNumberAttr(el);
+      if (
+        lineNumber === undefined ||
+        lineType === undefined ||
+        !isLineEditable(lineType)
+      ) {
+        continue;
+      }
+      const lineIndex = lineNumber - 1;
+      if (
+        lineIndex < textDocument.lineCount &&
+        el.textContent !== textDocument.getLineText(lineIndex)
+      ) {
+        staleRows.push([lineIndex, el]);
+        minLine = Math.min(minLine, lineIndex);
+        maxLine = Math.max(maxLine, lineIndex);
+      }
+    }
+
+    if (staleRows.length === 0) {
+      return;
+    }
+
+    const tokensByLine = tokenizer.tokenizeLines(minLine, maxLine);
+    const { themeType } = tokenizer;
+    for (const [lineIndex, el] of staleRows) {
+      const tokens = tokensByLine.get(lineIndex);
+      if (tokens !== undefined) {
+        el.replaceChildren(...renderLineTokens(tokens, themeType));
+      }
     }
   }
 

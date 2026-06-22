@@ -419,6 +419,37 @@ export class EditorTokenizer {
     return dirtyLines;
   }
 
+  // Re-tokenizes a contiguous line range from the current document and returns
+  // the highlighted tokens for each line. Unlike `tokenize`, which only revisits
+  // the lines a document change touched, this re-renders the requested range
+  // outright. It is used to repaint the view after a host-driven full re-render
+  // rebuilt the DOM from the original file contents while the editor's document
+  // held newer edits, so the on-screen text can be restored from the document.
+  tokenizeLines(
+    startLine: number,
+    endLine: number
+  ): Map<number, Array<HighlightedToken>> {
+    const tokensByLine = new Map<number, Array<HighlightedToken>>();
+    const start = Math.max(0, startLine);
+    const end = Math.min(endLine, this.#textDocument.lineCount - 1);
+    if (start > end) {
+      return tokensByLine;
+    }
+    // Build the cached tokenizer state up to the first line so multi-line
+    // constructs (e.g. block comments) opened above the range color correctly.
+    this.#buildStateStack(start);
+    let state = this.#stateStack[start] ?? INITIAL;
+    for (let line = start; line <= end; line++) {
+      const { resolvedTokens, state: nextState } = this.#tokenizeLineAt(
+        line,
+        state
+      );
+      tokensByLine.set(line, resolvedTokens);
+      state = nextState;
+    }
+    return tokensByLine;
+  }
+
   prebuildStateStack(renderRange?: RenderRange): void {
     this.#prebuildStateStack(renderRange);
   }
