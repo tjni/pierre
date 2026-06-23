@@ -1991,8 +1991,10 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     // line position to trigger the line to be rendered, then recall this function
     // to ensure the line is scrolled into view
     else {
+      const modelLinePosition = this.#fileInstance?.getLinePosition?.(line + 1);
       let yFix = 0;
       if (
+        modelLinePosition === undefined &&
         this.#scrollingToLine === line &&
         this.#contentElement !== undefined
       ) {
@@ -2010,15 +2012,22 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
           }
         }
       }
-      const lineAnnotations = (this.#lineAnnotations ?? []).filter(
-        (annotation) => annotation.lineNumber < line
-      ).length;
-      const approximateLineY =
-        (lineAnnotations + line) * this.#metrics.lineHeight + yFix;
+      let approximateLineY = modelLinePosition?.top;
+      if (approximateLineY === undefined) {
+        const lineAnnotations = (this.#lineAnnotations ?? []).filter(
+          (annotation) => annotation.lineNumber < line
+        ).length;
+        approximateLineY =
+          (lineAnnotations + line) * this.#metrics.lineHeight + yFix;
+      }
       virtualCaret.style.top = approximateLineY + 'px';
       this.#fileContainer?.shadowRoot?.appendChild(virtualCaret);
       virtualCaret.scrollIntoView({ block: 'center', inline: 'nearest' });
-      if (this.#scrollingToLine === line && yFix === 0) {
+      if (
+        modelLinePosition === undefined &&
+        this.#scrollingToLine === line &&
+        yFix === 0
+      ) {
         this.#scrollingToLine = undefined;
         this.#scrollingToLineChar = undefined;
         this.#scrollingToLineNoFocus = false;
