@@ -925,7 +925,12 @@ export interface DiffsBaseComponent {
 export interface DiffsEditableComponent<
   LAnnotation,
 > extends DiffsBaseComponent {
-  /** Return one-based line geometry in local component coordinates. */
+  /**
+   * Return geometry for a one-based editable-document line relative to the
+   * component, or undefined when model geometry is unavailable. The editor
+   * uses this to reveal virtualized lines without a rendered DOM node. File
+   * diffs resolve editable lines on the additions side.
+   */
   getLinePosition?: (
     lineNumber: number
   ) => { top: number; height: number } | undefined;

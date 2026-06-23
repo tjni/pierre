@@ -12,6 +12,18 @@ import type {
 } from '../src/types';
 import { installDom } from './domHarness';
 
+const TOTAL_LINES = 3_728;
+const TARGET_LINE_NUMBER = 3_001;
+const RENDERED_START_LINE_NUMBER = 3_401;
+const RENDERED_END_LINE_NUMBER = 3_650;
+const MODEL_LINE_HEIGHT = 20;
+const EDITOR_LINE_HEIGHT = 22;
+const TARGET_LINE_TOP = (TARGET_LINE_NUMBER - 1) * MODEL_LINE_HEIGHT;
+
+function makeSourceLine(lineNumber: number): string {
+  return `// source line ${lineNumber}`;
+}
+
 function createTestHighlighter(): DiffsHighlighter {
   return {
     getLoadedLanguages: () => [],
@@ -32,7 +44,9 @@ class VirtualizedEditableComponent implements DiffsEditableComponent<undefined> 
   #editor?: DiffsEditor<undefined>;
   readonly #file: FileContents = {
     name: 'virtualized.ts',
-    contents: 'first\nsecond\nthird',
+    contents: Array.from({ length: TOTAL_LINES }, (_, lineIndex) =>
+      makeSourceLine(lineIndex + 1)
+    ).join('\n'),
     lang: 'text',
   };
 
@@ -44,7 +58,9 @@ class VirtualizedEditableComponent implements DiffsEditableComponent<undefined> 
   getLinePosition(
     lineNumber: number
   ): { top: number; height: number } | undefined {
-    return lineNumber === 2 ? { top: 20, height: 20 } : undefined;
+    return lineNumber === TARGET_LINE_NUMBER
+      ? { top: TARGET_LINE_TOP, height: MODEL_LINE_HEIGHT }
+      : undefined;
   }
 
   setOptions(options: Partial<DiffsEditableComponent<undefined>['options']>) {
@@ -92,8 +108,8 @@ class VirtualizedEditableComponent implements DiffsEditableComponent<undefined> 
       this.#file,
       undefined,
       {
-        startingLine: 2,
-        totalLines: 1,
+        startingLine: RENDERED_START_LINE_NUMBER - 1,
+        totalLines: RENDERED_END_LINE_NUMBER - RENDERED_START_LINE_NUMBER + 1,
         bufferBefore: 0,
         bufferAfter: 0,
       }
@@ -111,15 +127,21 @@ class VirtualizedEditableComponent implements DiffsEditableComponent<undefined> 
 
     const content = document.createElement('div');
     content.dataset.content = '';
-    content.style.lineHeight = '20px';
+    content.style.lineHeight = EDITOR_LINE_HEIGHT + 'px';
 
-    const thirdLine = document.createElement('div');
-    thirdLine.dataset.line = '3';
-    thirdLine.dataset.lineIndex = '2';
-    thirdLine.dataset.lineType = 'context';
-    thirdLine.textContent = 'third';
+    for (
+      let lineNumber = RENDERED_START_LINE_NUMBER;
+      lineNumber <= RENDERED_END_LINE_NUMBER;
+      lineNumber++
+    ) {
+      const line = document.createElement('div');
+      line.dataset.line = String(lineNumber);
+      line.dataset.lineIndex = String(lineNumber - 1);
+      line.dataset.lineType = 'context';
+      line.textContent = makeSourceLine(lineNumber);
+      content.appendChild(line);
+    }
 
-    content.appendChild(thirdLine);
     code.appendChild(content);
     shadowRoot.appendChild(code);
   }
@@ -146,17 +168,19 @@ describe('Editor virtualized reveal', () => {
       editor.edit(component);
       editor.setSelections([
         {
-          start: { line: 1, character: 0 },
-          end: { line: 1, character: 0 },
+          start: { line: TARGET_LINE_NUMBER - 1, character: 0 },
+          end: { line: TARGET_LINE_NUMBER - 1, character: 0 },
           direction: 'none',
         },
       ]);
 
-      // Keep line 2 offscreen for one more render. Both reveal attempts should
-      // use its stable position in the virtual model.
+      // This models the production repro: the virtual model estimates 20px
+      // lines while the editor measures 22px, and line 3,001 remains offscreen
+      // as lines 3,401 through 3,650 render. Both reveal attempts should use the
+      // target's stable position in the virtual model.
       component.rerender();
 
-      expect(scrollTops).toEqual([20, 20]);
+      expect(scrollTops).toEqual([TARGET_LINE_TOP, TARGET_LINE_TOP]);
     } finally {
       editor.cleanUp();
       component.cleanUp();
