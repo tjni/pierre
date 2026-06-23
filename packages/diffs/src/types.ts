@@ -929,6 +929,14 @@ export interface DiffsBaseComponent {
 export interface DiffsEditableComponent<
   LAnnotation,
 > extends DiffsBaseComponent {
+  /**
+   * Return the position and height of a one-based line relative to this component.
+   * The editor uses it to scroll to virtualized lines before their DOM nodes exist.
+   * In a file diff, `lineNumber` is the line number in the new file.
+   */
+  getLinePosition?: (
+    lineNumber: number
+  ) => { top: number; height: number } | undefined;
   attachEditor: (editor: DiffsEditor<LAnnotation>) => () => void;
   applyDocumentChange: (
     textDocument: DiffsTextDocument,
