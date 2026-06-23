@@ -38,7 +38,7 @@ class VirtualizedEditableComponent implements DiffsEditableComponent<undefined> 
     lang: 'text',
   };
 
-  constructor() {
+  constructor(private readonly modelLineHeight: number) {
     document.body.appendChild(this.fileContainer);
     this.#renderShadowDom();
   }
@@ -46,7 +46,9 @@ class VirtualizedEditableComponent implements DiffsEditableComponent<undefined> 
   getLinePosition(
     lineNumber: number
   ): { top: number; height: number } | undefined {
-    return lineNumber === 2 ? { top: MODEL_LINE_TOP, height: 20 } : undefined;
+    return lineNumber === 2
+      ? { top: MODEL_LINE_TOP, height: this.modelLineHeight }
+      : undefined;
   }
 
   setOptions(options: Partial<DiffsEditableComponent<undefined>['options']>) {
@@ -128,7 +130,13 @@ class VirtualizedEditableComponent implements DiffsEditableComponent<undefined> 
   }
 }
 
-function revealOffscreenLine(): number[] {
+function revealOffscreenLine({
+  modelLineHeight = 20,
+  rerenderCount = 1,
+}: {
+  modelLineHeight?: number;
+  rerenderCount?: number;
+} = {}): number[] {
   const dom = installDom();
   const scrollTops: number[] = [];
   Object.defineProperty(window.HTMLElement.prototype, 'scrollIntoView', {
@@ -142,7 +150,7 @@ function revealOffscreenLine(): number[] {
   });
 
   const editor = new Editor<undefined>();
-  const component = new VirtualizedEditableComponent();
+  const component = new VirtualizedEditableComponent(modelLineHeight);
 
   try {
     editor.edit(component);
@@ -154,9 +162,10 @@ function revealOffscreenLine(): number[] {
       },
     ]);
 
-    // Rerendering retries the reveal while line 2 is still offscreen. Both
-    // attempts should use its stable position in the virtual model.
-    component.rerender();
+    // Rerendering retries the reveal while line 2 is still offscreen.
+    for (let i = 0; i < rerenderCount; i++) {
+      component.rerender();
+    }
 
     return scrollTops;
   } finally {
@@ -169,5 +178,11 @@ function revealOffscreenLine(): number[] {
 describe('Editor virtualized reveal', () => {
   test('keeps using model geometry when an offscreen reveal retries', () => {
     expect(revealOffscreenLine()).toEqual([MODEL_LINE_TOP, MODEL_LINE_TOP]);
+  });
+
+  test('stops retrying when model geometry has zero height', () => {
+    expect(
+      revealOffscreenLine({ modelLineHeight: 0, rerenderCount: 2 })
+    ).toEqual([MODEL_LINE_TOP]);
   });
 });
