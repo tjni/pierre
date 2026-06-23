@@ -1992,49 +1992,60 @@ export class Editor<LAnnotation> implements DiffsEditor<LAnnotation> {
     // to ensure the line is scrolled into view
     else {
       const modelLinePosition = this.#fileInstance?.getLinePosition?.(line + 1);
-      let yFix = 0;
-      if (
-        modelLinePosition === undefined &&
-        this.#scrollingToLine === line &&
-        this.#contentElement !== undefined
-      ) {
-        for (let i = this.#contentElement.childElementCount - 1; i >= 0; i--) {
-          const child = this.#contentElement.children[i] as HTMLElement;
-          const lineType = child.dataset.lineType;
-          const lineNumber = getLineNumberAttr(child);
-          if (
-            lineType !== undefined &&
-            isLineEditable(lineType) &&
-            lineNumber !== undefined
-          ) {
-            yFix = (line - lineNumber) * this.#metrics.lineHeight;
-            break;
-          }
-        }
-      }
-      let approximateLineY = modelLinePosition?.top;
-      if (approximateLineY === undefined) {
-        const lineAnnotations = (this.#lineAnnotations ?? []).filter(
-          (annotation) => annotation.lineNumber < line
-        ).length;
-        approximateLineY =
-          (lineAnnotations + line) * this.#metrics.lineHeight + yFix;
-      }
-      virtualCaret.style.top = approximateLineY + 'px';
-      this.#fileContainer?.shadowRoot?.appendChild(virtualCaret);
-      virtualCaret.scrollIntoView({ block: 'center', inline: 'nearest' });
-      if (
-        modelLinePosition === undefined &&
-        this.#scrollingToLine === line &&
-        yFix === 0
-      ) {
-        this.#scrollingToLine = undefined;
-        this.#scrollingToLineChar = undefined;
-        this.#scrollingToLineNoFocus = false;
-      } else {
+      if (modelLinePosition !== undefined) {
+        virtualCaret.style.top = modelLinePosition.top + 'px';
+        this.#fileContainer?.shadowRoot?.appendChild(virtualCaret);
+        virtualCaret.scrollIntoView({ block: 'center', inline: 'nearest' });
+
+        // Keep retrying at the model's stable coordinate until the target line
+        // renders and the exact-position branch above can finish the reveal.
         this.#scrollingToLine = line;
         this.#scrollingToLineChar = char;
         this.#scrollingToLineNoFocus = noFocus;
+      } else {
+        // Components without model geometry retain the existing rendered-edge
+        // correction as a best-effort fallback.
+        let yFix = 0;
+        if (
+          this.#scrollingToLine === line &&
+          this.#contentElement !== undefined
+        ) {
+          for (
+            let i = this.#contentElement.childElementCount - 1;
+            i >= 0;
+            i--
+          ) {
+            const child = this.#contentElement.children[i] as HTMLElement;
+            const lineType = child.dataset.lineType;
+            const lineNumber = getLineNumberAttr(child);
+            if (
+              lineType !== undefined &&
+              isLineEditable(lineType) &&
+              lineNumber !== undefined
+            ) {
+              yFix = (line - lineNumber) * this.#metrics.lineHeight;
+              break;
+            }
+          }
+        }
+        const lineAnnotations = (this.#lineAnnotations ?? []).filter(
+          (annotation) => annotation.lineNumber < line
+        ).length;
+        const approximateLineY =
+          (lineAnnotations + line) * this.#metrics.lineHeight + yFix;
+        virtualCaret.style.top = approximateLineY + 'px';
+        this.#fileContainer?.shadowRoot?.appendChild(virtualCaret);
+        virtualCaret.scrollIntoView({ block: 'center', inline: 'nearest' });
+
+        if (this.#scrollingToLine === line && yFix === 0) {
+          this.#scrollingToLine = undefined;
+          this.#scrollingToLineChar = undefined;
+          this.#scrollingToLineNoFocus = false;
+        } else {
+          this.#scrollingToLine = line;
+          this.#scrollingToLineChar = char;
+          this.#scrollingToLineNoFocus = noFocus;
+        }
       }
     }
     virtualCaret.remove();
