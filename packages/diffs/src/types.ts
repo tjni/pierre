@@ -925,6 +925,10 @@ export interface DiffsBaseComponent {
 export interface DiffsEditableComponent<
   LAnnotation,
 > extends DiffsBaseComponent {
+  /** Return one-based line geometry in local component coordinates. */
+  getLinePosition?: (
+    lineNumber: number
+  ) => { top: number; height: number } | undefined;
   attachEditor: (editor: DiffsEditor<LAnnotation>) => () => void;
   applyDocumentChange: (
     textDocument: DiffsTextDocument,
