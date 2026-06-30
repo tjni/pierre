@@ -1,7 +1,9 @@
 import { spawnSync } from 'node:child_process';
 import {
+  closeSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readdirSync,
   readFileSync,
   writeFileSync,
@@ -14,8 +16,8 @@ import { join, relative, resolve } from 'node:path';
 // workspace dependency, so the tarball we rehearse is the tarball we publish.
 //
 //   moonx trees:publish -- --dry-run
-//   moonx trees:publish -- --tag=beta --otp=<code>
-//   moonx trees:publish -- --tag=latest --promote-latest --tag-release --otp=<code>
+//   moonx trees:publish -- --tag=beta
+//   moonx trees:publish -- --tag=latest --promote-latest --tag-release
 
 export interface CliFlags {
   dryRun: boolean;
@@ -137,16 +139,69 @@ export function redactOtp(args: readonly string[]): string[] {
   return redacted;
 }
 
+type StdioOption = 'inherit' | [number, number, number];
+
+// moon captures task stdio, so child processes do not always see a TTY even
+// when a maintainer ran `moonx` from an interactive terminal. Publish-time npm
+// 2FA needs a real terminal for retry prompts and web-based authentication.
+function openTerminalStdio(): [number, number, number] | null {
+  let input: number | null = null;
+  let output: number | null = null;
+  let error: number | null = null;
+
+  try {
+    input = openSync('/dev/tty', 'r');
+    output = openSync('/dev/tty', 'w');
+    error = openSync('/dev/tty', 'w');
+    return [input, output, error];
+  } catch {
+    for (const fd of [input, output, error]) {
+      if (fd !== null) {
+        closeSync(fd);
+      }
+    }
+    return null;
+  }
+}
+
+function closeTerminalStdio(
+  stdio: StdioOption | ['ignore', 'pipe', 'pipe']
+): void {
+  if (Array.isArray(stdio)) {
+    for (const fd of stdio) {
+      if (typeof fd === 'number') {
+        closeSync(fd);
+      }
+    }
+  }
+}
+
+function resolveStdio(options: {
+  inherit?: boolean;
+  preferTerminal?: boolean;
+}): StdioOption | ['ignore', 'pipe', 'pipe'] {
+  if (options.preferTerminal === true) {
+    const terminalStdio = openTerminalStdio();
+    if (terminalStdio !== null) {
+      return terminalStdio;
+    }
+  }
+
+  return options.inherit === true ? 'inherit' : ['ignore', 'pipe', 'pipe'];
+}
+
 function run(
   cmd: string,
   args: readonly string[],
-  options: { cwd?: string; inherit?: boolean } = {}
+  options: { cwd?: string; inherit?: boolean; preferTerminal?: boolean } = {}
 ): string {
+  const stdio = resolveStdio(options);
   const result = spawnSync(cmd, args, {
     cwd: options.cwd ?? process.cwd(),
-    stdio: options.inherit === true ? 'inherit' : ['ignore', 'pipe', 'pipe'],
+    stdio,
     encoding: 'utf8',
   });
+  closeTerminalStdio(stdio);
   if (result.status !== 0) {
     const stdout = result.stdout?.toString() ?? '';
     const stderr = result.stderr?.toString() ?? '';
@@ -319,6 +374,7 @@ function publish(tarballPath: string, tag: string, otp: string | null): void {
   console.log(`[publish] pnpm ${redactOtp(args).join(' ')}`);
   run('pnpm', args, {
     inherit: true,
+    preferTerminal: true,
   });
 }
 
@@ -340,6 +396,7 @@ function promoteLatest(version: string, otp: string | null): void {
   console.log(`[publish] pnpm ${redactOtp(args).join(' ')}`);
   run('pnpm', args, {
     inherit: true,
+    preferTerminal: true,
   });
 }
 
