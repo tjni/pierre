@@ -30,6 +30,10 @@ Releases must come from merged commits on `main`.
 pnpm whoami            # must print an npm username with @pierre publish access
 ```
 
+If npm requires publish-time 2FA, generate a fresh authenticator code and pass
+it with `--otp=<code>` on the publish command. The script forwards that OTP to
+both `pnpm publish` and `pnpm dist-tag add`, and redacts it from its own logs.
+
 ## 2. Rehearse with `--dry-run`
 
 From `packages/trees`:
@@ -82,7 +86,7 @@ release.
 ## 4. Publish to `beta`
 
 ```bash
-moonx trees:publish -- --tag=beta
+moonx trees:publish -- --tag=beta --otp=<code>
 ```
 
 Verify on npm:
@@ -97,7 +101,7 @@ pnpm view @pierre/trees dist-tags --json
 After smoke tests pass on the beta tarball:
 
 ```bash
-moonx trees:publish -- --tag=latest --promote-latest --tag-release
+moonx trees:publish -- --tag=latest --promote-latest --tag-release --otp=<code>
 ```
 
 `--promote-latest` moves the `latest` dist-tag to this version. `--tag-release`
@@ -106,8 +110,8 @@ creates and pushes a git tag (`@pierre/trees@<version>`).
 You can also split these into separate invocations:
 
 ```bash
-moonx trees:publish -- --tag=latest     # publish under latest
-pnpm dist-tag add @pierre/trees@<version> latest
+moonx trees:publish -- --tag=latest --otp=<code>     # publish under latest
+pnpm dist-tag add @pierre/trees@<version> latest --otp=<code>
 git tag -a "@pierre/trees@<version>" -m "@pierre/trees <version>"
 git push origin "@pierre/trees@<version>"
 ```
@@ -142,7 +146,7 @@ leave the broken version stranded on npm with its bad `beta` tag.
       `@pierre/path-store` in `node_modules`)
 - [ ] React 19 consumer smoke test passed (all four subpaths, no
       `@pierre/path-store` in `node_modules`)
-- [ ] `moonx trees:publish -- --tag=beta` succeeded
-- [ ] `--tag=latest --promote-latest` run after smoke verification
+- [ ] `moonx trees:publish -- --tag=beta --otp=<code>` succeeded
+- [ ] `--tag=latest --promote-latest --otp=<code>` run after smoke verification
 - [ ] git tag pushed (`@pierre/trees@<version>`)
 - [ ] `moonx root:wt -- clean` from the monorepo root
